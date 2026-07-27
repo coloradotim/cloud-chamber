@@ -99,7 +99,7 @@ export type WorldCompareDescriptor = {
   material_differences: CompareDifference[];
   compatibility: CompareCompatibility | null;
   no_second_simulation_message: string | null;
-  persistence: "saved_comparisons";
+  persistence: "transient_only";
 };
 
 export type CompareLinkModes = {

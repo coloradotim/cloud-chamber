@@ -12,6 +12,12 @@ from pydantic import BaseModel, Field
 
 from cloud_chamber.cli import ENGINE_NOTE
 from cloud_chamber.cloud_worlds import (
+    MORE_MOISTURE_SIMULATION_ID as TRADE_MORE_MOISTURE_SIMULATION_ID,
+)
+from cloud_chamber.cloud_worlds import (
+    REFERENCE_SIMULATION_ID as TRADE_REFERENCE_SIMULATION_ID,
+)
+from cloud_chamber.cloud_worlds import (
     CloudWorldSummary,
     TradeCumulusWorldDetail,
     list_cloud_world_summaries,
@@ -102,6 +108,8 @@ from cloud_chamber.runtime_storage import (
     runtime_storage_inventory,
 )
 from cloud_chamber.saved_comparisons import (
+    CurrentSimulationDependency,
+    DependencyAvailabilityState,
     SavedComparisonCreate,
     SavedComparisonDependent,
     SavedComparisonEntry,
@@ -706,14 +714,14 @@ def get_world_saved_comparisons(world_id: str) -> SavedComparisonLibraryResponse
     settings = load_settings()
     canonical_world_id = _canonical_world_id(world_id)
     try:
+        simulation_inventory = _saved_comparison_simulation_inventory(
+            canonical_world_id,
+            settings=settings,
+        )
         return list_saved_comparisons(
             settings,
             world_id=canonical_world_id,
-            simulation_exists=lambda owner, simulation: _saved_comparison_simulation_exists(
-                owner,
-                simulation,
-                settings=settings,
-            ),
+            simulation_inventory=simulation_inventory,
         )
     except SavedComparisonError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -730,15 +738,15 @@ def get_world_saved_comparison(
     settings = load_settings()
     canonical_world_id = _canonical_world_id(world_id)
     try:
+        simulation_inventory = _saved_comparison_simulation_inventory(
+            canonical_world_id,
+            settings=settings,
+        )
         return get_saved_comparison(
             settings,
             world_id=canonical_world_id,
             saved_comparison_id=saved_comparison_id,
-            simulation_exists=lambda owner, simulation: _saved_comparison_simulation_exists(
-                owner,
-                simulation,
-                settings=settings,
-            ),
+            simulation_inventory=simulation_inventory,
         )
     except SavedComparisonError as exc:
         status_code = 404 if str(exc) == "Saved Comparison not found." else 400
@@ -763,16 +771,13 @@ def post_world_saved_comparison(
             left_simulation_id=request.workspace.left_simulation_id,
             right_simulation_id=request.workspace.right_simulation_id,
         )
+        simulation_inventory = _saved_comparison_inventory_from_descriptor(descriptor)
         return create_saved_comparison(
             settings,
             world_id=canonical_world_id,
             request=request,
             captured_pair=captured_pair_summary_from_descriptor(descriptor),
-            simulation_exists=lambda owner, simulation: _saved_comparison_simulation_exists(
-                owner,
-                simulation,
-                settings=settings,
-            ),
+            simulation_inventory=simulation_inventory,
         )
     except (SavedComparisonError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -790,16 +795,16 @@ def patch_world_saved_comparison(
     settings = load_settings()
     canonical_world_id = _canonical_world_id(world_id)
     try:
+        simulation_inventory = _saved_comparison_simulation_inventory(
+            canonical_world_id,
+            settings=settings,
+        )
         return update_saved_comparison(
             settings,
             world_id=canonical_world_id,
             saved_comparison_id=saved_comparison_id,
             request=request,
-            simulation_exists=lambda owner, simulation: _saved_comparison_simulation_exists(
-                owner,
-                simulation,
-                settings=settings,
-            ),
+            simulation_inventory=simulation_inventory,
         )
     except SavedComparisonError as exc:
         status_code = 404 if str(exc) == "Saved Comparison not found." else 400
@@ -1505,23 +1510,103 @@ def _simulation_target_exists(
     return False
 
 
-def _saved_comparison_simulation_exists(
+def _saved_comparison_simulation_inventory(
     world_id: str,
-    simulation_id: str,
     *,
     settings: CloudChamberSettings,
-) -> bool:
+) -> dict[str, CurrentSimulationDependency]:
     if world_id == "trade_cumulus":
-        return trade_cumulus_simulation_exists(settings, simulation_id)
+        trade_world = trade_cumulus_world_detail(settings)
+        return {
+            simulation.simulation_id: _current_dependency(
+                world_id=world_id,
+                simulation_id=simulation.simulation_id,
+                availability_state=simulation.technical_state,
+                availability_message=simulation.technical_state_message,
+                inspectable=simulation.explore_available,
+                role=simulation.role,
+            )
+            for simulation in trade_world.simulations
+            if simulation.simulation_id is not None
+        }
     if world_id == "mountain_waves":
-        simulation = mountain_waves_simulation(settings, simulation_id)
-        return simulation is not None and simulation.inspectable
+        mountain_world = mountain_waves_world_detail(settings)
+        return {
+            simulation.simulation_id: _current_dependency(
+                world_id=world_id,
+                simulation_id=simulation.simulation_id,
+                availability_state=simulation.state,
+                availability_message=simulation.state_message,
+                inspectable=simulation.inspectable,
+                role=simulation.role,
+            )
+            for simulation in mountain_world.simulations
+        }
     if world_id == "supercells":
-        return any(
-            simulation.simulation_id == simulation_id and simulation.explore_available
-            for simulation in supercells_world_detail(settings).simulations
+        supercells_world = supercells_world_detail(settings)
+        return {
+            simulation.simulation_id: _current_dependency(
+                world_id=world_id,
+                simulation_id=simulation.simulation_id,
+                availability_state=simulation.technical_state,
+                availability_message=simulation.technical_state_message,
+                inspectable=simulation.explore_available,
+                role=simulation.role,
+            )
+            for simulation in supercells_world.simulations
+        }
+    return {}
+
+
+def _saved_comparison_inventory_from_descriptor(
+    descriptor: WorldCompareDescriptor,
+) -> dict[str, CurrentSimulationDependency]:
+    return {
+        simulation.simulation_id: _current_dependency(
+            world_id=descriptor.world_id,
+            simulation_id=simulation.simulation_id,
+            availability_state=simulation.availability_state,
+            availability_message=simulation.availability_message,
+            inspectable=simulation.inspectable,
+            role=simulation.role,
         )
-    return False
+        for simulation in descriptor.simulations
+    }
+
+
+def _current_dependency(
+    *,
+    world_id: str,
+    simulation_id: str,
+    availability_state: str,
+    availability_message: str,
+    inspectable: bool,
+    role: str,
+) -> CurrentSimulationDependency:
+    current_state: DependencyAvailabilityState
+    if inspectable:
+        current_state = "available"
+    elif availability_state in {"conflict", "invalid"}:
+        current_state = "invalid"
+    elif availability_state in {"missing", "unavailable"}:
+        current_state = "missing"
+    else:
+        current_state = "unavailable"
+    built_in = simulation_id in {
+        TRADE_REFERENCE_SIMULATION_ID,
+        TRADE_MORE_MOISTURE_SIMULATION_ID,
+        SUPERCELLS_REFERENCE_SIMULATION_ID,
+        SUPERCELLS_STRAIGHT_LINE_SIMULATION_ID,
+    } or (world_id == "mountain_waves" and role == "built_in")
+    return CurrentSimulationDependency(
+        simulation_id=simulation_id,
+        availability_state=current_state,
+        availability_message=availability_message,
+        role=role,
+        ownership="built_in" if built_in else "user_created",
+        protection_state="protected" if built_in else "ordinary",
+        repairability_state="unknown",
+    )
 
 
 @app.get("/api/results/{result_id}/visualization/trade-cumulus-updraft-lens/frame")

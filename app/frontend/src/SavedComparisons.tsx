@@ -53,6 +53,12 @@ export type SavedComparisonEntry = {
     simulation_id: string;
     display_name: string;
     available: boolean;
+    availability_state: "available" | "missing" | "invalid" | "unavailable";
+    availability_message: string;
+    role: string | null;
+    ownership: "built_in" | "user_created" | "unknown";
+    protection_state: "protected" | "ordinary" | "unknown";
+    repairability_state: "repairable" | "not_repairable" | "unknown";
   }>;
   effective_restoration_status: "healthy" | "partially_restorable" | "unavailable";
   effective_restoration_message: string | null;
@@ -82,7 +88,7 @@ export function SavedComparisonsCollection({
       if (!Array.isArray(payload.saved_comparisons)) {
         throw new Error("Saved Comparison library returned an invalid response.");
       }
-      setEntries(payload.saved_comparisons as SavedComparisonEntry[]);
+      setEntries(sortSavedComparisons(payload.saved_comparisons as SavedComparisonEntry[]));
       setStatus("ready");
     } catch (caught) {
       setEntries([]);
@@ -138,8 +144,10 @@ export function SavedComparisonsCollection({
       }
       const updated = (await response.json()) as SavedComparisonEntry;
       setEntries((current) =>
-        current.map((item) =>
-          item.record.saved_comparison_id === updated.record.saved_comparison_id ? updated : item,
+        sortSavedComparisons(
+          current.map((item) =>
+            item.record.saved_comparison_id === updated.record.saved_comparison_id ? updated : item,
+          ),
         ),
       );
       setEditingId(null);
@@ -455,4 +463,11 @@ async function responseMessage(response: Response, fallback: string): Promise<st
   } catch {
     return fallback;
   }
+}
+
+function sortSavedComparisons(entries: SavedComparisonEntry[]): SavedComparisonEntry[] {
+  return [...entries].sort(
+    (left, right) =>
+      new Date(right.record.updated_at).valueOf() - new Date(left.record.updated_at).valueOf(),
+  );
 }

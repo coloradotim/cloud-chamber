@@ -4531,7 +4531,7 @@ const tradeCumulusCompareDescriptor = {
     blockers: [],
   },
   no_second_simulation_message: null,
-  persistence: "saved_comparisons",
+  persistence: "transient_only",
 };
 
 function mockWorldScopedApp(storyStatus = 200) {

@@ -21,9 +21,9 @@ import {
   WorldCompareSideVisual,
 } from "./WorldCompareAdapters";
 import {
-  mapCamera,
-  nearestCompareTime,
-  reconcileSavedCompareState,
+  nativePlaneCoordinates,
+  reconcileSavedComparePair,
+  synchronizeCompareState,
   timeIndexForSeconds,
   validateWorldCompareDescriptor,
   WORLD_COMPARE_ADAPTERS,
@@ -112,6 +112,11 @@ export function WorldCompare({
     samples: [],
   });
   const workspaceStartedAt = useRef<number | null>(null);
+  const sideStatusRef = useRef<SideStatus>({ left: "loading", right: "loading" });
+  const restorationBaseline = useRef<{
+    status: "healthy" | "partially_restorable" | "unavailable";
+    messages: string[];
+  }>({ status: "healthy", messages: [] });
 
   const loadDescriptor = useCallback(
     async (leftId?: string | null, rightId?: string | null) => {
@@ -161,17 +166,15 @@ export function WorldCompare({
       if (!left || !right || !compatibility) {
         throw new Error("The Saved Comparison pair is not available for live inspection.");
       }
-      const leftRestoration = reconcileSavedCompareState(
-        entry.record.workspace.left_state,
-        left,
-        compatibility.time_tolerance_seconds,
+      const pairRestoration = reconcileSavedComparePair(
+        {
+          left: entry.record.workspace.left_state,
+          right: entry.record.workspace.right_state,
+        },
+        entry.record.workspace.links,
+        compareDescriptor,
       );
-      const rightRestoration = reconcileSavedCompareState(
-        entry.record.workspace.right_state,
-        right,
-        compatibility.time_tolerance_seconds,
-      );
-      const messages = [...leftRestoration.messages, ...rightRestoration.messages];
+      const messages = [...pairRestoration.messages];
       if (pairSummaryChanged(entry, compareDescriptor)) {
         messages.push(
           "Current pair metadata differs from the captured summary; the saved summary remains unchanged.",
@@ -183,19 +186,15 @@ export function WorldCompare({
         );
       }
       const uniqueMessages = [...new Set(messages)];
-      const unavailable =
-        leftRestoration.status === "unavailable" || rightRestoration.status === "unavailable";
-      const partial =
-        pairReplaced ||
-        uniqueMessages.length > 0 ||
-        leftRestoration.status === "partially_restorable" ||
-        rightRestoration.status === "partially_restorable";
+      const status =
+        pairRestoration.status === "unavailable"
+          ? "unavailable"
+          : pairReplaced || uniqueMessages.length > 0
+            ? "partially_restorable"
+            : "healthy";
       setDescriptor(compareDescriptor);
-      setStates({
-        left: leftRestoration.state,
-        right: rightRestoration.state,
-      });
-      setLinks(entry.record.workspace.links);
+      setStates(pairRestoration.states);
+      setLinks(pairRestoration.links);
       setContextCollapsed(entry.record.workspace.context_collapsed);
       setPresentations(
         entry.record.workspace.supercells_presentation ?? {
@@ -204,16 +203,16 @@ export function WorldCompare({
         },
       );
       setRestorationMessages(uniqueMessages);
-      setRestorationStatus(
-        unavailable ? "unavailable" : partial ? "partially_restorable" : "healthy",
-      );
+      setRestorationStatus(status);
+      restorationBaseline.current = { status, messages: uniqueMessages };
       setSavedEntry(entry);
       setSavedPairReplaced(pairReplaced);
       setRestorationReportPending(!pairReplaced);
       setMappingNotices([]);
       setPlaybackTarget(null);
       setSaveMessage(null);
-      setSideStatus({ left: "loading", right: "loading" });
+      sideStatusRef.current = { left: "loading", right: "loading" };
+      setSideStatus(sideStatusRef.current);
       setPhase("workspace");
       workspaceStartedAt.current = window.performance.now();
     },
@@ -311,17 +310,26 @@ export function WorldCompare({
     setSavedPairReplaced(false);
     setSaveMessage(null);
     setPhase("workspace");
-    setSideStatus({ left: "loading", right: "loading" });
+    sideStatusRef.current = { left: "loading", right: "loading" };
+    setSideStatus(sideStatusRef.current);
   }, [descriptor, leftSimulation, resumeExistingState, rightSimulation]);
 
   const handleFrameState = useCallback(
     (side: CompareSide, status: "loading" | "ready" | "error") => {
-      setSideStatus((current) => ({ ...current, [side]: status }));
+      const previous = sideStatusRef.current[side];
+      sideStatusRef.current = { ...sideStatusRef.current, [side]: status };
+      setSideStatus(sideStatusRef.current);
+      if (previous === "error" && status === "loading" && savedEntry && !savedPairReplaced) {
+        setRestorationStatus(restorationBaseline.current.status);
+        setRestorationMessages(restorationBaseline.current.messages);
+        setRestorationReportPending(true);
+        setSaveMessage(null);
+      }
       if (status === "error") {
         setPlaybackTarget((current) => (current === "linked" || current === side ? null : current));
       }
     },
-    [],
+    [savedEntry, savedPairReplaced],
   );
 
   useEffect(() => {
@@ -343,29 +351,53 @@ export function WorldCompare({
       !savedEntry ||
       !restorationReportPending ||
       savedPairReplaced ||
-      sideStatus.left !== "ready" ||
-      sideStatus.right !== "ready"
+      !["ready", "error"].includes(sideStatus.left) ||
+      !["ready", "error"].includes(sideStatus.right)
     ) {
       return;
     }
+    const failedSides = (["left", "right"] as CompareSide[]).filter(
+      (side) => sideStatus[side] === "error",
+    );
+    const sideFailureMessages = failedSides.map((side) => {
+      const simulation = side === "left" ? leftSimulation : rightSimulation;
+      return `${simulation?.display_name ?? side}: the current frame could not be loaded.`;
+    });
+    const terminalMessages = [
+      ...new Set([...restorationBaseline.current.messages, ...sideFailureMessages]),
+    ];
+    const terminalStatus =
+      failedSides.length === 2
+        ? "unavailable"
+        : failedSides.length === 1
+          ? "partially_restorable"
+          : restorationBaseline.current.status;
     const id = savedEntry.record.saved_comparison_id;
     setRestorationReportPending(false);
+    setRestorationStatus(terminalStatus);
+    setRestorationMessages(terminalMessages);
     void fetch(`/api/worlds/${worldSlug}/saved-comparisons/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        restoration_status: restorationStatus,
-        restoration_message: restorationMessages.join(" ") || null,
+        restoration_status: terminalStatus,
+        restoration_message: terminalMessages.join(" ") || null,
       }),
-    }).then((response) => {
-      if (!response.ok) {
+    })
+      .then((response) => {
+        if (!response.ok) {
+          setSaveMessage(
+            "The comparison opened, but its restoration status could not be recorded.",
+          );
+        }
+      })
+      .catch(() => {
         setSaveMessage("The comparison opened, but its restoration status could not be recorded.");
-      }
-    });
+      });
   }, [
-    restorationMessages,
     restorationReportPending,
-    restorationStatus,
+    leftSimulation,
+    rightSimulation,
     savedEntry,
     savedPairReplaced,
     sideStatus,
@@ -416,7 +448,7 @@ export function WorldCompare({
       setStates((current) => {
         if (!current) return current;
         const targetSide = otherSide(side);
-        const synchronized = synchronizeState(
+        const synchronized = synchronizeCompareState(
           descriptor,
           side,
           nextState,
@@ -437,7 +469,13 @@ export function WorldCompare({
   const applyAlignedPreset = useCallback(() => {
     if (!descriptor || !states) return;
     const nextLinks = alignedLinks(descriptor);
-    const synchronized = synchronizeState(descriptor, "left", states.left, states.right, nextLinks);
+    const synchronized = synchronizeCompareState(
+      descriptor,
+      "left",
+      states.left,
+      states.right,
+      nextLinks,
+    );
     setLinks(nextLinks);
     setStates({ left: states.left, right: synchronized.state });
     setMappingNotices(synchronized.notices);
@@ -455,7 +493,7 @@ export function WorldCompare({
       const nextLinks = { ...links, [key]: !links[key] };
       setLinks(nextLinks);
       if (nextLinks[key]) {
-        const synchronized = synchronizeState(
+        const synchronized = synchronizeCompareState(
           descriptor,
           "left",
           states.left,
@@ -790,7 +828,7 @@ export function WorldCompare({
           onStateChange={updateSideState}
           onStep={stepSide}
         />
-        <CompareTechnicalDetails performance={performance} descriptor={descriptor} />
+        <CompareTechnicalDetails performance={performance} />
       </section>
     </IntegratedExploreWorkspace>
   );
@@ -1546,8 +1584,7 @@ function supercellPlaneCoordinates(
         : simulation.grid.z_extent_km;
   const count =
     axis === "x" ? simulation.grid.nx : axis === "y" ? simulation.grid.ny : simulation.grid.nz;
-  const spacing = (extent[1] - extent[0]) / count;
-  return Array.from({ length: count }, (_, index) => extent[0] + (index + 0.5) * spacing);
+  return nativePlaneCoordinates(extent, count);
 }
 
 function nearestNumberIndex(values: number[], target: number): number {
@@ -1783,13 +1820,7 @@ function CompareContext({
   );
 }
 
-function CompareTechnicalDetails({
-  performance,
-  descriptor,
-}: {
-  performance: ComparePerformanceSummary;
-  descriptor: WorldCompareDescriptor;
-}) {
+function CompareTechnicalDetails({ performance }: { performance: ComparePerformanceSummary }) {
   const latestRequests = performance.samples.filter((sample) => !sample.cache_hit).slice(-2);
   return (
     <details className="compare-technical-details">
@@ -1834,7 +1865,7 @@ function CompareTechnicalDetails({
         </div>
         <div>
           <dt>Persistence</dt>
-          <dd>{descriptor.persistence.replaceAll("_", " ")}</dd>
+          <dd>Transient workspace; explicitly saved snapshots are durable.</dd>
         </div>
       </dl>
     </details>
@@ -1875,92 +1906,6 @@ function alignedLinks(descriptor: WorldCompareDescriptor): CompareLinkModes {
     camera: compatibility.camera_link_available,
     selection: compatibility.selection_link_available,
   };
-}
-
-function synchronizeState(
-  descriptor: WorldCompareDescriptor,
-  sourceSide: CompareSide,
-  source: ExploreWorldState,
-  target: ExploreWorldState,
-  links: CompareLinkModes,
-): { state: ExploreWorldState; notices: string[] } {
-  const adapter = WORLD_COMPARE_ADAPTERS[descriptor.world_id];
-  const targetSimulation = selectedSimulation(
-    descriptor,
-    sourceSide === "left"
-      ? descriptor.selected_right_simulation_id
-      : descriptor.selected_left_simulation_id,
-  );
-  const sourceSimulation = selectedSimulation(
-    descriptor,
-    sourceSide === "left"
-      ? descriptor.selected_left_simulation_id
-      : descriptor.selected_right_simulation_id,
-  );
-  if (!targetSimulation || !sourceSimulation || source.world_id !== target.world_id) {
-    return { state: target, notices: [] };
-  }
-  const notices: string[] = [];
-  let next = target;
-  if (links.time) {
-    const mapped = nearestCompareTime(
-      targetSimulation,
-      adapter.modelTime(source),
-      descriptor.compatibility?.time_tolerance_seconds ?? 0,
-    );
-    if (mapped) {
-      next = adapter.setModelTime(next, mapped.value);
-      if (mapped.message) notices.push(`${targetSimulation.display_name}: ${mapped.message}`);
-    } else {
-      notices.push(
-        `${targetSimulation.display_name}: no saved output is within the approved time tolerance.`,
-      );
-    }
-  }
-  if (links.view) {
-    const sourceView = adapter.viewId(source);
-    if (descriptor.compatibility?.shared_view_ids.includes(sourceView)) {
-      next = adapter.setView(next, sourceView);
-      const field = adapter.fieldId(source);
-      if (field && descriptor.compatibility.shared_field_ids.includes(field)) {
-        next = adapter.setField(next, field);
-      }
-    }
-  }
-  if (links.plane && isTradeState(source) && isTradeState(next)) {
-    next = {
-      ...next,
-      active_slice_plane: source.active_slice_plane,
-      slice_coordinate_km: source.slice_coordinate_km,
-      slice_native_index: source.slice_native_index,
-    };
-  }
-  if (links.plane && isSupercellsState(source) && isSupercellsState(next)) {
-    next = {
-      ...next,
-      evidence_view: source.evidence_view,
-      plane_coordinate_km: source.plane_coordinate_km,
-    };
-  }
-  if (links.camera) {
-    const preset = adapter.cameraPreset(source);
-    if (preset) {
-      const mapped = mapCamera(
-        preset,
-        adapter.cameraTransform(source),
-        sourceSimulation,
-        targetSimulation,
-      );
-      if (mapped) {
-        next = adapter.setCamera(next, mapped.preset, mapped.transform);
-        if (mapped.message) notices.push(mapped.message);
-      }
-    }
-  }
-  if (links.selection) {
-    next = adapter.setSelectedPoint(next, adapter.selectedPoint(source));
-  }
-  return { state: next, notices: [...new Set(notices)] };
 }
 
 async function initialCompareState(
@@ -2024,9 +1969,9 @@ function SavedComparisonRecovery({
         <p className="eyebrow">Saved Comparison unavailable</p>
         <h3 id="saved-recovery-title">{entry.record.title}</h3>
         <p>
-          The saved workspace is intact, but one or more retained Simulations are missing. Replace
-          them deliberately to inspect a transient pair; the original Saved Comparison will not be
-          changed.
+          The saved workspace is intact, but one or more retained Simulations cannot currently be
+          inspected. Replace them deliberately to inspect a transient pair; the original Saved
+          Comparison will not be changed.
         </p>
         {entry.record.scientific_question && (
           <p className="saved-recovery-question">
@@ -2043,7 +1988,12 @@ function SavedComparisonRecovery({
             <span>{dependency.side === "left" ? "Saved left" : "Saved right"}</span>
             <strong>{dependency.display_name}</strong>
             <span className={dependency.available ? "state-chip" : "compare-caveat-chip"}>
-              {dependency.available ? "Available" : "Missing"}
+              {dependencyAvailabilityLabel(dependency.availability_state)}
+            </span>
+            <span className="saved-recovery-dependency-detail">
+              {dependencyClassification(dependency)}
+              {" · "}
+              {dependency.availability_message}
             </span>
           </div>
         ))}
@@ -2075,6 +2025,27 @@ function SavedComparisonRecovery({
       </button>
     </section>
   );
+}
+
+function dependencyAvailabilityLabel(
+  state: SavedComparisonEntry["dependencies"][number]["availability_state"],
+): string {
+  if (state === "available") return "Available";
+  if (state === "missing") return "Missing";
+  if (state === "invalid") return "Invalid";
+  return "Not inspectable";
+}
+
+function dependencyClassification(
+  dependency: SavedComparisonEntry["dependencies"][number],
+): string {
+  const ownership =
+    dependency.ownership === "built_in"
+      ? "Built-in"
+      : dependency.ownership === "user_created"
+        ? "User-created"
+        : "Ownership unknown";
+  return dependency.protection_state === "protected" ? `${ownership}, protected` : ownership;
 }
 
 async function fetchCompareDescriptor(

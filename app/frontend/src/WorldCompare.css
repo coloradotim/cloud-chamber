@@ -79,6 +79,12 @@
   padding: 12px;
 }
 
+.saved-recovery-dependency-detail {
+  grid-column: 2 / -1;
+  color: var(--compare-muted);
+  font-size: 0.82rem;
+}
+
 .compare-pair-review {
   display: grid;
   gap: 16px;

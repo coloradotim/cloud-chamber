@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -74,12 +74,24 @@ const entry: SavedComparisonEntry = {
       simulation_id: workspace.left_simulation_id,
       display_name: "Canonical BOMEX Baseline",
       available: true,
+      availability_state: "available",
+      availability_message: "Simulation output is available for inspection.",
+      role: "reference",
+      ownership: "built_in",
+      protection_state: "protected",
+      repairability_state: "unknown",
     },
     {
       side: "right",
       simulation_id: workspace.right_simulation_id,
       display_name: "More Moisture",
       available: true,
+      availability_state: "available",
+      availability_message: "Simulation output is available for inspection.",
+      role: "variation",
+      ownership: "built_in",
+      protection_state: "protected",
+      repairability_state: "unknown",
     },
   ],
   effective_restoration_status: "healthy",
@@ -121,6 +133,57 @@ describe("Saved Comparisons", () => {
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "No Saved Comparisons yet" })).toBeVisible(),
     );
+  });
+
+  it("keeps the collection ordered by most recently updated after an edit", async () => {
+    const older = {
+      ...entry,
+      record: {
+        ...entry.record,
+        saved_comparison_id: "b".repeat(32),
+        title: "Older examination",
+        updated_at: "2026-07-27T11:00:00Z",
+      },
+    };
+    const newer = {
+      ...entry,
+      record: {
+        ...entry.record,
+        saved_comparison_id: "c".repeat(32),
+        title: "Newer examination",
+        updated_at: "2026-07-27T13:00:00Z",
+      },
+    };
+    const edited = {
+      ...older,
+      record: {
+        ...older.record,
+        title: "Recently edited examination",
+        updated_at: "2026-07-27T14:00:00Z",
+      },
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(ok({ world_id: "trade_cumulus", saved_comparisons: [older, newer] }))
+      .mockResolvedValueOnce(ok(edited));
+    render(<SavedComparisonsCollection worldSlug="trade-cumulus" onOpen={vi.fn()} />);
+
+    await screen.findByRole("heading", { name: "Newer examination" });
+    expect(
+      screen.getAllByRole("heading", { level: 4 }).map((heading) => heading.textContent),
+    ).toEqual(["Newer examination", "Older examination"]);
+
+    const olderRow = screen.getByRole("heading", { name: "Older examination" }).closest("article");
+    expect(olderRow).not.toBeNull();
+    fireEvent.click(within(olderRow!).getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "Recently edited examination" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save details" }));
+
+    await screen.findByRole("heading", { name: "Recently edited examination" });
+    expect(
+      screen.getAllByRole("heading", { level: 4 }).map((heading) => heading.textContent),
+    ).toEqual(["Recently edited examination", "Newer examination"]);
   });
 
   it("creates a new immutable snapshot from a coherent workspace", async () => {

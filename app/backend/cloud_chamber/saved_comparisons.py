@@ -6,7 +6,7 @@ import json
 import math
 import os
 import re
-from collections.abc import Callable
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
@@ -43,6 +43,10 @@ _LOCK = RLock()
 WorldId = Literal["trade_cumulus", "mountain_waves", "supercells"]
 RestorationStatus = Literal["healthy", "partially_restorable", "unavailable"]
 CompareSide = Literal["left", "right"]
+DependencyAvailabilityState = Literal["available", "missing", "invalid", "unavailable"]
+DependencyOwnership = Literal["built_in", "user_created", "unknown"]
+DependencyProtectionState = Literal["protected", "ordinary", "unknown"]
+DependencyRepairabilityState = Literal["repairable", "not_repairable", "unknown"]
 
 
 class SavedComparisonError(ValueError):
@@ -183,6 +187,30 @@ class SavedComparisonDependency(BaseModel):
     simulation_id: str
     display_name: str
     available: bool
+    availability_state: DependencyAvailabilityState
+    availability_message: str = Field(min_length=1, max_length=1_000)
+    role: str | None = Field(default=None, max_length=80)
+    ownership: DependencyOwnership = "unknown"
+    protection_state: DependencyProtectionState = "unknown"
+    repairability_state: DependencyRepairabilityState = "unknown"
+
+
+class CurrentSimulationDependency(BaseModel):
+    """Current World inventory state kept separate from captured comparison history."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    simulation_id: str
+    availability_state: DependencyAvailabilityState
+    availability_message: str = Field(min_length=1, max_length=1_000)
+    role: str | None = Field(default=None, max_length=80)
+    ownership: DependencyOwnership = "unknown"
+    protection_state: DependencyProtectionState = "unknown"
+    repairability_state: DependencyRepairabilityState = "unknown"
+
+    @property
+    def available(self) -> bool:
+        return self.availability_state == "available"
 
 
 class SavedComparisonEntry(BaseModel):
@@ -210,7 +238,7 @@ class SavedComparisonDependent(BaseModel):
     side: CompareSide
 
 
-SimulationExists = Callable[[str, str], bool]
+SimulationDependencyInventory = Mapping[str, CurrentSimulationDependency]
 
 
 def load_saved_comparison_library(
@@ -257,13 +285,13 @@ def list_saved_comparisons(
     settings: CloudChamberSettings,
     *,
     world_id: str,
-    simulation_exists: SimulationExists,
+    simulation_inventory: SimulationDependencyInventory,
 ) -> SavedComparisonLibraryResponse:
     library = load_saved_comparison_library(settings, world_id=world_id)
     return SavedComparisonLibraryResponse(
         world_id=library.world_id,
         saved_comparisons=[
-            _entry(record, simulation_exists=simulation_exists)
+            _entry(record, simulation_inventory=simulation_inventory)
             for record in sorted(
                 library.saved_comparisons,
                 key=lambda item: item.updated_at,
@@ -278,7 +306,7 @@ def get_saved_comparison(
     *,
     world_id: str,
     saved_comparison_id: str,
-    simulation_exists: SimulationExists,
+    simulation_inventory: SimulationDependencyInventory,
 ) -> SavedComparisonEntry:
     _validate_record_id(saved_comparison_id)
     library = load_saved_comparison_library(settings, world_id=world_id)
@@ -292,7 +320,7 @@ def get_saved_comparison(
     )
     if record is None:
         raise SavedComparisonError("Saved Comparison not found.")
-    return _entry(record, simulation_exists=simulation_exists)
+    return _entry(record, simulation_inventory=simulation_inventory)
 
 
 def create_saved_comparison(
@@ -301,7 +329,7 @@ def create_saved_comparison(
     world_id: str,
     request: SavedComparisonCreate,
     captured_pair: CapturedPairSummary,
-    simulation_exists: SimulationExists,
+    simulation_inventory: SimulationDependencyInventory,
 ) -> SavedComparisonEntry:
     canonical_world_id = _validate_world_id(world_id)
     if request.workspace.world_id != canonical_world_id:
@@ -310,9 +338,10 @@ def create_saved_comparison(
         request.workspace.left_simulation_id,
         request.workspace.right_simulation_id,
     ):
-        if not simulation_exists(canonical_world_id, simulation_id):
+        dependency = simulation_inventory.get(simulation_id)
+        if dependency is None or not dependency.available:
             raise SavedComparisonError(
-                "Both Simulations must be available when a comparison is saved."
+                "Both Simulations must have inspectable retained output when a comparison is saved."
             )
     with _LOCK:
         library = load_saved_comparison_library(settings, world_id=canonical_world_id)
@@ -336,7 +365,7 @@ def create_saved_comparison(
         )
         library.saved_comparisons.append(record)
         _write_library(settings, library)
-        return _entry(record, simulation_exists=simulation_exists)
+        return _entry(record, simulation_inventory=simulation_inventory)
 
 
 def update_saved_comparison(
@@ -345,7 +374,7 @@ def update_saved_comparison(
     world_id: str,
     saved_comparison_id: str,
     request: SavedComparisonUpdate,
-    simulation_exists: SimulationExists,
+    simulation_inventory: SimulationDependencyInventory,
 ) -> SavedComparisonEntry:
     _validate_record_id(saved_comparison_id)
     with _LOCK:
@@ -376,7 +405,7 @@ def update_saved_comparison(
             for item in library.saved_comparisons
         ]
         _write_library(settings, library)
-        return _entry(updated, simulation_exists=simulation_exists)
+        return _entry(updated, simulation_inventory=simulation_inventory)
 
 
 def delete_saved_comparison(
@@ -447,33 +476,30 @@ def captured_pair_summary_from_descriptor(descriptor: Any) -> CapturedPairSummar
 def _entry(
     record: SavedComparisonRecord,
     *,
-    simulation_exists: SimulationExists,
+    simulation_inventory: SimulationDependencyInventory,
 ) -> SavedComparisonEntry:
     dependencies = [
-        SavedComparisonDependency(
+        _dependency(
             side="left",
             simulation_id=record.workspace.left_simulation_id,
             display_name=record.captured_pair.left_display_name,
-            available=simulation_exists(
-                record.workspace.world_id,
-                record.workspace.left_simulation_id,
-            ),
+            simulation_inventory=simulation_inventory,
         ),
-        SavedComparisonDependency(
+        _dependency(
             side="right",
             simulation_id=record.workspace.right_simulation_id,
             display_name=record.captured_pair.right_display_name,
-            available=simulation_exists(
-                record.workspace.world_id,
-                record.workspace.right_simulation_id,
-            ),
+            simulation_inventory=simulation_inventory,
         ),
     ]
-    missing = [item.display_name for item in dependencies if not item.available]
+    unavailable = [item for item in dependencies if not item.available]
     message: str | None
-    if missing:
+    if unavailable:
         status: RestorationStatus = "unavailable"
-        message = f"Missing retained Simulation: {', '.join(missing)}."
+        details = "; ".join(
+            f"{item.display_name}: {item.availability_message}" for item in unavailable
+        )
+        message = f"Current retained Simulation dependencies are unavailable. {details}"
     else:
         status = record.restoration_status
         message = record.restoration_message
@@ -482,6 +508,34 @@ def _entry(
         dependencies=dependencies,
         effective_restoration_status=status,
         effective_restoration_message=message,
+    )
+
+
+def _dependency(
+    *,
+    side: CompareSide,
+    simulation_id: str,
+    display_name: str,
+    simulation_inventory: SimulationDependencyInventory,
+) -> SavedComparisonDependency:
+    current = simulation_inventory.get(simulation_id)
+    if current is None:
+        current = CurrentSimulationDependency(
+            simulation_id=simulation_id,
+            availability_state="missing",
+            availability_message="Simulation is not present in the current World inventory.",
+        )
+    return SavedComparisonDependency(
+        side=side,
+        simulation_id=simulation_id,
+        display_name=display_name,
+        available=current.available,
+        availability_state=current.availability_state,
+        availability_message=current.availability_message,
+        role=current.role,
+        ownership=current.ownership,
+        protection_state=current.protection_state,
+        repairability_state=current.repairability_state,
     )
 
 

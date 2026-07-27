@@ -7,13 +7,15 @@ import type {
 } from "./ExploreStatePersistence";
 import {
   mapCamera,
+  nativePlaneCoordinates,
   nearestCompareTime,
+  reconcileSavedComparePair,
   reconcileSavedCompareState,
   timeIndexForSeconds,
   validateWorldCompareDescriptor,
   WORLD_COMPARE_ADAPTERS,
 } from "./WorldCompare.logic";
-import type { CompareSimulationDescriptor } from "./WorldCompare.types";
+import type { CompareSimulationDescriptor, WorldCompareDescriptor } from "./WorldCompare.types";
 
 const commonState = {
   state_version: 1 as const,
@@ -31,7 +33,7 @@ const tradeState: TradeCumulusExploreState = {
   slice_field_id: "ql",
   fixed_scale_id: null,
   active_slice_plane: "vertical_x",
-  slice_coordinate_km: 1,
+  slice_coordinate_km: 0.9666666666666668,
   slice_native_index: 62,
   horizontal_slice_coordinate_km: 1,
   threshold_native: 1e-6,
@@ -76,7 +78,7 @@ const supercellsState: SupercellsExploreState = {
   lens_id: "rotating_updraft",
   viewport_id: "storm",
   evidence_view: "xz",
-  plane_coordinate_km: -8,
+  plane_coordinate_km: -8.25,
   visible_layer_ids: ["vertical_motion"],
   fixed_scale_ids: ["supercells_vertical_velocity_v1"],
   overlays: {
@@ -271,7 +273,7 @@ describe("World Compare adapter logic", () => {
     expect((restored.state as TradeCumulusExploreState).fixed_scale_id).toBeNull();
     expect((restored.state as TradeCumulusExploreState).camera_transform).toBeNull();
     expect(restored.state).toMatchObject({
-      slice_coordinate_km: 3.2,
+      slice_coordinate_km: 3.166666666666666,
       slice_native_index: 95,
     });
     expect(restored.messages).toEqual(
@@ -294,10 +296,241 @@ describe("World Compare adapter logic", () => {
       30,
     );
     expect(viewFallback.status).toBe("partially_restorable");
-    expect(viewFallback.state).toMatchObject({ view_id: "field" });
+    expect(viewFallback.state).toMatchObject({
+      view_id: "field",
+      layer_opacity: tradeState.layer_opacity,
+      point_size_px: tradeState.point_size_px,
+      playback_speed: tradeState.playback_speed,
+    });
     expect(viewFallback.messages).toContain(
       "The saved view is unavailable; the current default view is shown.",
     );
+  });
+
+  it("uses x-z-y camera axes when validating asymmetric domains", () => {
+    const valid = reconcileSavedCompareState(
+      {
+        ...tradeState,
+        camera_transform: {
+          position: [4, 4, 4],
+          target: [0, 2.5, 3],
+          up: [0, 1, 0],
+        },
+      },
+      simulation(),
+      30,
+    );
+    expect((valid.state as TradeCumulusExploreState).camera_transform).not.toBeNull();
+
+    const invalid = reconcileSavedCompareState(
+      {
+        ...tradeState,
+        camera_transform: {
+          position: [4, 4, 4],
+          target: [0, 3.1, 0],
+          up: [0, 1, 0],
+        },
+      },
+      simulation(),
+      30,
+    );
+    expect((invalid.state as TradeCumulusExploreState).camera_transform).toBeNull();
+    expect(invalid.messages).toContain(
+      "The saved camera target is outside the current domain and was reset.",
+    );
+  });
+
+  it("restores only links that remain coherent with current pair capabilities", () => {
+    const left = simulation({ simulation_id: "left" });
+    const right = simulation({
+      simulation_id: "right",
+      display_name: "Right",
+      time: {
+        times_seconds: [0, 100, 200],
+        start_seconds: 0,
+        end_seconds: 200,
+        cadence_seconds: 100,
+        saved_output_count: 3,
+        interpolation_allowed: false,
+      },
+    });
+    const descriptor: WorldCompareDescriptor = {
+      schema_version: "world_compare_v1",
+      world_id: "trade_cumulus",
+      display_name: "Trade Cumulus",
+      simulations: [left, right],
+      default_left_simulation_id: "left",
+      default_right_simulation_id: "right",
+      selected_left_simulation_id: "left",
+      selected_right_simulation_id: "right",
+      material_differences: [],
+      compatibility: {
+        same_world: true,
+        both_inspectable: true,
+        relationship: "Test pair",
+        controlled_pair: true,
+        controlled_pair_message: "Controlled.",
+        shared_field_ids: ["ql", "w"],
+        shared_view_ids: ["field", "updraft_lens"],
+        shared_fixed_scale_ids: ["trade_cumulus_updraft_velocity_v1"],
+        exact_time_link_available: false,
+        nearest_time_link_available: true,
+        time_tolerance_seconds: 30,
+        physical_plane_link_available: false,
+        camera_link_available: false,
+        selection_link_available: true,
+        blockers: [],
+      },
+      no_second_simulation_message: null,
+      persistence: "transient_only",
+    };
+    const restored = reconcileSavedComparePair(
+      {
+        left: { ...tradeState, model_time_seconds: 120 },
+        right: { ...tradeState, model_time_seconds: 120 },
+      },
+      { time: true, view: true, plane: true, camera: true, selection: false },
+      descriptor,
+    );
+
+    expect(restored.links).toEqual({
+      time: true,
+      view: true,
+      plane: false,
+      camera: false,
+      selection: false,
+    });
+    expect(restored.states.right.model_time_seconds).toBe(100);
+    expect(restored.messages).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Slice plane linkage is no longer available"),
+        expect.stringContaining("Camera linkage is no longer available"),
+        expect.stringContaining("nearest saved output"),
+      ]),
+    );
+  });
+
+  it("turns off ambiguous one-sided saved selection without erasing either side", () => {
+    const left = simulation({ simulation_id: "left" });
+    const right = simulation({ simulation_id: "right", display_name: "Right" });
+    const descriptor: WorldCompareDescriptor = {
+      schema_version: "world_compare_v1",
+      world_id: "trade_cumulus",
+      display_name: "Trade Cumulus",
+      simulations: [left, right],
+      default_left_simulation_id: "left",
+      default_right_simulation_id: "right",
+      selected_left_simulation_id: "left",
+      selected_right_simulation_id: "right",
+      material_differences: [],
+      compatibility: {
+        same_world: true,
+        both_inspectable: true,
+        relationship: "Test pair",
+        controlled_pair: true,
+        controlled_pair_message: "Controlled.",
+        shared_field_ids: ["ql", "w"],
+        shared_view_ids: ["field", "updraft_lens"],
+        shared_fixed_scale_ids: ["trade_cumulus_updraft_velocity_v1"],
+        exact_time_link_available: true,
+        nearest_time_link_available: true,
+        time_tolerance_seconds: 30,
+        physical_plane_link_available: true,
+        camera_link_available: true,
+        selection_link_available: true,
+        blockers: [],
+      },
+      no_second_simulation_message: null,
+      persistence: "transient_only",
+    };
+    const rightPoint = { x_km: 1, y_km: 1, z_km: 1 };
+    const restored = reconcileSavedComparePair(
+      {
+        left: { ...tradeState, selected_point: null },
+        right: { ...tradeState, selected_point: rightPoint },
+      },
+      { time: false, view: false, plane: false, camera: false, selection: true },
+      descriptor,
+    );
+
+    expect(restored.links.selection).toBe(false);
+    expect(restored.states.left.selected_point).toBeNull();
+    expect(restored.states.right.selected_point).toEqual(rightPoint);
+    expect(restored.messages).toContain(
+      "Selection linkage could not be restored coherently and was turned off.",
+    );
+  });
+
+  it("falls back a retired Lens without discarding compatible side state", () => {
+    const left = simulation({ simulation_id: "left" });
+    const right = simulation({
+      simulation_id: "right",
+      display_name: "Right",
+      available_view_ids: ["field"],
+    });
+    const descriptor: WorldCompareDescriptor = {
+      schema_version: "world_compare_v1",
+      world_id: "trade_cumulus",
+      display_name: "Trade Cumulus",
+      simulations: [left, right],
+      default_left_simulation_id: "left",
+      default_right_simulation_id: "right",
+      selected_left_simulation_id: "left",
+      selected_right_simulation_id: "right",
+      material_differences: [],
+      compatibility: {
+        same_world: true,
+        both_inspectable: true,
+        relationship: "Test pair",
+        controlled_pair: true,
+        controlled_pair_message: "Controlled.",
+        shared_field_ids: ["ql"],
+        shared_view_ids: ["field"],
+        shared_fixed_scale_ids: [],
+        exact_time_link_available: true,
+        nearest_time_link_available: true,
+        time_tolerance_seconds: 30,
+        physical_plane_link_available: true,
+        camera_link_available: true,
+        selection_link_available: true,
+        blockers: [],
+      },
+      no_second_simulation_message: null,
+      persistence: "transient_only",
+    };
+    const savedLensState: TradeCumulusExploreState = {
+      ...tradeState,
+      view_id: "updraft_lens",
+      slice_field_id: "w",
+      layer_opacity: 0.42,
+      point_size_px: 7,
+    };
+    const restored = reconcileSavedComparePair(
+      { left: savedLensState, right: savedLensState },
+      { time: false, view: true, plane: false, camera: false, selection: false },
+      descriptor,
+    );
+
+    expect(restored.links.view).toBe(false);
+    expect((restored.states.left as TradeCumulusExploreState).view_id).toBe("updraft_lens");
+    expect(restored.states.right).toMatchObject({
+      view_id: "field",
+      layer_opacity: 0.42,
+      point_size_px: 7,
+    });
+    expect(restored.messages).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("saved view is unavailable"),
+        expect.stringContaining("Field / Lens linkage could not be restored"),
+      ]),
+    );
+  });
+
+  it("maps plane coordinates to actual current cell centers", () => {
+    const coordinates = nativePlaneCoordinates([-3.2, 3.2], 96);
+    expect(coordinates).toHaveLength(96);
+    expect(coordinates[0]).toBeCloseTo(-3.1666666667);
+    expect(coordinates[95]).toBeCloseTo(3.1666666667);
   });
 
   it("restores exact saved state through each World adapter", () => {
@@ -373,6 +606,17 @@ describe("World Compare adapter logic", () => {
       messages: [],
     });
     expect(reconcileSavedCompareState(supercellsState, supercellsSimulation, 60)).toEqual({
+      state: supercellsState,
+      status: "healthy",
+      messages: [],
+    });
+    expect(
+      reconcileSavedCompareState(
+        { ...supercellsState, plane_coordinate_km: -8.2500003 },
+        supercellsSimulation,
+        60,
+      ),
+    ).toEqual({
       state: supercellsState,
       status: "healthy",
       messages: [],

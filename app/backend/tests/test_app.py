@@ -29,7 +29,10 @@ from cloud_chamber.run_manifest import (
     load_run_manifest,
     write_run_manifest,
 )
-from cloud_chamber.saved_comparisons import CapturedPairSummary
+from cloud_chamber.saved_comparisons import (
+    CapturedPairSummary,
+    CurrentSimulationDependency,
+)
 from cloud_chamber.trade_cumulus_comparison_story import (
     TradeCumulusComparisonStoryConflict,
     TradeCumulusComparisonStoryNotFound,
@@ -243,13 +246,41 @@ def test_saved_comparison_api_supports_world_owned_crud_and_dependencies(
         "trade_cumulus_canonical_bomex",
         "trade_cumulus_more_moisture",
     }
+
+    def dependency_inventory(
+        *_args: object,
+        **_kwargs: object,
+    ) -> dict[str, CurrentSimulationDependency]:
+        return {
+            simulation_id: CurrentSimulationDependency(
+                simulation_id=simulation_id,
+                availability_state=("available" if simulation_id in available else "missing"),
+                availability_message=(
+                    "Simulation output is available for inspection."
+                    if simulation_id in available
+                    else "Simulation model output is not installed."
+                ),
+                role="reference" if "canonical" in simulation_id else "variation",
+                ownership="built_in",
+                protection_state="protected",
+            )
+            for simulation_id in {
+                "trade_cumulus_canonical_bomex",
+                "trade_cumulus_more_moisture",
+            }
+        }
+
     monkeypatch.setattr(
         "cloud_chamber.app.load_settings",
         lambda: SimpleNamespace(runtime_home=tmp_path),
     )
     monkeypatch.setattr(
-        "cloud_chamber.app._saved_comparison_simulation_exists",
-        lambda _world, simulation, **_kwargs: simulation in available,
+        "cloud_chamber.app._saved_comparison_simulation_inventory",
+        dependency_inventory,
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.app._saved_comparison_inventory_from_descriptor",
+        dependency_inventory,
     )
     monkeypatch.setattr(
         "cloud_chamber.app.world_compare_descriptor", lambda *_args, **_kwargs: object()
@@ -324,6 +355,8 @@ def test_saved_comparison_api_supports_world_owned_crud_and_dependencies(
     assert dependents.json()[0]["side"] == "right"
     assert missing.json()["effective_restoration_status"] == "unavailable"
     assert missing.json()["dependencies"][1]["available"] is False
+    assert missing.json()["dependencies"][1]["availability_state"] == "missing"
+    assert missing.json()["dependencies"][1]["ownership"] == "built_in"
     assert deleted.status_code == 204
     assert client.get(root).json()["saved_comparisons"] == []
 

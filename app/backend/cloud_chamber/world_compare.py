@@ -141,7 +141,7 @@ class WorldCompareDescriptor(BaseModel):
     material_differences: list[CompareDifference]
     compatibility: CompareCompatibility | None
     no_second_simulation_message: str | None = None
-    persistence: Literal["saved_comparisons"] = "saved_comparisons"
+    persistence: Literal["transient_only"] = "transient_only"
 
 
 def world_compare_descriptor(

@@ -9,6 +9,7 @@ from cloud_chamber.explore_state import TradeCumulusExploreState
 from cloud_chamber.saved_comparisons import (
     CapturedComparisonDifference,
     CapturedPairSummary,
+    CurrentSimulationDependency,
     SavedCompareLinkModes,
     SavedComparisonCreate,
     SavedComparisonError,
@@ -79,8 +80,21 @@ def captured_pair() -> CapturedPairSummary:
     )
 
 
-def all_exist(_world_id: str, _simulation_id: str) -> bool:
-    return True
+def all_available() -> dict[str, CurrentSimulationDependency]:
+    return {
+        simulation_id: CurrentSimulationDependency(
+            simulation_id=simulation_id,
+            availability_state="available",
+            availability_message="Simulation output is available for inspection.",
+            role="reference" if "canonical" in simulation_id else "variation",
+            ownership="built_in",
+            protection_state="protected",
+        )
+        for simulation_id in (
+            "trade_cumulus_canonical_bomex",
+            "trade_cumulus_more_moisture",
+        )
+    }
 
 
 def test_saved_comparison_crud_preserves_immutable_workspace(tmp_path: Path) -> None:
@@ -94,7 +108,7 @@ def test_saved_comparison_crud_preserves_immutable_workspace(tmp_path: Path) -> 
             workspace=workspace(),
         ),
         captured_pair=captured_pair(),
-        simulation_exists=all_exist,
+        simulation_inventory=all_available(),
     )
 
     assert created.record.title == "Moisture response"
@@ -111,7 +125,7 @@ def test_saved_comparison_crud_preserves_immutable_workspace(tmp_path: Path) -> 
             restoration_status="partially_restorable",
             restoration_message="Mapped to the nearest retained output.",
         ),
-        simulation_exists=all_exist,
+        simulation_inventory=all_available(),
     )
 
     assert updated.record.title == "Moisture pulse"
@@ -121,7 +135,7 @@ def test_saved_comparison_crud_preserves_immutable_workspace(tmp_path: Path) -> 
         settings,
         world_id="trade_cumulus",
         saved_comparison_id=created.record.saved_comparison_id,
-        simulation_exists=all_exist,
+        simulation_inventory=all_available(),
     )
     assert loaded == updated
 
@@ -134,7 +148,7 @@ def test_saved_comparison_crud_preserves_immutable_workspace(tmp_path: Path) -> 
         list_saved_comparisons(
             settings,
             world_id="trade_cumulus",
-            simulation_exists=all_exist,
+            simulation_inventory=all_available(),
         ).saved_comparisons
         == []
     )
@@ -150,13 +164,23 @@ def test_missing_dependency_keeps_record_visible_and_marks_it_unavailable(
         world_id="trade_cumulus",
         request=SavedComparisonCreate(title="Missing side", workspace=workspace()),
         captured_pair=captured_pair(),
-        simulation_exists=all_exist,
+        simulation_inventory=all_available(),
     )
 
     response = list_saved_comparisons(
         settings,
         world_id="trade_cumulus",
-        simulation_exists=lambda _world, simulation: simulation != "trade_cumulus_more_moisture",
+        simulation_inventory={
+            "trade_cumulus_canonical_bomex": all_available()["trade_cumulus_canonical_bomex"],
+            "trade_cumulus_more_moisture": CurrentSimulationDependency(
+                simulation_id="trade_cumulus_more_moisture",
+                availability_state="missing",
+                availability_message="Simulation model output is not installed.",
+                role="variation",
+                ownership="built_in",
+                protection_state="protected",
+            ),
+        },
     )
 
     assert len(response.saved_comparisons) == 1
@@ -164,6 +188,9 @@ def test_missing_dependency_keeps_record_visible_and_marks_it_unavailable(
     assert entry.record.saved_comparison_id == created.record.saved_comparison_id
     assert entry.effective_restoration_status == "unavailable"
     assert entry.dependencies[1].available is False
+    assert entry.dependencies[1].availability_state == "missing"
+    assert entry.dependencies[1].ownership == "built_in"
+    assert entry.dependencies[1].protection_state == "protected"
     assert "More Moisture" in (entry.effective_restoration_message or "")
 
 
@@ -174,7 +201,7 @@ def test_reverse_dependency_lookup_reports_each_side(tmp_path: Path) -> None:
         world_id="trade_cumulus",
         request=SavedComparisonCreate(title="Dependency lookup", workspace=workspace()),
         captured_pair=captured_pair(),
-        simulation_exists=all_exist,
+        simulation_inventory=all_available(),
     )
 
     right_dependents = saved_comparison_dependents(
@@ -235,7 +262,7 @@ def test_saved_comparison_rejects_unknown_schema_without_rewriting(
         list_saved_comparisons(
             settings,
             world_id="trade_cumulus",
-            simulation_exists=all_exist,
+            simulation_inventory=all_available(),
         )
 
     assert json.loads(path.read_text())["schema_version"] == 99
@@ -307,7 +334,7 @@ def test_record_count_and_file_size_are_bounded(
         world_id="trade_cumulus",
         request=SavedComparisonCreate(title="First", workspace=workspace()),
         captured_pair=captured_pair(),
-        simulation_exists=all_exist,
+        simulation_inventory=all_available(),
     )
     with pytest.raises(SavedComparisonError, match="at most 1"):
         create_saved_comparison(
@@ -315,7 +342,7 @@ def test_record_count_and_file_size_are_bounded(
             world_id="trade_cumulus",
             request=SavedComparisonCreate(title="Second", workspace=workspace()),
             captured_pair=captured_pair(),
-            simulation_exists=all_exist,
+            simulation_inventory=all_available(),
         )
 
     path = tmp_path / "saved-comparisons" / "mountain_waves.json"
@@ -329,7 +356,7 @@ def test_record_count_and_file_size_are_bounded(
         list_saved_comparisons(
             settings,
             world_id="mountain_waves",
-            simulation_exists=all_exist,
+            simulation_inventory=all_available(),
         )
 
 
@@ -343,7 +370,7 @@ def test_atomic_write_failure_preserves_existing_library(
         world_id="trade_cumulus",
         request=SavedComparisonCreate(title="Original", workspace=workspace()),
         captured_pair=captured_pair(),
-        simulation_exists=all_exist,
+        simulation_inventory=all_available(),
     )
     path = tmp_path / "saved-comparisons" / "trade_cumulus.json"
     original = path.read_bytes()
@@ -361,7 +388,7 @@ def test_atomic_write_failure_preserves_existing_library(
             world_id="trade_cumulus",
             saved_comparison_id=created.record.saved_comparison_id,
             request=SavedComparisonUpdate(title="Not persisted"),
-            simulation_exists=all_exist,
+            simulation_inventory=all_available(),
         )
 
     assert path.read_bytes() == original

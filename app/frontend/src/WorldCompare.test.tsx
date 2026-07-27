@@ -45,7 +45,8 @@ vi.mock("./WorldCompareAdapters", async (importOriginal) => {
       presentation: "scene" | "evidence";
       onPresentationChange: (side: "left" | "right", presentation: "scene" | "evidence") => void;
     }) => {
-      const failed = props.simulation.simulation_id.endsWith("-failed");
+      const startsFailed = props.simulation.simulation_id.endsWith("-failed");
+      const [failed, setFailed] = useState(startsFailed);
       const startsPending = props.simulation.simulation_id.endsWith("-pending");
       const [pending, setPending] = useState(startsPending);
       const { onFrameState, onPerformance, side } = props;
@@ -83,7 +84,15 @@ vi.mock("./WorldCompareAdapters", async (importOriginal) => {
         return (
           <section role="alert" aria-label={`${props.simulation.display_name} frame failure`}>
             This side failed without removing its partner.
-            <button type="button">Retry failed side</button>
+            <button
+              type="button"
+              onClick={() => {
+                onFrameState(side, "loading");
+                setFailed(false);
+              }}
+            >
+              Retry failed side
+            </button>
           </section>
         );
       }
@@ -218,8 +227,8 @@ function tradeState(modelTimeSeconds: number): TradeCumulusExploreState {
     slice_field_id: "w",
     fixed_scale_id: "trade_cumulus_updraft_velocity_v1",
     active_slice_plane: "vertical_x",
-    slice_coordinate_km: 1,
-    slice_native_index: 50,
+    slice_coordinate_km: 0.9666666666666668,
+    slice_native_index: 62,
     horizontal_slice_coordinate_km: 1,
     threshold_native: 1e-6,
     layer_opacity: 0.68,
@@ -333,18 +342,20 @@ function tradeDescriptor(
       blockers: [],
     },
     no_second_simulation_message: null,
-    persistence: "saved_comparisons",
+    persistence: "transient_only",
   };
 }
 
 function savedTradeEntry({
   leftAvailable = true,
   rightAvailable = true,
+  leftSimulationId = "baseline",
   rightSimulationId = "moisture",
   relationship,
 }: {
   leftAvailable?: boolean;
   rightAvailable?: boolean;
+  leftSimulationId?: string;
   rightSimulationId?: string;
   relationship?: string;
 } = {}): SavedComparisonEntry {
@@ -369,7 +380,7 @@ function savedTradeEntry({
       workspace: {
         schema_version: 1,
         world_id: "trade_cumulus",
-        left_simulation_id: "baseline",
+        left_simulation_id: leftSimulationId,
         right_simulation_id: rightSimulationId,
         left_state: tradeState(60),
         right_state: tradeState(120),
@@ -381,15 +392,31 @@ function savedTradeEntry({
     dependencies: [
       {
         side: "left",
-        simulation_id: "baseline",
+        simulation_id: leftSimulationId,
         display_name: "Canonical BOMEX Baseline",
         available: leftAvailable,
+        availability_state: leftAvailable ? "available" : "missing",
+        availability_message: leftAvailable
+          ? "Simulation output is available for inspection."
+          : "Simulation model output is not installed.",
+        role: "reference",
+        ownership: "built_in",
+        protection_state: "protected",
+        repairability_state: "unknown",
       },
       {
         side: "right",
         simulation_id: rightSimulationId,
         display_name: "More Moisture",
         available: rightAvailable,
+        availability_state: rightAvailable ? "available" : "missing",
+        availability_message: rightAvailable
+          ? "Simulation output is available for inspection."
+          : "Simulation model output is not installed.",
+        role: "variation",
+        ownership: "built_in",
+        protection_state: "protected",
+        repairability_state: "unknown",
       },
     ],
     effective_restoration_status: leftAvailable && rightAvailable ? "healthy" : "unavailable",
@@ -513,7 +540,7 @@ function mountainDescriptor(): WorldCompareDescriptor {
       blockers: [],
     },
     no_second_simulation_message: null,
-    persistence: "saved_comparisons",
+    persistence: "transient_only",
   };
 }
 
@@ -647,7 +674,7 @@ function supercellsFixtureDescriptor(): WorldCompareDescriptor {
       blockers: [],
     },
     no_second_simulation_message: null,
-    persistence: "saved_comparisons",
+    persistence: "transient_only",
   };
 }
 
@@ -780,7 +807,7 @@ describe("WorldCompare", () => {
     await waitFor(() =>
       expect(
         screen.getByLabelText("Straight-Line Hodograph Supercell test frame"),
-      ).toHaveTextContent("xz at -10 km"),
+      ).toHaveTextContent("xz at -10.25 km"),
     );
     fireEvent.click(
       within(leftSide).getByRole("button", { name: "Move Quarter-Circle Supercell camera" }),
@@ -807,7 +834,9 @@ describe("WorldCompare", () => {
 
     fireEvent.click(screen.getByText("Compare technical details", { exact: true }));
     expect(screen.getByText(/right: 12 ms, 1.0 KB/)).toBeVisible();
-    expect(screen.getByText("saved comparisons")).toBeVisible();
+    expect(
+      screen.getByText("Transient workspace; explicitly saved snapshots are durable."),
+    ).toBeVisible();
   });
 
   it("moves a Supercells section without creating selected evidence", async () => {
@@ -942,7 +971,7 @@ describe("WorldCompare", () => {
           compatibility: null,
           no_second_simulation_message:
             "Supercells currently has one retained Simulation; it is not cloned.",
-          persistence: "saved_comparisons",
+          persistence: "transient_only",
         }),
         { status: 200 },
       ),
@@ -987,6 +1016,49 @@ describe("WorldCompare", () => {
     );
   });
 
+  it("never restores an unavailable link as both checked and disabled", async () => {
+    const descriptor = tradeDescriptor();
+    descriptor.compatibility = {
+      ...descriptor.compatibility!,
+      physical_plane_link_available: false,
+      camera_link_available: false,
+    };
+    const baseEntry = savedTradeEntry();
+    const savedEntry: SavedComparisonEntry = {
+      ...baseEntry,
+      record: {
+        ...baseEntry.record,
+        workspace: {
+          ...baseEntry.record.workspace,
+          links: {
+            ...baseEntry.record.workspace.links,
+            plane: true,
+            camera: true,
+          },
+        },
+      },
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }));
+
+    render(
+      <WorldCompare
+        worldSlug="trade-cumulus"
+        savedComparisonId={savedEntry.record.saved_comparison_id}
+        onBack={vi.fn()}
+        onOpenSimulation={vi.fn()}
+      />,
+    );
+
+    await screen.findByLabelText("Canonical BOMEX Baseline test frame");
+    expect(screen.getByLabelText("Slice plane")).toBeDisabled();
+    expect(screen.getByLabelText("Slice plane")).not.toBeChecked();
+    expect(screen.getByLabelText("Camera")).toBeDisabled();
+    expect(screen.getByLabelText("Camera")).not.toBeChecked();
+  });
+
   it("records restoration only after both saved sides reach coherent frames", async () => {
     const descriptor = tradeDescriptor("moisture-pending");
     const savedEntry = savedTradeEntry({ rightSimulationId: "moisture-pending" });
@@ -1015,6 +1087,91 @@ describe("WorldCompare", () => {
     );
   });
 
+  it("records a usable one-sided frame failure as partially restorable", async () => {
+    const descriptor = tradeDescriptor("moisture-failed");
+    const savedEntry = savedTradeEntry({ rightSimulationId: "moisture-failed" });
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }));
+
+    render(
+      <WorldCompare
+        worldSlug="trade-cumulus"
+        savedComparisonId={savedEntry.record.saved_comparison_id}
+        onBack={vi.fn()}
+        onOpenSimulation={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByLabelText("Canonical BOMEX Baseline test frame")).toBeVisible();
+    expect(await screen.findByLabelText("More Moisture frame failure")).toBeVisible();
+    await waitFor(() => expect(restorationPatchBodies()).toHaveLength(1));
+    expect(restorationPatchBodies()[0]).toMatchObject({
+      restoration_status: "partially_restorable",
+      restoration_message: expect.stringContaining("More Moisture"),
+    });
+  });
+
+  it("records two failed sides as unavailable", async () => {
+    const descriptor = tradeDescriptor("moisture-failed", "baseline-failed");
+    const savedEntry = savedTradeEntry({
+      leftSimulationId: "baseline-failed",
+      rightSimulationId: "moisture-failed",
+    });
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }));
+
+    render(
+      <WorldCompare
+        worldSlug="trade-cumulus"
+        savedComparisonId={savedEntry.record.saved_comparison_id}
+        onBack={vi.fn()}
+        onOpenSimulation={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByLabelText("Canonical BOMEX Baseline frame failure")).toBeVisible();
+    expect(await screen.findByLabelText("More Moisture frame failure")).toBeVisible();
+    await waitFor(() => expect(restorationPatchBodies()).toHaveLength(1));
+    expect(restorationPatchBodies()[0]).toMatchObject({
+      restoration_status: "unavailable",
+      restoration_message: expect.stringContaining("Canonical BOMEX Baseline"),
+    });
+  });
+
+  it("lets a successful retry replace a terminal frame-failure status", async () => {
+    const descriptor = tradeDescriptor("moisture-failed");
+    const savedEntry = savedTradeEntry({ rightSimulationId: "moisture-failed" });
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }));
+
+    render(
+      <WorldCompare
+        worldSlug="trade-cumulus"
+        savedComparisonId={savedEntry.record.saved_comparison_id}
+        onBack={vi.fn()}
+        onOpenSimulation={vi.fn()}
+      />,
+    );
+
+    const failure = await screen.findByLabelText("More Moisture frame failure");
+    await waitFor(() => expect(restorationPatchBodies()).toHaveLength(1));
+    fireEvent.click(within(failure).getByRole("button", { name: "Retry failed side" }));
+
+    expect(await screen.findByLabelText("More Moisture test frame")).toBeVisible();
+    await waitFor(() => expect(restorationPatchBodies()).toHaveLength(2));
+    expect(restorationPatchBodies()[1]).toEqual({
+      restoration_status: "healthy",
+      restoration_message: null,
+    });
+  });
+
   it("keeps an opened comparison usable when restoration metadata cannot be persisted", async () => {
     const descriptor = tradeDescriptor();
     const savedEntry = savedTradeEntry();
@@ -1024,6 +1181,32 @@ describe("WorldCompare", () => {
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ detail: "write failed" }), { status: 500 }),
       );
+
+    render(
+      <WorldCompare
+        worldSlug="trade-cumulus"
+        savedComparisonId={savedEntry.record.saved_comparison_id}
+        onBack={vi.fn()}
+        onOpenSimulation={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByLabelText("Canonical BOMEX Baseline test frame")).toBeVisible();
+    expect(
+      await screen.findByText(
+        "The comparison opened, but its restoration status could not be recorded.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByLabelText("More Moisture test frame")).toBeVisible();
+  });
+
+  it("keeps an opened comparison usable when restoration persistence rejects", async () => {
+    const descriptor = tradeDescriptor();
+    const savedEntry = savedTradeEntry();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(savedEntry), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor), { status: 200 }))
+      .mockRejectedValueOnce(new TypeError("network offline"));
 
     render(
       <WorldCompare
@@ -1126,6 +1309,9 @@ describe("WorldCompare", () => {
       );
 
       expect(await screen.findByText("Saved Comparison unavailable")).toBeVisible();
+      expect(
+        screen.getByText(/one or more retained Simulations cannot currently be inspected/),
+      ).toBeVisible();
       expect(screen.getByText(/How does added moisture change cloud growth/)).toBeVisible();
       expect(screen.getByText(/Captured relationship/)).toBeVisible();
       const openReplacement = screen.getByRole("button", {
@@ -1233,3 +1419,13 @@ describe("WorldCompare", () => {
     expect(screen.getByRole("button", { name: "Save comparison" })).toBeDisabled();
   });
 });
+
+function restorationPatchBodies(): Array<{
+  restoration_status: string;
+  restoration_message: string | null;
+}> {
+  return vi
+    .mocked(fetch)
+    .mock.calls.filter(([, init]) => init?.method === "PATCH")
+    .map(([, init]) => JSON.parse(String(init?.body)));
+}

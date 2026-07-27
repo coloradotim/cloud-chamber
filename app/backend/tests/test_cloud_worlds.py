@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from cloud_chamber.app import _saved_comparison_simulation_inventory
 from cloud_chamber.cloud_worlds import (
     MORE_MOISTURE_SIMULATION_ID,
     PRESENTATION_BASELINE_RESULT_ID,
@@ -21,6 +22,14 @@ from cloud_chamber.cloud_worlds import (
     trade_cumulus_world_detail,
 )
 from cloud_chamber.result_ingest import ResultMetadata
+from cloud_chamber.saved_comparisons import (
+    CapturedPairSummary,
+    SavedComparisonCreate,
+    SavedComparisonError,
+    create_saved_comparison,
+    list_saved_comparisons,
+    saved_comparison_dependents,
+)
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.trade_cumulus_comparison_story import (
     TradeCumulusComparisonStoryConflict,
@@ -116,6 +125,37 @@ def _write_metadata(settings: CloudChamberSettings, metadata: ResultMetadata) ->
     metadata.model_output_file_count = 1
     path.write_text(metadata.to_json_text())
     return output_path
+
+
+def _saved_trade_state(model_time_seconds: float = 60) -> dict[str, Any]:
+    return {
+        "state_version": 1,
+        "world_id": "trade_cumulus",
+        "model_time_seconds": model_time_seconds,
+        "context_collapsed": True,
+        "secondary_section": "notes",
+        "selected_point": None,
+        "view_id": "updraft_lens",
+        "scene_field_id": "ql",
+        "slice_field_id": "w",
+        "fixed_scale_id": "trade_cumulus_updraft_velocity_v1",
+        "active_slice_plane": "vertical_x",
+        "slice_coordinate_km": 0.9666666666666668,
+        "slice_native_index": 62,
+        "horizontal_slice_coordinate_km": 1,
+        "threshold_native": 1e-6,
+        "layer_opacity": 0.68,
+        "point_size_px": 11,
+        "lens_opacity": 0.9,
+        "show_slice_plane": True,
+        "show_cloud_boundary": True,
+        "show_horizontal_wind": True,
+        "wind_mode": "perturbation",
+        "camera_preset": "overview",
+        "camera_transform": None,
+        "playback_speed": 1,
+        "display_controls_open": False,
+    }
 
 
 def _install_pair(
@@ -273,6 +313,94 @@ def test_stale_known_metadata_without_model_output_disables_explore(
     assert detail.reference_simulation.explore_available is False
     assert detail.featured_comparison.availability_state == "missing"
     assert summary.reference_available is False
+
+
+def test_saved_comparison_dependency_tracks_inspectable_output_not_stale_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    _install_pair(settings, monkeypatch)
+    inventory = _saved_comparison_simulation_inventory("trade_cumulus", settings=settings)
+    request = SavedComparisonCreate.model_validate(
+        {
+            "title": "Retained moisture comparison",
+            "workspace": {
+                "world_id": "trade_cumulus",
+                "left_simulation_id": REFERENCE_SIMULATION_ID,
+                "right_simulation_id": MORE_MOISTURE_SIMULATION_ID,
+                "left_state": _saved_trade_state(),
+                "right_state": _saved_trade_state(model_time_seconds=120),
+                "links": {
+                    "time": True,
+                    "view": True,
+                    "plane": True,
+                    "camera": False,
+                    "selection": False,
+                },
+                "context_collapsed": False,
+            },
+        }
+    )
+    captured = CapturedPairSummary(
+        left_display_name="Canonical BOMEX Baseline",
+        right_display_name="More Moisture",
+        relationship="Reference and controlled variation",
+        controlled_pair=True,
+        controlled_pair_message="Only moisture changed.",
+        material_differences=[],
+    )
+    created = create_saved_comparison(
+        settings,
+        world_id="trade_cumulus",
+        request=request,
+        captured_pair=captured,
+        simulation_inventory=inventory,
+    )
+
+    more_output = (
+        settings.runtime_home / "runs" / PRESENTATION_MORE_MOISTURE_RUN_ID / "cm1out_000001.nc"
+    )
+    more_output.unlink()
+    missing_inventory = _saved_comparison_simulation_inventory("trade_cumulus", settings=settings)
+    listed = list_saved_comparisons(
+        settings,
+        world_id="trade_cumulus",
+        simulation_inventory=missing_inventory,
+    ).saved_comparisons
+
+    assert len(listed) == 1
+    assert listed[0].record.saved_comparison_id == created.record.saved_comparison_id
+    assert listed[0].record.captured_pair.right_display_name == "More Moisture"
+    assert listed[0].dependencies[1].availability_state == "missing"
+    assert listed[0].effective_restoration_status == "unavailable"
+    with pytest.raises(SavedComparisonError, match="inspectable retained output"):
+        create_saved_comparison(
+            settings,
+            world_id="trade_cumulus",
+            request=request.model_copy(update={"title": "Rejected duplicate snapshot"}),
+            captured_pair=captured,
+            simulation_inventory=missing_inventory,
+        )
+    dependents = saved_comparison_dependents(
+        settings,
+        world_id="trade_cumulus",
+        simulation_id=MORE_MOISTURE_SIMULATION_ID,
+    )
+    assert [dependent.saved_comparison_id for dependent in dependents] == [
+        created.record.saved_comparison_id
+    ]
+
+    baseline_metadata = (
+        settings.runtime_home / "runs" / PRESENTATION_BASELINE_RUN_ID / "result_metadata.json"
+    )
+    baseline_metadata.write_text(
+        baseline_metadata.read_text().replace(
+            '"scenario_id": "bomex_trade_cumulus_baseline_v0"',
+            '"scenario_id": "contradictory_case"',
+        )
+    )
+    invalid_inventory = _saved_comparison_simulation_inventory("trade_cumulus", settings=settings)
+    assert invalid_inventory[REFERENCE_SIMULATION_ID].availability_state == "invalid"
 
 
 def test_world_comparison_fails_closed_when_story_validation_conflicts(
