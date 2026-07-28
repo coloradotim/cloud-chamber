@@ -32,6 +32,7 @@ from cloud_chamber.runtime_storage import (
     RuntimeStorageError,
     delete_ingested_result,
     delete_runtime_run,
+    runtime_lifecycle_inventory,
     runtime_storage_inventory,
 )
 from cloud_chamber.settings import CloudChamberSettings
@@ -177,6 +178,27 @@ def test_inventory_reports_total_size_per_run_size_and_largest_runs(tmp_path: Pa
     assert by_id["run-small"].size_bytes >= 10
     assert by_id["run-large"].size_bytes >= 100
     assert inventory.largest_runs[0].size_bytes >= inventory.largest_runs[-1].size_bytes
+
+
+def test_lifecycle_inventory_reads_manifests_without_calculating_sizes_or_reconciling(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = fake_settings(tmp_path)
+    manifest_path = create_run(tmp_path, "run-lifecycle")
+    (manifest_path.parent / "large-placeholder.bin").write_bytes(b"x" * 1_024)
+    monkeypatch.setattr(
+        "cloud_chamber.runtime_storage.reconcile_completed_run_manifest",
+        lambda _path: pytest.fail("Lifecycle inventory must not reconcile or rewrite manifests."),
+    )
+
+    inventory = runtime_lifecycle_inventory(settings)
+
+    assert inventory.total_size_bytes == 0
+    assert inventory.largest_runs == []
+    assert inventory.runs[0].run_id == "run-lifecycle"
+    assert inventory.runs[0].size_bytes == 0
+    assert inventory.runs[0].manifest_path == str(manifest_path)
 
 
 def test_inventory_classifies_valid_manifest_with_output_artifacts(tmp_path: Path) -> None:

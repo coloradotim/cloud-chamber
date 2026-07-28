@@ -68,9 +68,9 @@ Fun With Soundings uses stable frontend routes:
 
 Its five jobs compose existing sounding catalog, candidate screening, package,
 run, worker, ingest, storage, and visualization APIs rather than duplicating
-those execution paths. Trade Cumulus Lab still embeds some transitional Build
-and Results surfaces; that compatibility is not the intended final World Lab
-navigation model.
+those execution paths. Fun With Soundings and current World surfaces consume a
+shared lifecycle projection rather than embedding separate Results or Notebook
+models.
 
 ## World and Simulation Identity
 
@@ -102,6 +102,43 @@ World responses are kept lightweight. Deep validation is performed at
 promotion or discovery boundaries and cached against artifact fingerprints
 where implemented, rather than reopening every history during ordinary World
 polling.
+
+## Lifecycle Projection
+
+`app/backend/cloud_chamber/lifecycle.py` owns one bounded read-only projection
+over current runtime evidence:
+
+```text
+World inventory + run manifests + queue snapshot + Results + storage
+  + Saved View / Saved Comparison dependencies
+                           |
+                           v
+                    GET /api/lifecycle
+                           |
+                           v
+          owner-scoped Activity and History surfaces
+```
+
+Each record identifies a World Simulation or non-World Experiment and retains
+all known technical attempts beneath it. Attempt relationships include initial,
+unchanged retry, checkpoint restart, alternate observation attempt, extension,
+and later backing candidate.
+
+The projection does not use one status as a substitute for package, queue,
+process, output, integrity, ingest, inspectability, availability, parent
+eligibility, and retained-asset facts. It is reconstructed from backend and
+runtime state on reload; React state is not authoritative.
+
+Known built-in Simulations use exact current World and run identities. Dynamic
+World assignment currently requires the approved Mountain Waves variation
+contract evidence. Other records are classified from verified
+observed-sounding or Result evidence, with ambiguous historical World claims
+failing closed as legacy or unassigned Experiments.
+
+`app/frontend/src/LifecycleWorkspace.tsx` renders the same projection as
+actionable Activity groups or durable searchable History. World surfaces scope
+the component to their owner. Fun With Soundings scopes it to Soundings and
+legacy/unassigned Experiments.
 
 ## Explore Architecture
 
@@ -326,6 +363,7 @@ The current code keeps these states distinct:
 | Editable result sidecar | Optional local name, tag, or note state exists |
 | Backend-derived diagnostic | A quantity was calculated from CM1-derived data |
 | Visualization interpretation | A bounded browser payload or Lens represents available evidence |
+| Lifecycle projection | A read-only owner-aware view of the distinct facts above |
 
 Process success, output existence, promotion, ingest, integrity, and browser
 visibility are separate facts.
@@ -353,15 +391,15 @@ metadata, and notebook state together.
 The product language follows the same state boundary: **Run** refers to
 technical execution, **Experiment** refers to non-World scientific work, and
 **Simulation** refers to a stable World-owned object verified by current World
-inventory. The storage inventory exposes bounded manifest input-source evidence
-so the Soundings Runs job can separate workbench execution from
-World-associated or legacy/unassigned technical work after reload.
+inventory. The storage inventory exposes bounded manifest input-source and
+lifecycle evidence so Activity and History can separate workbench execution
+from World-associated or legacy/unassigned technical work after reload.
 
 See [Ingest, Results, and Runtime Cleanup Lifecycle](INGEST_RESULTS_STORAGE_LIFECYCLE.md).
 
 ## Persistence and Asset Boundaries
 
-The runtime home defaults to `~/CloudChamber` and stores:
+The configured runtime home stores:
 
 - settings and CM1 discovery;
 - generated packages and manifests;

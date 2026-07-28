@@ -9,7 +9,7 @@ test.describe("mocked smoke: Mountain Waves product path", () => {
     await mockCloudChamberApis(page);
   });
 
-  test("retains a variation from Cloud Worlds through Explore and another parent", async ({
+  test("retains shared Activity and History after creating a variation", async ({
     page,
   }) => {
     await mockMountainWavesProductPath(page);
@@ -25,44 +25,34 @@ test.describe("mocked smoke: Mountain Waves product path", () => {
     await expect(page.getByLabel("Mountain Waves x-z view")).toBeVisible();
     await page.getByRole("button", { name: "Back to Mountain Waves" }).click();
 
-    await page.getByRole("button", { name: "Lab" }).click();
+    await page.getByRole("button", { name: "Create Variation", exact: true }).click();
     await expect(page.getByRole("heading", { name: /Change the terrain/ })).toBeVisible();
     await page.getByLabel("Variation name").fill("Broader Ridge");
     await page.getByLabel("Half-width").fill("11000");
     await expect(page.getByText("1 exact change")).toBeVisible();
     await page.getByRole("button", { name: "Create and queue" }).click();
 
-    await expect(page.getByText(/Queued · Waiting for the local CM1 runner/)).toBeVisible();
-    await page.getByRole("button", { name: "Refresh" }).click();
-    await expect(page.getByText(/Running · CM1 is running locally/)).toBeVisible();
-    await page.getByRole("button", { name: "Refresh" }).click();
-    await expect(page.getByRole("heading", { name: "Lab is idle" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Current work" })).toBeVisible();
+    await expect(page.locator("article", { hasText: "Broader Boulder Ridge" })).toBeVisible();
 
     await page.getByRole("button", { name: "History" }).click();
+    await expect(page.getByRole("heading", { name: "Retained scientific work" })).toBeVisible();
     const retained = page.locator("article", { hasText: "Broader Ridge" });
-    await expect(retained.getByText(/Completed · CM1 completed normally/)).toBeVisible();
-    await retained.getByRole("button", { name: "Explore" }).click();
-    await expect(page.getByRole("heading", { name: "Wave Cloud Lens" })).toBeVisible();
-    await page.getByRole("button", { name: "Back to Mountain Waves" }).click();
-
-    await page.getByRole("button", { name: "Lab" }).click();
-    await page.getByRole("button", { name: "History" }).click();
-    await page
-      .locator("article", { hasText: "Broader Ridge" })
-      .getByRole("button", { name: "Create variation" })
-      .click();
-    await expect(page.getByLabel("Parent Simulation")).toHaveValue(
-      "mountain_waves_broader_ridge_abcd1234",
+    await expect(retained.locator(".lifecycle-badge")).toHaveText("Available");
+    await retained.getByText("Technical details").click();
+    await expect(retained.getByRole("region", { name: "Technical attempts" })).toContainText(
+      "Later backing candidate",
     );
+
     expect(consoleProblems).toEqual([]);
   });
 
-  test("keeps a package failure inside the Mountain Waves Lab", async ({ page }) => {
+  test("keeps a package failure inside Mountain Waves Create Variation", async ({ page }) => {
     await mockMountainWavesProductPath(page, { failPackage: true });
 
     await gotoApp(page);
     await page.getByRole("button", { name: "Enter Mountain Waves" }).click();
-    await page.getByRole("button", { name: "Lab" }).click();
+    await page.getByRole("button", { name: "Create Variation", exact: true }).click();
     await page.getByLabel("Variation name").fill("Rejected Ridge");
     await page.getByLabel("Half-width").fill("11000");
     await page.getByRole("button", { name: "Create and queue" }).click();

@@ -58,6 +58,7 @@ from cloud_chamber.lan_worker import (
     lan_worker_run_status,
     start_lan_worker_run,
 )
+from cloud_chamber.lifecycle import LifecycleProjection, lifecycle_projection
 from cloud_chamber.local_run_manager import LocalRunManager, LocalRunManagerError, RunStatus
 from cloud_chamber.local_run_queue import LocalRunQueueError, LocalRunQueueManager
 from cloud_chamber.mountain_wave_terrain_visualization import (
@@ -585,6 +586,21 @@ def run_queue_status() -> dict[str, object]:
     except LocalRunQueueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return state.model_dump(mode="json")
+
+
+@app.get("/api/lifecycle", response_model=LifecycleProjection)
+def get_lifecycle_projection() -> LifecycleProjection:
+    try:
+        return lifecycle_projection(
+            load_settings(),
+            queue=_get_local_run_queue().snapshot(),
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Activity and History are unavailable because retained lifecycle data "
+            "could not be read.",
+        ) from exc
 
 
 @app.get("/api/runs/status")

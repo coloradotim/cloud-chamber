@@ -163,6 +163,22 @@ def test_queue_records_ingest_failure_and_still_starts_next_package(
     assert refreshed.active_run_id == "run-after-ingest-failure"
 
 
+def test_queue_snapshot_does_not_launch_or_advance_work(tmp_path: Path) -> None:
+    first = create_manifest(tmp_path, "run-snapshot-first")
+    second = create_manifest(tmp_path, "run-snapshot-second")
+    fake_manager = FakeRunManager()
+    queue = LocalRunQueueManager(settings=fake_settings(tmp_path), run_manager=fake_manager)
+    queue.enqueue(first)
+    queue.enqueue(second)
+    launched_before_snapshot = list(fake_manager.launched)
+
+    snapshot = queue.snapshot()
+
+    assert snapshot.active_run_id == "run-snapshot-first"
+    assert snapshot.queued_count == 1
+    assert fake_manager.launched == launched_before_snapshot
+
+
 def test_queue_marks_missing_active_manifest_failed_and_starts_next_package(
     tmp_path: Path,
 ) -> None:

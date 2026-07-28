@@ -17,6 +17,7 @@ from cloud_chamber.igra_catalog import (
     IGRARegionDefinition,
     IGRAStationZipReference,
 )
+from cloud_chamber.lifecycle import LifecycleProjection
 from cloud_chamber.local_run_manager import LocalRunManagerError, RunStatus
 from cloud_chamber.local_run_queue import RunQueueEntry, RunQueueState
 from cloud_chamber.observed_sounding import parse_igra_station_text
@@ -112,6 +113,70 @@ def test_simulation_note_api_fails_closed_for_unknown_simulation(
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Cloud World Simulation not found."
+
+
+def test_lifecycle_api_uses_read_only_queue_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queue_state = RunQueueState(
+        entries=[],
+        queued_count=0,
+        updated_at="2026-07-27T18:00:00+00:00",
+    )
+    fake_queue = SimpleNamespace(snapshot=lambda: queue_state)
+    captured: dict[str, object] = {}
+
+    def projection(settings: object, *, queue: RunQueueState) -> LifecycleProjection:
+        captured["settings"] = settings
+        captured["queue"] = queue
+        return LifecycleProjection(
+            generated_at="2026-07-27T18:00:00+00:00",
+            records=[],
+            warnings=["Fixture warning."],
+        )
+
+    settings = SimpleNamespace(runtime_home=tmp_path)
+    monkeypatch.setattr("cloud_chamber.app.load_settings", lambda: settings)
+    monkeypatch.setattr("cloud_chamber.app._get_local_run_queue", lambda: fake_queue)
+    monkeypatch.setattr("cloud_chamber.app.lifecycle_projection", projection)
+
+    response = TestClient(app).get("/api/lifecycle")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "schema_version": "1",
+        "generated_at": "2026-07-27T18:00:00+00:00",
+        "records": [],
+        "warnings": ["Fixture warning."],
+    }
+    assert captured == {"settings": settings, "queue": queue_state}
+
+
+def test_lifecycle_api_reports_local_metadata_read_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cloud_chamber.app._get_local_run_queue",
+        lambda: SimpleNamespace(
+            snapshot=lambda: RunQueueState(
+                entries=[],
+                queued_count=0,
+                updated_at="2026-07-27T18:00:00+00:00",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.app.lifecycle_projection",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("missing drive")),
+    )
+
+    response = TestClient(app).get("/api/lifecycle")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == (
+        "Activity and History are unavailable because retained lifecycle data could not be read."
+    )
 
 
 def _trade_explore_state_payload() -> dict[str, object]:

@@ -928,6 +928,18 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByRole("button", { name: "Compare" })).toBeVisible();
     await page.getByRole("button", { name: "Back to Trade Cumulus" }).click();
 
+    await page.getByRole("button", { name: "Activity", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Current work" })).toBeVisible();
+    await expect(page.getByText("Canonical BOMEX Baseline")).toBeVisible();
+    await page.getByRole("button", { name: "History", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Retained scientific work" })).toBeVisible();
+    await expect(page.getByText("Trade Cumulus · Simulation")).toBeVisible();
+    await page.getByText("Technical details").click();
+    await expect(page.getByRole("region", { name: "Technical attempts" })).toContainText(
+      "Backing output",
+    );
+    await page.getByRole("button", { name: "Overview", exact: true }).click();
+
     await page.getByRole("button", { name: "Open Comparison" }).click();
     await expect(
       page.getByRole("heading", {
@@ -940,25 +952,16 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await expect(page.getByLabel("Trade Cumulus Compare")).toBeVisible();
     await expect(page.getByLabel("Canonical BOMEX Baseline comparison side")).toBeVisible();
     await expect(page.getByLabel("More Moisture comparison side")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Independent" })).toHaveClass(
-      /active-control/,
-    );
+    await expect(page.getByRole("button", { name: "Independent" })).toHaveClass(/active-control/);
     await page.getByRole("button", { name: "Aligned" }).click();
     await expect(page.getByRole("checkbox", { name: "Time", exact: true })).toBeChecked();
-    await expect(
-      page.getByRole("checkbox", { name: "Field / Lens", exact: true }),
-    ).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Field / Lens", exact: true })).toBeChecked();
     await page.getByRole("button", { name: "Back to Trade Cumulus" }).click();
 
-    await page.getByRole("button", { name: "Lab", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
-    const labNav = page.getByRole("navigation", { name: "Trade Cumulus Lab" });
-    await labNav.getByRole("button", { name: "Build" }).click();
-    await expect(
-      page.getByRole("heading", { name: "Build and run a CM1 experiment" }),
-    ).toBeVisible();
-    await labNav.getByRole("button", { name: "Results" }).click();
-    await expect(page.getByRole("heading", { name: "Experiment Notebook" })).toBeVisible();
+    const worldNav = page.getByRole("navigation", { name: "Trade Cumulus sections" });
+    await expect(worldNav.getByRole("button", { name: "Activity" })).toBeVisible();
+    await expect(worldNav.getByRole("button", { name: "History" })).toBeVisible();
+    await expect(worldNav.getByRole("button", { name: "Lab" })).toHaveCount(0);
 
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -968,7 +971,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     expect(browserErrors).toEqual([]);
   });
 
-  test("Fun With Soundings carries a selected atmosphere through runs and World ownership", async ({
+  test("Fun With Soundings carries a selected atmosphere into shared Activity and History", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -1025,27 +1028,33 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     await page.getByRole("button", { name: "Create packages and queue selected runs" }).click();
     await expect(page.getByText("1 queued locally")).toBeVisible();
     await page.getByRole("button", { name: "Open Runs" }).click();
-    await expect(page.getByRole("heading", { name: "Past Experiments" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Refresh current work" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Refresh Experiments" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Current work" })).toBeVisible();
+    await expect(
+      page.getByText("Observed Surface-Forced Evolution — TOPEKA/MUN.; KS."),
+    ).toBeVisible();
+    await expect(page.getByText("Legacy surface-forcing attempt")).toBeVisible();
+    await page.getByRole("button", { name: "History", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Retained scientific work" })).toBeVisible();
+    await page.getByText("More filters", { exact: true }).click();
+    await expect(page.getByLabel("Owner")).toHaveValue("all");
+    await page.getByRole("searchbox", { name: "Search" }).fill("legacy");
+    await expect(page.getByText("Legacy surface-forcing attempt")).toBeVisible();
+    await expect(
+      page.getByText("Observed Surface-Forced Evolution — TOPEKA/MUN.; KS."),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "Clear filters" }).click();
 
-    await jobs.getByRole("button", { name: "5 Explore" }).click();
+    await page.getByRole("button", { name: "Activity", exact: true }).click();
+    await page
+      .locator("article", { hasText: "Observed Surface-Forced Evolution — TOPEKA/MUN.; KS." })
+      .getByRole("button", { name: "Explore" })
+      .click();
     await expect(page).toHaveURL(/\/fun-with-soundings\/explore\/result-observed-sounding$/);
     await expect(page.getByRole("combobox", { name: "Soundings Experiment" })).toHaveValue(
       "result-observed-sounding",
     );
-    await page.getByRole("button", { name: "Back to Past Experiments" }).click();
-
-    const pastRuns = page.getByRole("region", { name: "Past Experiments" });
-    await expect(
-      pastRuns.getByRole("button", { name: "Uploaded Sounding — Valley, Nebraska" }),
-    ).toBeVisible();
-    await pastRuns.getByRole("combobox", { name: "Ownership" }).selectOption("world");
-    const runsList = pastRuns.getByRole("region", { name: "Experiments list" });
-    await expect(runsList.getByRole("button", { name: "Open Trade Cumulus" })).toHaveCount(2);
-    await runsList.getByRole("button", { name: "Open Trade Cumulus" }).first().click();
-    await expect(page.getByRole("navigation", { name: "Trade Cumulus sections" })).toBeVisible();
-    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole("button", { name: "Back to Activity & History" }).click();
+    await expect(page.getByRole("heading", { name: "Current work" })).toBeVisible();
   });
 
   test("Build exposes the Golden Path scenario and creates a safe dry-run package", async ({

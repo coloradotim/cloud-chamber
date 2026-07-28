@@ -141,6 +141,13 @@ class LocalRunQueueManager:
             self._save_entries(entries)
             return self._state(entries)
 
+    def snapshot(self) -> RunQueueState:
+        """Read persisted queue state without launching or advancing work."""
+        with self._lock:
+            entries = self._load_entries()
+            self._recover_open_entries_from_manifests(entries)
+            return self._state(entries)
+
     def _recover_open_entries_from_manifests(self, entries: list[RunQueueEntry]) -> None:
         for entry in entries:
             if entry.state in OPEN_ENTRY_STATES or entry.state == "ingested":

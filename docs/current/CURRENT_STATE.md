@@ -43,7 +43,7 @@ non-World Explore route at `/fun-with-soundings/explore/{result_id}`.
 The workbench organizes the existing observed-atmosphere path into five jobs:
 
 ```text
-Find Soundings → Candidates → Build & Run → Runs → Explore
+Find Soundings → Candidates → Build & Run → Activity & History → Explore
 ```
 
 Atmosphere selection remains visible across Find, Candidates, and Build & Run.
@@ -59,23 +59,50 @@ The workbench preserves explicit lifecycle language:
 - ambiguous, stale, or unavailable ownership evidence remains visibly legacy
   or unassigned.
 
-The Runs job shows Soundings execution without claiming other use of the shared
-CM1 runner as workbench-owned. Past Experiments supports Soundings,
-legacy/unassigned, and verified World ownership views. A verified Simulation
-opens in its World; other retained Experiments open directly in non-World
-Explore.
+Activity & History shows Soundings work together with broad legacy and
+genuinely unassigned Experiments without claiming every use of the shared CM1
+runner as workbench-owned. A verified Simulation opens in its World; other
+retained Experiments open directly in non-World Explore.
 
 ## Accessible Cloud Worlds
 
 | World | Current content | Current surfaces | Current limitation |
 | --- | --- | --- | --- |
-| **Trade Cumulus** | Canonical BOMEX Baseline and More Moisture retained Simulations | Overview, Simulations, featured and ordinary Compare, Saved Comparisons, Lab, Explore resume, and Saved Views | Lab still embeds transitional Build and Results |
-| **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, ordinary Compare, Saved Comparisons, variation Lab, Explore resume, and Saved Views | Variation remains World-specific |
-| **Supercells** | Quarter-Circle and Straight-Line Hodograph retained Simulations | Overview, Simulations, ordinary Compare, Saved Comparisons, Explore resume, and Saved Views | No variation Lab |
+| **Trade Cumulus** | Canonical BOMEX Baseline and More Moisture retained Simulations | Overview, Simulations, Activity, History, featured and ordinary Compare, Saved Comparisons, Explore resume, and Saved Views | Shared variation creation is not implemented |
+| **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, Activity, History, ordinary Compare, Saved Comparisons, World-specific Create Variation, Explore resume, and Saved Views | Variation creation remains World-specific |
+| **Supercells** | Quarter-Circle and Straight-Line Hodograph retained Simulations | Overview, Simulations, ordinary Compare, Saved Comparisons, Explore resume, and Saved Views | No create-variation workflow |
 
 The World Overview and Simulations surfaces use stable content identities and
 explicit availability states. Missing, invalid, or conflicting retained
 content fails closed instead of silently substituting a different run.
+
+## Activity And History
+
+Cloud Chamber exposes one typed owner-aware lifecycle projection through
+`GET /api/lifecycle`. It adapts current World inventory, retained manifests,
+queue state, Results, storage facts, and Saved View or Saved Comparison
+dependencies without rewriting historical artifacts.
+
+The projection keeps these facts separate:
+
+- intended scientific work and stable Simulation or Experiment identity;
+- package and technical attempt existence;
+- queued, running, completed, failed, or cancelled process state;
+- expected output and ingest state;
+- technical integrity and World inspectability;
+- Simulation availability and parent eligibility;
+- retained, missing, invalid, or conflicted assets.
+
+Activity groups current actionable work. History preserves all known records
+and attempt relationships with text search, practical filters, and sort.
+Technical identifiers, differences, caveats, dependencies, and attempt evidence
+remain available on demand.
+
+Current approved-contract Mountain Waves variations can be assigned to their
+World when their current contract evidence is present. A World name or
+Simulation string by itself does not establish ownership. Sounding-related
+work remains under Fun With Soundings, while ambiguous records remain visibly
+legacy or unassigned.
 
 ## Explore Experiences
 
@@ -282,9 +309,9 @@ not final:
 - trusted-LAN execution for supported paths;
 - runtime-integrity and field-quality handling.
 
-Some of this infrastructure appears inside the current Trade Cumulus Lab.
-That transitional placement does not make Build or Results the final World Lab
-information architecture.
+Global Build and Result infrastructure remains available outside the World
+surfaces. Trade Cumulus no longer embeds unrelated Build, Results, or Experiment
+Notebook content as its lifecycle model.
 
 ## Current Gaps
 
@@ -314,10 +341,10 @@ React / TypeScript / Vite frontend
 -> browser inspection
 ```
 
-Runtime assets default to `~/CloudChamber`. The application depends on those
-local assets for retained Simulations and generated Experiments. Deleting a run
-can remove the corresponding output and result sidecars; the repository is not
-a durable store for those artifacts.
+Runtime assets live under the configured runtime home. The application depends
+on those local assets for retained Simulations and generated Experiments.
+Deleting a run can remove the corresponding output and result sidecars; the
+repository is not a durable store for those artifacts.
 
 ## Interpretation Rules
 

@@ -32,8 +32,8 @@ const SECTIONS: Array<{
   },
   {
     id: "activity",
-    label: "Runs",
-    description: "Track active work and reopen retained runs.",
+    label: "Activity & History",
+    description: "Track current work and return to retained Experiments.",
   },
   {
     id: "explore",

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { LifecycleWorkspace, type LifecycleRecord } from "./LifecycleWorkspace";
 import { MountainWavesVariationEditor } from "./MountainWavesVariationEditor";
 import { SavedComparisonsCollection } from "./SavedComparisons";
 
@@ -67,8 +68,13 @@ export type MountainWavesWorldDetail = {
   caveats: string[];
 };
 
-type WorldSection = "overview" | "simulations" | "saved_comparisons" | "lab";
-type LabSection = "activity" | "create" | "history";
+type WorldSection =
+  | "overview"
+  | "simulations"
+  | "saved_comparisons"
+  | "activity"
+  | "create"
+  | "history";
 
 export function MountainWavesWorld({
   onBackToWorlds,
@@ -85,12 +91,10 @@ export function MountainWavesWorld({
   onOpenSavedComparison: (savedComparisonId: string) => void;
 }) {
   const [section, setSection] = useState<WorldSection>("overview");
-  const [labSection, setLabSection] = useState<LabSection>("create");
   const [world, setWorld] = useState<MountainWavesWorldDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [parentSimulationId, setParentSimulationId] = useState<string | null>(null);
-  const [cancelStatus, setCancelStatus] = useState<string | null>(null);
 
   const loadWorld = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -115,28 +119,9 @@ export function MountainWavesWorld({
     void loadWorld();
   }, [loadWorld]);
 
-  useEffect(() => {
-    if (!world || world.activity.length === 0) return;
-    const timer = window.setInterval(() => void loadWorld(true), 2_000);
-    return () => window.clearInterval(timer);
-  }, [loadWorld, world]);
-
   function openVariation(parentId: string) {
     setParentSimulationId(parentId);
-    setLabSection("create");
-    setSection("lab");
-  }
-
-  async function cancelActiveRun() {
-    setCancelStatus("Canceling active CM1 run...");
-    try {
-      const response = await fetch("/api/runs/cancel", { method: "POST" });
-      if (!response.ok) throw new Error(await responseMessage(response, "Unable to cancel run."));
-      setCancelStatus("Run canceled.");
-      await loadWorld(true);
-    } catch (caught) {
-      setCancelStatus(caught instanceof Error ? caught.message : "Unable to cancel run.");
-    }
+    setSection("create");
   }
 
   if (loading) {
@@ -179,7 +164,16 @@ export function MountainWavesWorld({
       </header>
 
       <nav className="world-section-nav" aria-label="Mountain Waves sections">
-        {(["overview", "simulations", "saved_comparisons", "lab"] as WorldSection[]).map((item) => (
+        {(
+          [
+            "overview",
+            "simulations",
+            "saved_comparisons",
+            "activity",
+            "create",
+            "history",
+          ] as WorldSection[]
+        ).map((item) => (
           <button
             key={item}
             type="button"
@@ -224,14 +218,11 @@ export function MountainWavesWorld({
               ))}
           </div>
           <p className="world-science-note">{world.caveats[0]}</p>
-          <section className="world-lab-summary" aria-label="Mountain Waves Lab status">
+          <section className="world-lab-summary" aria-label="Create a Mountain Waves variation">
             <div>
-              <p className="eyebrow">Lab</p>
-              <h3>{labSummary(world)}</h3>
-              <p>
-                {world.lab_summary.active_run_count} active · {world.lab_summary.packaged_run_count}{" "}
-                packaged · {world.lab_summary.total_variation_count} in history
-              </p>
+              <p className="eyebrow">Experiment</p>
+              <h3>Start a related Simulation</h3>
+              <p>Use an eligible retained Simulation as the parent for a bounded variation.</p>
             </div>
             <button type="button" onClick={() => openVariation(world.default_parent_simulation_id)}>
               Create variation
@@ -277,102 +268,37 @@ export function MountainWavesWorld({
         </section>
       )}
 
-      {section === "lab" && (
-        <section className="world-section mountain-waves-lab" aria-label="Mountain Waves Lab">
-          <nav className="lab-subnav" aria-label="Mountain Waves Lab sections">
-            {(["activity", "create", "history"] as LabSection[]).map((item) => (
-              <button
-                key={item}
-                type="button"
-                className={labSection === item ? "active-control" : ""}
-                onClick={() => setLabSection(item)}
-              >
-                {item === "create" ? "Create Variation" : capitalize(item)}
-              </button>
-            ))}
-          </nav>
+      {(section === "activity" || section === "history") && (
+        <section className="world-section">
+          <LifecycleWorkspace
+            ownerIds={["mountain_waves"]}
+            view={section}
+            showViewTabs={false}
+            onExplore={(record) => {
+              const simulation = simulationForLifecycleRecord(world, record);
+              if (simulation) onExploreSimulation(simulation);
+            }}
+            onCompare={(record, targetSimulationId) => {
+              const simulation = simulationForLifecycleRecord(world, record);
+              if (simulation) onCompareSimulation?.(simulation, targetSimulationId);
+            }}
+            onOpenRunControls={(record) =>
+              openVariation(record.parent_simulation_id ?? world.default_parent_simulation_id)
+            }
+          />
+        </section>
+      )}
 
-          {labSection === "activity" && (
-            <section className="lab-content" aria-labelledby="mountain-waves-activity-title">
-              <div className="world-section-heading">
-                <div>
-                  <p className="eyebrow">Activity</p>
-                  <h3 id="mountain-waves-activity-title">Current CM1 work</h3>
-                </div>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => void loadWorld(true)}
-                >
-                  Refresh
-                </button>
-              </div>
-              {world.activity.length ? (
-                <div className="lab-history-list mountain-waves-activity-list">
-                  {world.activity.map((attempt) => (
-                    <MountainWavesAttemptRow
-                      key={attempt.simulation_id}
-                      attempt={attempt}
-                      onExplore={onExploreSimulation}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <section className="world-empty-state">
-                  <h3>Lab is idle</h3>
-                  <p>Packaged, queued, and running variations will remain visible here.</p>
-                </section>
-              )}
-              {world.activity.some((attempt) => attempt.state === "running") && (
-                <button
-                  type="button"
-                  className="danger-button"
-                  onClick={() => void cancelActiveRun()}
-                >
-                  Cancel active run
-                </button>
-              )}
-              {cancelStatus && <p role="status">{cancelStatus}</p>}
-            </section>
-          )}
-
-          {labSection === "create" && (
-            <MountainWavesVariationEditor
-              world={world}
-              initialParentSimulationId={parentSimulationId ?? world.default_parent_simulation_id}
-              onCreated={async () => {
-                await loadWorld(true);
-                setLabSection("activity");
-              }}
-            />
-          )}
-
-          {labSection === "history" && (
-            <section className="lab-content" aria-labelledby="mountain-waves-history-title">
-              <div className="world-section-heading">
-                <div>
-                  <p className="eyebrow">History</p>
-                  <h3 id="mountain-waves-history-title">Every retained variation attempt</h3>
-                </div>
-              </div>
-              {world.history.length ? (
-                <div className="lab-history-list mountain-waves-history-list">
-                  {world.history.map((attempt) => (
-                    <MountainWavesAttemptRow
-                      key={attempt.simulation_id}
-                      attempt={attempt}
-                      onExplore={onExploreSimulation}
-                      onCreateVariation={openVariation}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <section className="world-empty-state">
-                  <p>No Mountain Waves variations have been created yet.</p>
-                </section>
-              )}
-            </section>
-          )}
+      {section === "create" && (
+        <section className="world-section mountain-waves-lab" aria-label="Create variation">
+          <MountainWavesVariationEditor
+            world={world}
+            initialParentSimulationId={parentSimulationId ?? world.default_parent_simulation_id}
+            onCreated={async () => {
+              await loadWorld(true);
+              setSection("activity");
+            }}
+          />
         </section>
       )}
     </section>
@@ -485,44 +411,6 @@ function mountainWavesCompareTarget(
   );
 }
 
-function MountainWavesAttemptRow({
-  attempt,
-  onExplore,
-  onCreateVariation,
-}: {
-  attempt: MountainWavesSimulation;
-  onExplore: (simulation: MountainWavesSimulation) => void;
-  onCreateVariation?: (simulationId: string) => void;
-}) {
-  return (
-    <article>
-      <div>
-        <strong>{attempt.display_name}</strong>
-        <span>
-          {stateLabel(attempt.state)} · {attempt.state_message}
-        </span>
-        <code>{attempt.run_id}</code>
-      </div>
-      <div className="simulation-actions">
-        {attempt.inspectable && (
-          <button type="button" onClick={() => onExplore(attempt)}>
-            Explore
-          </button>
-        )}
-        {attempt.can_create_variation && onCreateVariation && (
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => onCreateVariation(attempt.simulation_id)}
-          >
-            Create variation
-          </button>
-        )}
-      </div>
-    </article>
-  );
-}
-
 function WorldBreadcrumb({ onBackToWorlds }: { onBackToWorlds: () => void }) {
   return (
     <nav className="world-breadcrumb" aria-label="Breadcrumb">
@@ -554,11 +442,25 @@ function sectionLabel(section: WorldSection): string {
   if (section === "overview") return "Overview";
   if (section === "simulations") return "Simulations";
   if (section === "saved_comparisons") return "Saved Comparisons";
-  return "Lab";
+  if (section === "create") return "Create Variation";
+  return section === "activity" ? "Activity" : "History";
 }
 
-function capitalize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
+function simulationForLifecycleRecord(
+  world: MountainWavesWorldDetail,
+  record: LifecycleRecord,
+): MountainWavesSimulation | null {
+  const actionRunIds = new Set(
+    record.actions
+      .map((action) => action.run_id)
+      .filter((runId): runId is string => Boolean(runId)),
+  );
+  return (
+    world.simulations.find(
+      (simulation) =>
+        simulation.simulation_id === record.simulation_id || actionRunIds.has(simulation.run_id),
+    ) ?? null
+  );
 }
 
 function stateLabel(state: MountainWavesSimulation["state"]): string {
@@ -572,14 +474,6 @@ function stateLabel(state: MountainWavesSimulation["state"]): string {
     unavailable: "Unavailable",
     conflict: "Not inspectable",
   }[state];
-}
-
-function labSummary(world: MountainWavesWorldDetail): string {
-  if (world.lab_summary.active_run_count) return "CM1 is running";
-  if (world.lab_summary.packaged_run_count) return "A variation is ready to run";
-  return world.lab_summary.total_variation_count
-    ? "Ready for another experiment"
-    : "Start an experiment";
 }
 
 async function responseMessage(response: Response, fallback: string): Promise<string> {

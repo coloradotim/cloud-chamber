@@ -4534,6 +4534,170 @@ const tradeCumulusCompareDescriptor = {
   persistence: "transient_only",
 };
 
+function appLifecycleRecord({
+  recordId,
+  displayName,
+  ownerId,
+  ownerLabel,
+  resultId,
+  runId,
+  lifecycleLabel = "Ready to inspect",
+  lifecycleDetail = "The ingested Experiment is available in Explore.",
+  activityGroup = "ready_to_inspect",
+  worldId = null,
+  simulationId = null,
+}: {
+  recordId: string;
+  displayName: string;
+  ownerId:
+    | "trade_cumulus"
+    | "mountain_waves"
+    | "supercells"
+    | "fun_with_soundings"
+    | "legacy_unassigned";
+  ownerLabel: string;
+  resultId: string;
+  runId: string;
+  lifecycleLabel?: string;
+  lifecycleDetail?: string;
+  activityGroup?:
+    | "needs_attention"
+    | "ready_to_run"
+    | "queued"
+    | "running"
+    | "awaiting_validation_or_ingest"
+    | "ready_to_inspect"
+    | "available_with_caveats"
+    | "recently_completed";
+  worldId?: string | null;
+  simulationId?: string | null;
+}) {
+  return {
+    record_id: recordId,
+    record_kind: simulationId ? "simulation" : "experiment",
+    owner_id: ownerId,
+    owner_label: ownerLabel,
+    simulation_id: simulationId,
+    experiment_id: simulationId ? null : resultId,
+    world_id: worldId,
+    recipe_id: null,
+    recipe_version: null,
+    parent_simulation_id: null,
+    reference_simulation_id: null,
+    display_name: displayName,
+    question: null,
+    role: simulationId ? "reference" : "experiment",
+    case_id: null,
+    differences: [],
+    attempts: [
+      {
+        attempt_id: runId,
+        run_id: runId,
+        relationship: "initial",
+        accepted_backing: Boolean(simulationId),
+        manifest_path: `/tmp/${runId}/run_manifest.json`,
+        lifecycle_state: lifecycleLabel === "Running" ? "running" : "completed",
+        queue_state: lifecycleLabel === "Running" ? "running" : null,
+        product_state: "completed_cm1_result",
+        validation_status: "valid",
+        result_id: resultId,
+        output_artifact_count: 2,
+        size_bytes: 1024,
+        retained_state: "retained",
+        created_at: "2026-07-24T12:00:00Z",
+        started_at: "2026-07-24T12:01:00Z",
+        finished_at: "2026-07-24T12:10:00Z",
+        updated_at: "2026-07-24T12:10:00Z",
+        message: null,
+        failure_reason: null,
+      },
+    ],
+    facts: {
+      scientific_work: "present",
+      package: "present",
+      attempt: "present",
+      queue: lifecycleLabel === "Running" ? "pending" : "not_applicable",
+      process: lifecycleLabel === "Running" ? "pending" : "passed",
+      expected_output: "present",
+      technical_integrity: "passed",
+      ingest: "present",
+      world_inspectability: simulationId ? "passed" : "not_applicable",
+      simulation_availability: simulationId ? "present" : "not_applicable",
+      parent_eligibility: simulationId ? "eligible" : "not_applicable",
+      retained_assets: "present",
+    },
+    trust_state: "trusted",
+    caveats: [],
+    tags: [],
+    notes: null,
+    lifecycle_label: lifecycleLabel,
+    lifecycle_detail: lifecycleDetail,
+    activity_group: activityGroup,
+    in_activity: true,
+    created_at: "2026-07-24T12:00:00Z",
+    updated_at: "2026-07-24T12:10:00Z",
+    size_bytes: 1024,
+    dependencies: [],
+    actions: [
+      {
+        kind: "explore",
+        label: "Explore",
+        run_id: runId,
+        manifest_path: `/tmp/${runId}/run_manifest.json`,
+        result_id: resultId,
+        world_id: worldId,
+        simulation_id: simulationId,
+        target_simulation_id: null,
+      },
+    ],
+  };
+}
+
+const defaultLifecycleProjection = {
+  schema_version: "1",
+  generated_at: "2026-07-27T12:00:00Z",
+  records: [
+    appLifecycleRecord({
+      recordId: "experiment:observed",
+      displayName: observedSoundingResultCard.name,
+      ownerId: "fun_with_soundings",
+      ownerLabel: "Fun With Soundings",
+      resultId: observedSoundingResultCard.result_id,
+      runId: observedSoundingResultCard.run_id,
+    }),
+    appLifecycleRecord({
+      recordId: "experiment:quicklook",
+      displayName: resultCard.name,
+      ownerId: "legacy_unassigned",
+      ownerLabel: "Legacy / unassigned",
+      resultId: resultCard.result_id,
+      runId: resultCard.run_id,
+    }),
+    appLifecycleRecord({
+      recordId: "experiment:unlineaged-trade",
+      displayName: unlineagedTradeResultCard.name,
+      ownerId: "legacy_unassigned",
+      ownerLabel: "Legacy / unassigned",
+      resultId: unlineagedTradeResultCard.result_id,
+      runId: unlineagedTradeResultCard.run_id,
+    }),
+    appLifecycleRecord({
+      recordId: "simulation:trade-reference",
+      displayName: "Canonical BOMEX Baseline",
+      ownerId: "trade_cumulus",
+      ownerLabel: "Trade Cumulus",
+      resultId: comparisonBaselineResultCard.result_id,
+      runId: comparisonBaselineResultCard.run_id,
+      worldId: "trade_cumulus",
+      simulationId: "trade_cumulus_canonical_bomex",
+      lifecycleLabel: "Available",
+      lifecycleDetail: "The Simulation is inspectable in its Cloud World.",
+      activityGroup: "recently_completed",
+    }),
+  ],
+  warnings: [],
+};
+
 function mockWorldScopedApp(storyStatus = 200) {
   mockTradeCumulusComparisonApp(storyStatus);
   const defaultFetch = vi.mocked(fetch).getMockImplementation();
@@ -4550,6 +4714,11 @@ function mockWorldScopedApp(storyStatus = 200) {
     if (url.startsWith("/api/worlds/trade-cumulus/compare")) {
       return Promise.resolve(
         new Response(JSON.stringify(tradeCumulusCompareDescriptor), { status: 200 }),
+      );
+    }
+    if (url === "/api/lifecycle") {
+      return Promise.resolve(
+        new Response(JSON.stringify(defaultLifecycleProjection), { status: 200 }),
       );
     }
     return (
@@ -4584,35 +4753,18 @@ describe("App", () => {
     expect(window.location.pathname).toBe("/fun-with-soundings");
     expect(await screen.findByRole("heading", { name: "Fun With Soundings" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "4 Runs" }));
-    const pastExperiments = (
-      await screen.findByRole("heading", {
-        name: "Past Experiments",
-      })
-    ).closest("section");
-    expect(pastExperiments).not.toBeNull();
-    expect(
-      within(pastExperiments!).getByRole("button", { name: "Refresh Experiments" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Refresh current work" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Refresh results" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "4 Activity & History" }));
+    expect(await screen.findByRole("heading", { name: "Current work" })).toBeInTheDocument();
+    expect(screen.getByText(observedSoundingResultCard.name)).toBeInTheDocument();
+    expect(screen.getByText(resultCard.name)).toBeInTheDocument();
+    expect(screen.queryByText("Canonical BOMEX Baseline")).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
     expect(
-      await screen.findByText(
-        /retained Simulations verified\. Could not check Mountain Waves, Supercells; affected Experiments remain unassigned\./,
-      ),
+      await screen.findByRole("heading", { name: "Retained scientific work" }),
     ).toBeInTheDocument();
-    fireEvent.change(within(pastExperiments!).getByRole("combobox", { name: "Ownership" }), {
-      target: { value: "world" },
-    });
-    const worldButtons = await screen.findAllByRole("button", { name: "Open Trade Cumulus" });
-    expect(worldButtons.length).toBeGreaterThan(0);
-
-    fireEvent.click(worldButtons[0]);
-    expect(
-      await screen.findByRole("navigation", { name: "Trade Cumulus sections" }),
-    ).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/");
+    expect(screen.getByLabelText("Owner")).toHaveValue("all");
+    expect(screen.getByText("Legacy / unassigned")).toBeInTheDocument();
   });
 
   it("keeps unmatched World-associated metadata as an unassigned Experiment", async () => {
@@ -4630,6 +4782,28 @@ describe("App", () => {
     };
     const defaultFetch = vi.mocked(fetch).getMockImplementation();
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/lifecycle") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              schema_version: "1",
+              generated_at: "2026-07-27T12:00:00Z",
+              records: [
+                appLifecycleRecord({
+                  recordId: "experiment:unmatched",
+                  displayName: unmatchedAssociatedResult.name,
+                  ownerId: "legacy_unassigned",
+                  ownerLabel: "Legacy / unassigned",
+                  resultId: unmatchedAssociatedResult.result_id,
+                  runId: unmatchedAssociatedResult.run_id,
+                }),
+              ],
+              warnings: ["A World-like claim could not be verified and remains unassigned."],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
       if (String(input) === "/api/results") {
         return Promise.resolve(
           new Response(JSON.stringify({ results: [unmatchedAssociatedResult] }), { status: 200 }),
@@ -4642,21 +4816,14 @@ describe("App", () => {
 
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Open Fun With Soundings" }));
-    fireEvent.click(screen.getByRole("button", { name: "4 Runs" }));
+    fireEvent.click(screen.getByRole("button", { name: "4 Activity & History" }));
 
-    const pastExperiments = (
-      await screen.findByRole("heading", { name: "Past Experiments" })
-    ).closest("section");
-    expect(pastExperiments).not.toBeNull();
-    fireEvent.change(within(pastExperiments!).getByRole("combobox", { name: "Ownership" }), {
-      target: { value: "legacy" },
-    });
-    expect(await screen.findByText("Legacy / unassigned")).toBeInTheDocument();
+    expect(await screen.findByText("Legacy / unassigned · Experiment")).toBeInTheDocument();
     const unmatchedCard = screen
-      .getByRole("article", { name: "Unmatched World-associated output Experiment" })
+      .getByRole("heading", { name: "Unmatched World-associated output" })
       .closest("article");
     expect(unmatchedCard).not.toBeNull();
-    fireEvent.click(within(unmatchedCard!).getByRole("button", { name: "Open in Explore" }));
+    fireEvent.click(within(unmatchedCard!).getByRole("button", { name: "Explore" }));
 
     await waitFor(() => {
       expect(window.location.pathname).toBe(
@@ -4817,6 +4984,31 @@ describe("App", () => {
       if (url === "/api/runs/queue") {
         return Promise.resolve(new Response(JSON.stringify(occupiedQueue), { status: 200 }));
       }
+      if (url === "/api/lifecycle") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              schema_version: "1",
+              generated_at: "2026-07-27T12:00:00Z",
+              records: [
+                appLifecycleRecord({
+                  recordId: "experiment:mountain-waves-active-run",
+                  displayName: "World-associated work",
+                  ownerId: "legacy_unassigned",
+                  ownerLabel: "Legacy / unassigned",
+                  resultId: "result-mountain-waves-active-run",
+                  runId: worldRun.run_id,
+                  lifecycleLabel: "Running",
+                  lifecycleDetail: "CM1 execution is in progress.",
+                  activityGroup: "running",
+                }),
+              ],
+              warnings: [],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
       return (
         defaultFetch?.(input, init) ?? Promise.resolve(new Response("not found", { status: 404 }))
       );
@@ -4824,12 +5016,10 @@ describe("App", () => {
 
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Open Fun With Soundings" }));
-    fireEvent.click(screen.getByRole("button", { name: "4 Runs" }));
+    fireEvent.click(screen.getByRole("button", { name: "4 Activity & History" }));
 
-    expect(
-      await screen.findByRole("heading", { name: "Other Cloud Chamber work is running" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("World-associated work")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Running" })).toBeInTheDocument();
+    expect(screen.getByText("Legacy / unassigned · Experiment")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "CM1 is running" })).not.toBeInTheDocument();
   });
 
@@ -5032,45 +5222,38 @@ describe("App", () => {
     expect(screen.queryByLabelText("Selected Explore result")).not.toBeInTheDocument();
   });
 
-  it("keeps unrelated and unlineaged Explore entries in explicit Lab-result context", async () => {
+  it("keeps unrelated and unlineaged Explore entries in Fun With Soundings", async () => {
     mockWorldScopedApp();
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "Enter Trade Cumulus" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Lab" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Fun With Soundings" }));
+    fireEvent.click(screen.getByRole("button", { name: "4 Activity & History" }));
 
     for (const resultName of ["Quick-look shallow cumulus", "Unlineaged Trade Cumulus output"]) {
-      fireEvent.click(await screen.findByRole("button", { name: resultName }));
-      fireEvent.click(
-        within(await screen.findByLabelText("Result detail")).getByRole("button", {
-          name: "Open in Explore",
-        }),
-      );
+      const card = (await screen.findByRole("heading", { name: resultName })).closest("article");
+      expect(card).not.toBeNull();
+      fireEvent.click(within(card!).getByRole("button", { name: "Explore" }));
 
       expect(
-        await screen.findByLabelText(`${resultName} Lab result workspace`),
+        await screen.findByLabelText(`${resultName} atmospheric experiment workspace`),
       ).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: resultName })).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "Back to Lab Results" }));
-      expect(
-        await screen.findByRole("heading", { name: "Experiment Notebook" }),
-      ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Back to Activity & History" }));
+      expect(await screen.findByRole("heading", { name: "Current work" })).toBeInTheDocument();
     }
   });
 
-  it("retains existing Build and Results only inside Trade Cumulus Lab", async () => {
+  it("removes unrelated Build and Results from Trade Cumulus", async () => {
     mockWorldScopedApp();
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Enter Trade Cumulus" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Lab" }));
-
-    expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
-    const labNav = screen.getByRole("navigation", { name: "Trade Cumulus Lab" });
-    fireEvent.click(within(labNav).getByRole("button", { name: "Build" }));
+    const nav = await screen.findByRole("navigation", { name: "Trade Cumulus sections" });
+    expect(within(nav).queryByRole("button", { name: "Lab" })).not.toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: "Activity" })).toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: "History" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Experiment Notebook" })).not.toBeInTheDocument();
     expect(
-      await screen.findByRole("heading", { name: "Build and run a CM1 experiment" }),
-    ).toBeInTheDocument();
-    fireEvent.click(within(labNav).getByRole("button", { name: "Results" }));
-    expect(await screen.findByRole("heading", { name: "Experiment Notebook" })).toBeInTheDocument();
+      screen.queryByRole("heading", { name: "Build and run a CM1 experiment" }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders guided Build setup with extensible experiment metadata", async () => {

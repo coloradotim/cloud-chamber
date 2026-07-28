@@ -1,5 +1,6 @@
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
+import { LifecycleWorkspace, type LifecycleRecord } from "./LifecycleWorkspace";
 import { SavedComparisonsCollection } from "./SavedComparisons";
 
 export type ConfigurationDifference = {
@@ -81,43 +82,30 @@ export type TradeCumulusWorldSection =
   | "saved_views"
   | "comparisons"
   | "saved_comparisons"
-  | "lab";
-export type TradeCumulusLabSection = "build" | "results";
+  | "activity"
+  | "history";
 
 export function TradeCumulusWorld({
   onBackToWorlds,
   onExploreSimulation,
   onOpenFeaturedComparison,
   onOpenSavedComparison,
-  buildContent,
-  resultsContent,
   section: controlledSection,
-  labSection: controlledLabSection,
   onSectionChange,
-  onLabSectionChange,
   onWorldDetailChange,
   initialSection = "overview",
-  initialLabSection = "results",
 }: {
   onBackToWorlds: () => void;
   onExploreSimulation: (simulation: SimulationRecord) => void;
   onOpenFeaturedComparison: (simulation?: SimulationRecord) => void;
   onOpenSavedComparison: (savedComparisonId: string) => void;
-  buildContent: ReactNode;
-  resultsContent: ReactNode;
   section?: TradeCumulusWorldSection;
-  labSection?: TradeCumulusLabSection;
   onSectionChange?: (section: TradeCumulusWorldSection) => void;
-  onLabSectionChange?: (section: TradeCumulusLabSection) => void;
   onWorldDetailChange?: (world: TradeCumulusWorldDetail | null) => void;
   initialSection?: TradeCumulusWorldSection;
-  initialLabSection?: TradeCumulusLabSection;
 }) {
   const [internalSection, setInternalSection] = useState<TradeCumulusWorldSection>(initialSection);
-  const [internalLabSection, setInternalLabSection] =
-    useState<TradeCumulusLabSection>(initialLabSection);
   const section = controlledSection ?? internalSection;
-  const labSection = controlledLabSection ?? internalLabSection;
   const [world, setWorld] = useState<TradeCumulusWorldDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -152,16 +140,6 @@ export function TradeCumulusWorld({
     onSectionChange?.(target);
   }
 
-  function changeLabSection(target: TradeCumulusLabSection) {
-    if (controlledLabSection === undefined) setInternalLabSection(target);
-    onLabSectionChange?.(target);
-  }
-
-  function openLab(target: TradeCumulusLabSection = "build") {
-    changeLabSection(target);
-    changeSection("lab");
-  }
-
   if (loading) {
     return (
       <section className="world-shell" aria-label="Trade Cumulus World">
@@ -181,20 +159,12 @@ export function TradeCumulusWorld({
           <div>
             <h2>Trade Cumulus could not be loaded</h2>
             <p role="alert">{error}</p>
-            <p>The existing Lab remains available while World data is retried.</p>
+            <p>Retry the World inventory without affecting retained work.</p>
           </div>
           <button type="button" onClick={() => void loadWorld()}>
             Retry Trade Cumulus
           </button>
         </section>
-        <LabWorkspace
-          labSection={labSection}
-          setLabSection={changeLabSection}
-          buildContent={buildContent}
-          resultsContent={resultsContent}
-          history={[]}
-          onExploreSimulation={onExploreSimulation}
-        />
       </section>
     );
   }
@@ -217,7 +187,8 @@ export function TradeCumulusWorld({
             "saved_views",
             "comparisons",
             "saved_comparisons",
-            "lab",
+            "activity",
+            "history",
           ] as TradeCumulusWorldSection[]
         ).map((item) => (
           <button
@@ -236,7 +207,7 @@ export function TradeCumulusWorld({
           world={world}
           onExploreSimulation={onExploreSimulation}
           onOpenFeaturedComparison={onOpenFeaturedComparison}
-          onOpenLab={() => openLab("build")}
+          onOpenActivity={() => changeSection("activity")}
         />
       )}
       {section === "simulations" && (
@@ -255,15 +226,23 @@ export function TradeCumulusWorld({
           <SavedComparisonsCollection worldSlug="trade-cumulus" onOpen={onOpenSavedComparison} />
         </section>
       )}
-      {section === "lab" && (
-        <LabWorkspace
-          labSection={labSection}
-          setLabSection={changeLabSection}
-          buildContent={buildContent}
-          resultsContent={resultsContent}
-          history={world.lab_history}
-          onExploreSimulation={onExploreSimulation}
-        />
+      {(section === "activity" || section === "history") && (
+        <section className="world-section">
+          <LifecycleWorkspace
+            ownerIds={["trade_cumulus"]}
+            view={section}
+            showViewTabs={false}
+            onExplore={(record) => {
+              const simulation = simulationForLifecycleRecord(world, record);
+              if (simulation) onExploreSimulation(simulation);
+            }}
+            onCompare={(record) => {
+              const simulation = simulationForLifecycleRecord(world, record);
+              if (simulation) onOpenFeaturedComparison(simulation);
+            }}
+            onOpenRunControls={() => changeSection("activity")}
+          />
+        </section>
       )}
     </section>
   );
@@ -285,12 +264,12 @@ function Overview({
   world,
   onExploreSimulation,
   onOpenFeaturedComparison,
-  onOpenLab,
+  onOpenActivity,
 }: {
   world: TradeCumulusWorldDetail;
   onExploreSimulation: (simulation: SimulationRecord) => void;
   onOpenFeaturedComparison: (simulation?: SimulationRecord) => void;
-  onOpenLab: () => void;
+  onOpenActivity: () => void;
 }) {
   const moreMoisture = world.simulations.find(
     (simulation) =>
@@ -331,18 +310,14 @@ function Overview({
         )}
       </div>
 
-      <section className="world-lab-summary" aria-label="Trade Cumulus Lab status">
+      <section className="world-lab-summary" aria-label="Trade Cumulus Activity status">
         <div>
-          <p className="eyebrow">Lab</p>
-          <h3>{world.lab_summary.summary}</h3>
-          <p>
-            {world.lab_summary.active_run_count} active ·{" "}
-            {world.lab_summary.completed_uninspected_run_count} awaiting inspection ·{" "}
-            {world.lab_summary.lab_history_count} in Lab history
-          </p>
+          <p className="eyebrow">Activity</p>
+          <h3>Current work and retained history</h3>
+          <p>Review active work, available Simulations, and their technical attempts.</p>
         </div>
-        <button type="button" onClick={onOpenLab}>
-          Open Trade Cumulus Lab
+        <button type="button" onClick={onOpenActivity}>
+          Open Activity
         </button>
       </section>
     </section>
@@ -532,69 +507,6 @@ function ComparisonCard({
   );
 }
 
-function LabWorkspace({
-  labSection,
-  setLabSection,
-  buildContent,
-  resultsContent,
-  history,
-  onExploreSimulation,
-}: {
-  labSection: TradeCumulusLabSection;
-  setLabSection: (section: TradeCumulusLabSection) => void;
-  buildContent: ReactNode;
-  resultsContent: ReactNode;
-  history: SimulationRecord[];
-  onExploreSimulation: (simulation: SimulationRecord) => void;
-}) {
-  return (
-    <section className="world-section world-lab" aria-labelledby="world-lab-title">
-      <div className="world-section-heading">
-        <div>
-          <p className="eyebrow">Trade Cumulus Lab</p>
-          <h3 id="world-lab-title">Build and inspect model runs</h3>
-        </div>
-        <nav className="lab-subnav" aria-label="Trade Cumulus Lab">
-          {(["build", "results"] as TradeCumulusLabSection[]).map((item) => (
-            <button
-              key={item}
-              type="button"
-              className={labSection === item ? "active-control" : ""}
-              onClick={() => setLabSection(item)}
-            >
-              {item === "build" ? "Build" : "Results"}
-            </button>
-          ))}
-        </nav>
-      </div>
-      {history.length > 0 && (
-        <details className="lab-history">
-          <summary>Lab history ({history.length})</summary>
-          <div className="lab-history-list">
-            {history.map((simulation) => (
-              <article key={simulation.result_id}>
-                <div>
-                  <strong>{simulation.display_name}</strong>
-                  <span>{simulation.technical_state_message}</span>
-                  <code>{simulation.result_id}</code>
-                </div>
-                <button
-                  type="button"
-                  disabled={!simulation.explore_available}
-                  onClick={() => onExploreSimulation(simulation)}
-                >
-                  Explore
-                </button>
-              </article>
-            ))}
-          </div>
-        </details>
-      )}
-      <div className="lab-content">{labSection === "build" ? buildContent : resultsContent}</div>
-    </section>
-  );
-}
-
 function validateWorldDetail(payload: unknown): TradeCumulusWorldDetail {
   if (!isRecord(payload) || !isSimulation(payload.reference_simulation)) {
     throw new Error("Trade Cumulus response does not match the required contract.");
@@ -716,8 +628,27 @@ function sectionLabel(section: TradeCumulusWorldSection): string {
     saved_views: "Saved Views",
     comparisons: "Comparisons",
     saved_comparisons: "Saved Comparisons",
-    lab: "Lab",
+    activity: "Activity",
+    history: "History",
   }[section];
+}
+
+function simulationForLifecycleRecord(
+  world: TradeCumulusWorldDetail,
+  record: LifecycleRecord,
+): SimulationRecord | null {
+  const actionResultIds = new Set(
+    record.actions
+      .map((action) => action.result_id)
+      .filter((resultId): resultId is string => Boolean(resultId)),
+  );
+  return (
+    world.simulations.find(
+      (simulation) =>
+        simulation.simulation_id === record.simulation_id ||
+        actionResultIds.has(simulation.result_id),
+    ) ?? null
+  );
 }
 
 function technicalStateLabel(state: "available" | "missing" | "conflict"): string {
