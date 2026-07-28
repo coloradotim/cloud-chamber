@@ -234,22 +234,37 @@ def _mountain_descriptor(
         right_simulation_id or default_right,
     )
     records = {item.simulation_id: item for item in world.simulations}
-    differences = _mapping_differences(
-        _mountain_comparison_configuration(records[left.simulation_id]),
-        _mountain_comparison_configuration(records[right.simulation_id]),
+    left_record = records[left.simulation_id]
+    right_record = records[right.simulation_id]
+    envelope_relationship = _mountain_envelope_relationship(left_record, right_record)
+    differences = (
+        _mountain_envelope_differences(left_record, right_record)
+        if envelope_relationship is not None
+        else _mapping_differences(
+            _mountain_comparison_configuration(left_record),
+            _mountain_comparison_configuration(right_record),
+        )
     )
+    controlled = envelope_relationship == "controlled_physical_variation"
     compatibility = _compatibility(
         left,
         right,
-        relationship=(
-            "Both are retained built-in Mountain Waves Simulations; no controlled "
-            "experimental relationship is declared."
-        ),
-        controlled_pair=False,
+        relationship=(_mountain_relationship_message(left, right, envelope_relationship)),
+        controlled_pair=controlled,
         controlled_message=(
-            "Dry Ridge and Boulder Windstorm differ in moisture, atmosphere, terrain, "
-            "domain, grid, and duration. This is a structural comparison, not a "
-            "one-variable experiment."
+            "The shared variation envelope records one material physical change and "
+            "matched numerical and observation layers."
+            if controlled
+            else (
+                "The shared variation envelope classifies this pair as "
+                f"{envelope_relationship.replace('_', ' ')}."
+                if envelope_relationship is not None
+                else (
+                    "Dry Ridge and Boulder Windstorm differ in moisture, atmosphere, "
+                    "terrain, domain, grid, and duration. This is a structural "
+                    "comparison, not a one-variable experiment."
+                )
+            )
         ),
     )
     return WorldCompareDescriptor(
@@ -794,6 +809,73 @@ def _mountain_comparison_configuration(
             if key in terrain
         },
     }
+
+
+def _mountain_envelope_relationship(
+    left: MountainWavesSimulationRecord,
+    right: MountainWavesSimulationRecord,
+) -> str | None:
+    if right.parent_simulation_id == left.simulation_id:
+        return right.relationship_classification
+    if left.parent_simulation_id == right.simulation_id:
+        return left.relationship_classification
+    return None
+
+
+def _mountain_relationship_message(
+    left: CompareSimulationDescriptor,
+    right: CompareSimulationDescriptor,
+    classification: str | None,
+) -> str:
+    if classification is not None:
+        child = right if right.parent_simulation_id == left.simulation_id else left
+        parent = left if child is right else right
+        return (
+            f"{child.display_name} is a {classification.replace('_', ' ')} of "
+            f"{parent.display_name}."
+        )
+    return (
+        "Both are retained built-in Mountain Waves Simulations; no controlled "
+        "experimental relationship is declared."
+    )
+
+
+def _mountain_envelope_differences(
+    left: MountainWavesSimulationRecord,
+    right: MountainWavesSimulationRecord,
+) -> list[CompareDifference]:
+    child = right if right.parent_simulation_id == left.simulation_id else left
+    reverse = child is left
+    category_map = {
+        "terrain": "atmospheric",
+        "wind": "atmospheric",
+        "moisture": "atmospheric",
+        "stability/thermodynamics": "atmospheric",
+        "forcing/initiation": "atmospheric",
+        "numerical realization": "numerical",
+        "observation plan": "output",
+    }
+    rows: list[CompareDifference] = []
+    for group, differences in child.differences.items():
+        for difference in differences:
+            if difference.get("material") is False:
+                continue
+            before = difference.get("before")
+            after = difference.get("after")
+            rows.append(
+                CompareDifference(
+                    path=str(difference.get("path") or difference.get("label") or group),
+                    label=str(difference.get("label") or group),
+                    category=category_map.get(group, "metadata"),  # type: ignore[arg-type]
+                    left_value=after if reverse else before,
+                    right_value=before if reverse else after,
+                    units=(
+                        str(difference["units"]) if difference.get("units") is not None else None
+                    ),
+                    material=True,
+                )
+            )
+    return rows
 
 
 def _flatten_mapping(value: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:

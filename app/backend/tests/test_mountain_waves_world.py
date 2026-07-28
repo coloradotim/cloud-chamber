@@ -68,8 +68,10 @@ def test_world_installs_distinct_dry_and_moist_references(tmp_path: Path) -> Non
         MOIST_SIMULATION_ID,
     ]
     assert all(simulation.inspectable for simulation in world.simulations)
-    assert world.simulations[0].can_create_variation is False
+    assert world.simulations[0].can_create_variation is True
+    assert world.simulations[0].recipe_id == "dry_ridge_mechanics"
     assert world.simulations[1].can_create_variation is True
+    assert world.simulations[1].recipe_id == "boulder_moist_wave"
     assert world.simulations[0].moist is False
     assert world.simulations[1].moist is True
     assert any("not a controlled pair" in caveat for caveat in world.caveats)
@@ -94,7 +96,9 @@ def test_missing_reference_is_honest_without_disabling_lab(tmp_path: Path) -> No
     assert world.simulations[0].inspectable is False
     assert world.simulations[1].inspectable is True
     assert world.default_parent_simulation_id == MOIST_SIMULATION_ID
-    assert world.lab_summary.total_variation_count == 0
+    assert world.lab_summary.total_variation_count == 1
+    assert world.history[0].legacy_contract is True
+    assert world.history[0].simulation_id == "mountain_waves_broader-boulder-ridge_f8f714fb"
 
 
 def test_variation_history_and_completed_simulation_survive_reload(tmp_path: Path) -> None:
@@ -133,7 +137,9 @@ def test_variation_history_and_completed_simulation_survive_reload(tmp_path: Pat
         )
         assert variation.state == "available"
         assert variation.parent_simulation_id == MOIST_SIMULATION_ID
-        assert variation.can_create_variation is True
+        assert variation.can_create_variation is False
+        assert variation.legacy_contract is True
+        assert "Legacy-contract" in (variation.parent_eligibility_reason or "")
         assert world.history[0].simulation_id == variation.simulation_id
         assert world.lab_summary.completed_simulation_count == 1
 

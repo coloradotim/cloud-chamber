@@ -226,6 +226,71 @@ def test_mountain_compare_is_structural_and_keeps_unknown_distinct_from_equal(
     assert dry_descriptor.lineage_state == "independent_built_in"
 
 
+def test_mountain_compare_consumes_shared_envelope_relationship_and_differences(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parent = _mountain_record(
+        simulation_id="mountain_waves_boulder_moist_reference",
+        display_name="Boulder Windstorm",
+        run_id="moist",
+        moist=True,
+        configuration={},
+    )
+    child = MountainWavesSimulationRecord(
+        simulation_id="mountain_waves_broader_boulder",
+        display_name="Broader Boulder Ridge",
+        role="variation",
+        run_id="broader",
+        case_id="mountain_waves_recipe_variation_v1",
+        parent_simulation_id=parent.simulation_id,
+        reference_simulation_id=parent.simulation_id,
+        recipe_id="boulder_moist_wave",
+        recipe_contract_version="1",
+        relationship_classification="controlled_physical_variation",
+        state="available",
+        state_message="Available",
+        inspectable=True,
+        can_create_variation=True,
+        moist=True,
+        moist_fields_available=True,
+        purpose="Test retained variation.",
+        differences={
+            "terrain": [
+                {
+                    "path": "terrain.ridge_half_width_m",
+                    "label": "Ridge half-width",
+                    "before": 10_000,
+                    "after": 11_000,
+                    "units": "m",
+                    "material": True,
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.world_compare.mountain_waves_world_detail",
+        lambda _settings: SimpleNamespace(
+            display_name="Mountain Waves",
+            simulations=[parent, child],
+        ),
+    )
+
+    descriptor = world_compare_descriptor(
+        _settings(tmp_path),
+        world_slug="mountain-waves",
+        left_simulation_id=parent.simulation_id,
+        right_simulation_id=child.simulation_id,
+    )
+
+    assert descriptor.compatibility is not None
+    assert descriptor.compatibility.controlled_pair is True
+    assert "controlled physical variation" in descriptor.compatibility.relationship
+    assert len(descriptor.material_differences) == 1
+    row = descriptor.material_differences[0]
+    assert row.path == "terrain.ridge_half_width_m"
+    assert (row.left_value, row.right_value, row.units) == (10_000, 11_000, "m")
+
+
 def test_supercells_compare_does_not_clone_the_only_simulation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

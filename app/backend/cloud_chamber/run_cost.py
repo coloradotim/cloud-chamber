@@ -40,7 +40,15 @@ TRADE_CUMULUS_RETAINED_FIELDS = (
     "qfx",
     "rain",
 )
-MOUNTAIN_WAVES_DRY_RETAINED_FIELDS = ("zs", "zhval", "th", "prs", "u", "v", "w")
+MOUNTAIN_WAVES_DRY_RETAINED_FIELDS = (
+    "zs",
+    "zhval",
+    "th",
+    "prs",
+    "uinterp",
+    "winterp",
+    "w",
+)
 MOUNTAIN_WAVES_MOIST_RETAINED_FIELDS = (
     "zs",
     "zhval",
@@ -251,8 +259,27 @@ def create_launch_review_snapshot(
     profile_id: str,
     warning_threshold_bytes: int,
     manifest: RunManifest | None = None,
+    resolved_profile: RunCostProfile | None = None,
 ) -> LaunchReviewRecord:
-    profile = profile_by_id(profile_id)
+    catalog_profile = profile_by_id(profile_id)
+    profile = resolved_profile or catalog_profile
+    if (
+        profile.profile_id != catalog_profile.profile_id
+        or profile.world_id != catalog_profile.world_id
+        or profile.recipe_id != catalog_profile.recipe_id
+        or profile.recipe_version != catalog_profile.recipe_version
+        or profile.role != catalog_profile.role
+    ):
+        raise LaunchBudgetError(
+            "Resolved run-cost profile identity does not match the selected catalog profile."
+        )
+    if (
+        profile.observation_plan.retained_field_inventory
+        != catalog_profile.observation_plan.retained_field_inventory
+    ):
+        raise LaunchBudgetError(
+            "Resolved run-cost profile cannot change the approved retained-field inventory."
+        )
     estimate = estimate_profile(settings, profile)
     binding = _manifest_binding(profile, manifest) if manifest else None
     now = datetime.now(UTC)
@@ -413,21 +440,49 @@ def validate_manifest_launch_budget(
 
 def _manifest_binding(profile: RunCostProfile, manifest: RunManifest) -> LaunchManifestBinding:
     contract = manifest.run_configuration.get("launch_specification")
-    expected_contract = {
+    expected_identity = {
         "world_id": profile.world_id,
         "recipe_id": profile.recipe_id,
         "recipe_version": profile.recipe_version,
         "profile_id": profile.profile_id,
-        "numerical_realization": profile.numerical_realization.model_dump(mode="json"),
-        "observation_plan": profile.observation_plan.model_dump(mode="json"),
     }
-    if contract != expected_contract:
+    if not isinstance(contract, dict) or any(
+        contract.get(key) != value for key, value in expected_identity.items()
+    ):
         raise LaunchBudgetError(
-            "the manifest launch specification does not match the approved run-cost profile"
+            "the manifest launch specification identity does not match the approved "
+            "run-cost profile"
+        )
+    try:
+        numerical_realization = NumericalRealization.model_validate(
+            contract.get("numerical_realization")
+        )
+        observation_plan = ObservationPlan.model_validate(contract.get("observation_plan"))
+    except ValueError as exc:
+        raise LaunchBudgetError(
+            "the manifest launch specification is incomplete or malformed"
+        ) from exc
+    if profile.world_id != "mountain_waves":
+        expected_contract = {
+            **expected_identity,
+            "numerical_realization": profile.numerical_realization.model_dump(mode="json"),
+            "observation_plan": profile.observation_plan.model_dump(mode="json"),
+        }
+        if contract != expected_contract:
+            raise LaunchBudgetError(
+                "the manifest launch specification does not match the approved run-cost profile"
+            )
+    elif (
+        numerical_realization != profile.numerical_realization
+        or observation_plan != profile.observation_plan
+    ):
+        raise LaunchBudgetError(
+            "the generated Mountain Waves launch specification no longer matches the "
+            "reviewed resolved profile"
         )
     if manifest.recipe_id != profile.recipe_id:
         raise LaunchBudgetError("the manifest Recipe does not match the reviewed Recipe")
-    if manifest.required_output_fields != list(profile.observation_plan.retained_field_inventory):
+    if manifest.required_output_fields != list(observation_plan.retained_field_inventory):
         raise LaunchBudgetError(
             "the manifest retained fields do not match the reviewed observation plan"
         )
@@ -437,8 +492,8 @@ def _manifest_binding(profile: RunCostProfile, manifest: RunManifest) -> LaunchM
         recipe_id=profile.recipe_id,
         recipe_version=profile.recipe_version,
         profile_id=profile.profile_id,
-        numerical_realization=profile.numerical_realization,
-        observation_plan=profile.observation_plan,
+        numerical_realization=numerical_realization,
+        observation_plan=observation_plan,
         specification_fingerprint=_manifest_specification_fingerprint(manifest),
     )
 
@@ -597,7 +652,7 @@ def profiles() -> list[RunCostProfile]:
         _profile(
             world_id="mountain_waves",
             world_name="Mountain Waves",
-            recipe_id="dry_ridge_wave_mechanics",
+            recipe_id="dry_ridge_mechanics",
             profile_id="mountain_waves_dry_quick_v1",
             profile_name="Dry Ridge Quick — Mechanics check",
             role="Quick",
@@ -616,7 +671,7 @@ def profiles() -> list[RunCostProfile]:
         _profile(
             world_id="mountain_waves",
             world_name="Mountain Waves",
-            recipe_id="dry_ridge_wave_mechanics",
+            recipe_id="dry_ridge_mechanics",
             profile_id="mountain_waves_dry_standard_v1",
             profile_name="Dry Ridge Standard — Wave evolution",
             role="Standard",
@@ -634,7 +689,7 @@ def profiles() -> list[RunCostProfile]:
         _profile(
             world_id="mountain_waves",
             world_name="Mountain Waves",
-            recipe_id="dry_ridge_wave_mechanics",
+            recipe_id="dry_ridge_mechanics",
             profile_id="mountain_waves_dry_presentation_v1",
             profile_name="Dry Ridge Presentation — Smooth wave evolution",
             role="Presentation",
@@ -652,7 +707,7 @@ def profiles() -> list[RunCostProfile]:
         _profile(
             world_id="mountain_waves",
             world_name="Mountain Waves",
-            recipe_id="dry_ridge_wave_mechanics",
+            recipe_id="dry_ridge_mechanics",
             profile_id="mountain_waves_dry_extended_v1",
             profile_name="Dry Ridge Extended — Long wave evolution",
             role="Extended",
@@ -876,7 +931,7 @@ def _retained_field_inventory(world_id: str, recipe_id: str) -> tuple[str, ...]:
     if world_id == "trade_cumulus":
         return TRADE_CUMULUS_RETAINED_FIELDS
     if world_id == "mountain_waves":
-        if recipe_id == "dry_ridge_wave_mechanics":
+        if recipe_id == "dry_ridge_mechanics":
             return MOUNTAIN_WAVES_DRY_RETAINED_FIELDS
         return MOUNTAIN_WAVES_MOIST_RETAINED_FIELDS
     if world_id == "supercells":

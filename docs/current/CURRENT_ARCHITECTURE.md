@@ -132,8 +132,8 @@ eligibility, and retained-asset facts. It is reconstructed from backend and
 runtime state on reload; React state is not authoritative.
 
 Known built-in Simulations use exact current World and run identities. Dynamic
-World assignment currently requires the approved Mountain Waves variation
-contract evidence. Other records are classified from verified
+World assignment currently requires the shared variation envelope and approved
+Mountain Waves Recipe evidence. Other records are classified from verified
 observed-sounding or Result evidence, with ambiguous historical World claims
 failing closed as legacy or unassigned Experiments.
 
@@ -450,11 +450,62 @@ POST /api/storage/launch-reviews/preflight
 The local serial queue enforces the immediate gate when a package contains a
 `launch_review_snapshot_id`. It rejects planning-only snapshots, package or
 specification mismatches, and reuse after one successful launch authorization
-before checking current free space. This opt-in boundary preserves existing
-package behavior while allowing later shared variation work to require the
-contract.
+before checking current free space. Shared-envelope Mountain Waves packages
+require this contract and bind the generated numerical realization and
+observation plan rather than substituting the nominal catalog profile.
+Unrelated legacy package paths retain their existing opt-in behavior.
 The Storage frontend contains no cleanup, repair, protection-editing, or
 backing-selection action.
+
+## Shared Variation Envelope
+
+`app/backend/cloud_chamber/variation_envelope.py` defines the small common
+contract around one explicit World-owned Recipe payload:
+
+```text
+stable Simulation identity and lineage
+  + immutable scientific design
+  + immutable numerical realization
+  + immutable observation plan
+  + categorized material differences
+  + relationship classification
+  + explicit run profile and cost review
+  + technical attempts and validation decisions
+  + availability and parent eligibility
+```
+
+The common layer does not contain a universal atmosphere editor. Mountain Waves
+implements the first typed payload in
+`app/backend/cloud_chamber/mountain_waves_recipes.py`, with separate Dry Ridge
+Mechanics and Boulder Moist Wave Recipe controls. Deterministic generators
+resolve those controls into complete sounding, terrain, domain, timing, output,
+diagnostic, and run-cost specifications.
+
+Package identity is derived from the immutable layers. The same specification
+therefore resolves to the same intended Simulation identity, while each
+packaging creates a distinct technical attempt and run ID. Exact inheritance,
+relationship, and categorized differences are recorded once in the envelope.
+Lifecycle and Compare consume that normalized record.
+
+The Mountain Waves API keeps preview, package, and queue separate:
+
+```text
+GET  /api/worlds/mountain-waves/variation-template
+POST /api/worlds/mountain-waves/variations/preview
+POST /api/worlds/mountain-waves/variations
+POST /api/runs/queue
+```
+
+Packaging writes exact inputs, immutable layer hashes, generated-input
+identity, preflight evidence, and a package-bound launch-review snapshot. It
+does not launch CM1. Queueing rechecks the bound specification, one-use
+authorization, generated-input identity, and current disk budget.
+
+Completed output becomes available only after output completeness, artifact
+integrity, and current World inspectability pass. Parent eligibility remains a
+separate recorded decision. Legacy-contract Mountain Waves records remain
+inspectable and comparable when their artifacts permit, but cannot parent a
+new Recipe variation.
 
 ## Persistence and Asset Boundaries
 
@@ -548,8 +599,9 @@ dependencies remain discoverable through reverse lookup and can be replaced
 only in a transient unsaved pair.
 
 Saved Comparisons do not write the per-Simulation Explore-state library or
-mutate either Simulation. World-aware variation exists for Mountain Waves but
-is not yet one shared cross-World system.
+mutate either Simulation. Compare consumes the shared envelope relationship and
+material differences for Mountain Waves parent-child pairs. Other Worlds do not
+yet provide typed Recipe payloads to the common variation envelope.
 
 ## Product and Research Boundaries
 
@@ -568,7 +620,8 @@ reused.
 - World shells and Explore implementations share vocabulary but still contain
   World-specific state and rendering code.
 - Saved Comparisons are local filesystem state and do not synchronize across devices.
-- Variation is implemented only for Mountain Waves.
+- The shared variation envelope is implemented, but only Mountain Waves
+  currently provides typed Recipe payloads and a Create Variation surface.
 - Legacy run, result, and sounding surfaces remain interleaved with the newer
   World application.
 - Filesystem-backed runtime metadata is local and not a durable multi-device

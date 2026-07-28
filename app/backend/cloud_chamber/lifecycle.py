@@ -21,7 +21,10 @@ from cloud_chamber.cloud_worlds import (
     REFERENCE_SIMULATION_ID,
 )
 from cloud_chamber.local_run_queue import RunQueueEntry, RunQueueState
-from cloud_chamber.mountain_waves_variations import VARIATION_CASE_ID
+from cloud_chamber.mountain_waves_variations import (
+    LEGACY_VARIATION_CASE_ID,
+    VARIATION_CASE_ID,
+)
 from cloud_chamber.mountain_waves_world import (
     DRY_CASE_ID,
     DRY_RUN_ID,
@@ -1055,6 +1058,8 @@ def _variation_source(
     assert display_name is not None
     parent_id = _string(configuration.get("parent_simulation_id"))
     reference_id = _string(configuration.get("reference_simulation_id"))
+    envelope = configuration.get("variation_envelope")
+    envelope_record = envelope if isinstance(envelope, dict) else {}
     availability, inspectability = _source_availability(run, expected_case_id=None)
     caveats = [*run.run_caveats, *(result.caveats if result is not None else [])]
     differences = _configuration_differences(configuration.get("configuration_difference"))
@@ -1066,15 +1071,21 @@ def _variation_source(
         run_id=run.run_id,
         result_id=result.result_id if result is not None else None,
         case_id=run.scenario_id,
-        recipe_id=run.recipe_id or _string(configuration.get("recipe_id")),
-        recipe_version=_string(configuration.get("recipe_version")),
+        recipe_id=run.recipe_id or _string(envelope_record.get("recipe_id")),
+        recipe_version=_string(envelope_record.get("recipe_contract_version")),
         parent_simulation_id=parent_id,
         reference_simulation_id=reference_id,
         question=_string(configuration.get("user_question")) or run.physical_question,
         differences=differences,
         availability_state=availability,
         inspectability_state=inspectability,
-        parent_eligibility_state=("eligible" if availability == "available" else "unknown"),
+        parent_eligibility_state=(
+            "eligible"
+            if envelope_record.get("parent_eligible") is True
+            else "ineligible"
+            if availability == "available"
+            else "unknown"
+        ),
         trust_state=_source_trust(run, result, caveats),
         caveats=list(dict.fromkeys(caveats)),
         created_at=run.created_at,
@@ -1092,11 +1103,12 @@ def _is_current_mountain_waves_variation(
     configuration = run.run_configuration or {}
     return (
         owner == "mountain_waves"
-        and run.scenario_id == VARIATION_CASE_ID
+        and run.scenario_id in {VARIATION_CASE_ID, LEGACY_VARIATION_CASE_ID}
         and bool(simulation_id)
         and bool(display_name)
         and bool(_string(configuration.get("parent_simulation_id")))
-        and _string(configuration.get("reference_simulation_id")) == MOIST_SIMULATION_ID
+        and _string(configuration.get("reference_simulation_id"))
+        in {DRY_SIMULATION_ID, MOIST_SIMULATION_ID}
         and isinstance(configuration.get("mountain_waves_configuration"), dict)
         and isinstance(configuration.get("configuration_difference"), dict)
         and bool(configuration.get("generated_input_sha256"))

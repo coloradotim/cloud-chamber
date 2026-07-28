@@ -3,12 +3,18 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 
+from cloud_chamber.mountain_waves_recipes import (
+    BOULDER_RECIPE_ID,
+    DRY_RECIPE_ID,
+    BoulderMoistControls,
+    DryRidgeControls,
+    MountainWavesRecipeControls,
+    RecipeId,
+)
 from cloud_chamber.mountain_waves_variations import (
-    MountainWavesConfiguration,
     MountainWavesVariationRequest,
     create_mountain_waves_variation,
     mountain_waves_variation_template,
@@ -22,7 +28,6 @@ from cloud_chamber.mountain_waves_world import (
     MOIST_CASE_ID,
     MOIST_RUN_ID,
     MOIST_SIMULATION_ID,
-    mountain_waves_run_manifest,
 )
 from cloud_chamber.run_manifest import (
     AppMetadata,
@@ -50,162 +55,130 @@ def _trust_test_built_in_artifacts(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def test_dry_reference_is_inspectable_but_not_an_editable_parent(tmp_path: Path) -> None:
+def test_templates_expose_two_distinct_recipes_and_approved_profiles(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
-    _write_parent(settings, run_id=DRY_RUN_ID, case_id=DRY_CASE_ID, configuration=None)
+    _write_parent(settings, run_id=DRY_RUN_ID, case_id=DRY_CASE_ID, moist=False)
+    _write_parent(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID, moist=True)
 
-    template = mountain_waves_variation_template(settings, DRY_SIMULATION_ID)
+    dry = mountain_waves_variation_template(settings, DRY_SIMULATION_ID)
+    moist = mountain_waves_variation_template(settings, MOIST_SIMULATION_ID)
 
-    assert template.can_create_variation is False
-    assert "source-defined" in (template.unavailable_reason or "")
-    assert template.configuration.terrain.height_m == pytest.approx(400.0)
+    assert dry.can_create_variation is True
+    assert dry.recipe_id == DRY_RECIPE_ID
+    assert dry.controls.dry_ridge == DryRidgeControls()
+    assert {item.profile.role for item in dry.run_profiles} == {
+        "Quick",
+        "Standard",
+        "Presentation",
+        "Extended",
+    }
+    assert dry.default_run_profile_id == "mountain_waves_dry_presentation_v1"
+    assert moist.recipe_id == BOULDER_RECIPE_ID
+    assert moist.controls.boulder_moist == BoulderMoistControls()
+    assert moist.default_run_profile_id == "mountain_waves_boulder_presentation_v1"
+    assert all(item.profile.recipe_id == BOULDER_RECIPE_ID for item in moist.run_profiles)
 
 
-def test_preview_groups_multiple_exact_changes_and_keeps_science_warnings_nonblocking(
-    tmp_path: Path,
-) -> None:
+def test_dry_preview_uses_recipe_controls_and_generated_timing(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
-    parent = _configuration()
-    _write_parent(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID, configuration=parent)
-    intended = parent.model_copy(deep=True)
-    intended.terrain.height_m = 3_800.0
-    intended.terrain.half_width_m = 6_000.0
-    intended.sounding[0].u_m_s = -5.0
-    intended.sounding[1].u_m_s = 20.0
-    intended.sounding[0].qv_g_kg = 18.0
-    intended.sounding[1].theta_k = 280.0
-    intended.duration_seconds = 1_200
-    intended.output_cadence_seconds = 600
-    request = MountainWavesVariationRequest(
-        parent_simulation_id=MOIST_SIMULATION_ID,
-        simulation_name="Rotor cloud attempt",
-        user_question="Can a compact ridge make a sharper lee cloud?",
-        configuration=intended,
+    _write_parent(settings, run_id=DRY_RUN_ID, case_id=DRY_CASE_ID, moist=False)
+    controls = DryRidgeControls(
+        ridge_height_m=600,
+        ridge_half_width_m=2_000,
+        cross_ridge_wind_m_s=12,
+        dry_stability_n_s=0.012,
+        wind_shear_through_10km_m_s=-8,
     )
-
-    preview = preview_mountain_waves_variation(settings, request)
+    preview = preview_mountain_waves_variation(
+        settings,
+        _request(
+            parent=DRY_SIMULATION_ID,
+            recipe_id=DRY_RECIPE_ID,
+            profile_id="mountain_waves_dry_standard_v1",
+            controls=MountainWavesRecipeControls(recipe_id=DRY_RECIPE_ID, dry_ridge=controls),
+        ),
+    )
 
     assert preview.blocking_errors == []
-    assert all(
-        preview.differences[group]
-        for group in (
-            "terrain",
-            "wind",
-            "moisture",
-            "stability/thermodynamics",
-            "numerics/time",
-            "output",
-        )
-    )
-    assert any("reverses direction" in warning for warning in preview.warnings)
-    assert any("statically unstable" in warning for warning in preview.warnings)
-    assert any("Multiple physical groups" in warning for warning in preview.warnings)
+    assert preview.relationship_classification == "mixed_variation"
+    assert {item["label"] for item in preview.differences["terrain"]} == {
+        "Ridge height",
+        "Ridge half-width",
+    }
+    assert preview.diagnostics["cells_per_half_width"] == pytest.approx(20)
+    assert preview.observation_plan["duration_seconds"] >= 2_160
+    assert preview.observation_plan["output_cadence_seconds"] == 60
+    assert preview.cost_estimate.profile.numerical_realization.grid.endswith("× 1 × 180")
     assert len(preview.terrain_profile) == 121
-    assert len(preview.derived_stability_n2_s2) == len(intended.sounding) - 1
+    assert preview.moisture_profile[0]["value"] == 0
+    assert preview.relative_humidity_profile[0]["value"] == 0
+    assert preview.theta_profile[0]["value"] == pytest.approx(288)
 
 
-def test_malformed_configuration_blocks_without_turning_warnings_into_gates(
+def test_dry_slope_and_uncharacterized_profile_block_without_sanitizing_science(
     tmp_path: Path,
 ) -> None:
     settings = _settings(tmp_path)
-    parent = _configuration()
-    _write_parent(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID, configuration=parent)
-    intended = parent.model_copy(deep=True)
-    intended.terrain.height_m = 0.0
-    intended.duration_seconds = 1_001
-    intended.output_cadence_seconds = 200
-
+    _write_parent(settings, run_id=DRY_RUN_ID, case_id=DRY_CASE_ID, moist=False)
+    controls = DryRidgeControls(ridge_height_m=2_500, ridge_half_width_m=500)
     preview = preview_mountain_waves_variation(
         settings,
-        MountainWavesVariationRequest(
-            parent_simulation_id=MOIST_SIMULATION_ID,
-            simulation_name="Malformed",
-            configuration=intended,
+        _request(
+            parent=DRY_SIMULATION_ID,
+            recipe_id=DRY_RECIPE_ID,
+            profile_id="mountain_waves_dry_extended_v1",
+            controls=MountainWavesRecipeControls(recipe_id=DRY_RECIPE_ID, dry_ridge=controls),
         ),
     )
 
-    assert any("Ridge height" in error for error in preview.blocking_errors)
-    assert any("divide" in error for error in preview.blocking_errors)
+    assert any("maximum terrain slope" in item for item in preview.blocking_errors)
+    assert any("uncharacterized" in item for item in preview.blocking_errors)
 
 
-def test_unchanged_and_noninherited_coordinates_are_blocked(tmp_path: Path) -> None:
+def test_boulder_preview_applies_absolute_reference_transforms(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
-    parent = _configuration()
-    _write_parent(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID, configuration=parent)
-
-    unchanged = preview_mountain_waves_variation(
-        settings,
-        MountainWavesVariationRequest(
-            parent_simulation_id=MOIST_SIMULATION_ID,
-            simulation_name="No-op",
-            configuration=parent,
-        ),
+    _write_parent(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID, moist=True)
+    controls = BoulderMoistControls(
+        ridge_half_width_m=11_000,
+        flow_strength_factor=1.1,
+        lower_rh_deficit_factor=0.5,
+        lower_stability_factor=1.1,
     )
-    assert any("Change at least one" in error for error in unchanged.blocking_errors)
-
-    changed = parent.model_copy(deep=True)
-    changed.terrain.height_m = 1_900.0
-    changed.terrain.center_m = 200_000.0
-    changed.sounding[1].height_m += 1.0
-    changed.sounding[1].pressure_pa += 1.0
-    preview = preview_mountain_waves_variation(
-        settings,
-        MountainWavesVariationRequest(
-            parent_simulation_id=MOIST_SIMULATION_ID,
-            simulation_name="Invalid inherited coordinates",
-            configuration=changed,
-        ),
+    request = _request(
+        parent=MOIST_SIMULATION_ID,
+        recipe_id=BOULDER_RECIPE_ID,
+        profile_id="mountain_waves_boulder_standard_v1",
+        controls=MountainWavesRecipeControls(recipe_id=BOULDER_RECIPE_ID, boulder_moist=controls),
     )
-    assert any("Ridge center" in error for error in preview.blocking_errors)
-    assert any("heights and pressures" in error for error in preview.blocking_errors)
+
+    first = preview_mountain_waves_variation(settings, request)
+    second = preview_mountain_waves_variation(settings, request)
+
+    assert first.blocking_errors == []
+    assert first.wind_profile == second.wind_profile
+    assert first.moisture_profile == second.moisture_profile
+    assert first.relative_humidity_profile == second.relative_humidity_profile
+    assert first.theta_profile == second.theta_profile
+    assert first.differences["terrain"][0]["after"] == 11_000
+    assert first.differences["moisture"][0]["label"] == "Lower RH-deficit factor"
+    assert first.relationship_classification == "mixed_variation"
+    assert all(item["value"] >= 0 for item in first.moisture_profile)
+    assert all(0 <= item["value"] <= 100 for item in first.relative_humidity_profile)
 
 
-def test_each_preview_edit_resolves_its_parent_once(
+def test_package_persists_stable_simulation_identity_separate_attempts_and_launch_binding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     settings = _settings(tmp_path)
-    parent = _configuration()
-    _write_parent(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID, configuration=parent)
-    intended = parent.model_copy(deep=True)
-    intended.terrain.height_m += 100.0
-    request = MountainWavesVariationRequest(
-        parent_simulation_id=MOIST_SIMULATION_ID,
-        simulation_name="Preview edits",
-        configuration=intended,
-    )
-    original = mountain_waves_run_manifest
-    calls = 0
-
-    def counted_resolver(*args: Any, **kwargs: Any) -> Any:
-        nonlocal calls
-        calls += 1
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(
-        "cloud_chamber.mountain_waves_variations.mountain_waves_run_manifest",
-        counted_resolver,
-    )
-
-    preview_mountain_waves_variation(settings, request)
-    preview_mountain_waves_variation(settings, request)
-
-    assert calls == 2
-
-
-def test_package_persists_identity_lineage_inputs_and_clean_preflight(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    settings = _settings(tmp_path)
-    parent = _configuration()
-    _write_parent(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID, configuration=parent)
-    intended = parent.model_copy(deep=True)
-    intended.terrain.height_m = 1_600.0
-    intended.sounding[0].qv_g_kg *= 1.1
-    request = MountainWavesVariationRequest(
-        parent_simulation_id=MOIST_SIMULATION_ID,
-        simulation_name="Smooth Lenticular Attempt",
-        user_question="Will a lower ridge make a smoother cap cloud?",
-        configuration=intended,
+    _write_parent(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID, moist=True)
+    request = _request(
+        parent=MOIST_SIMULATION_ID,
+        recipe_id=BOULDER_RECIPE_ID,
+        profile_id="mountain_waves_boulder_quick_v1",
+        controls=MountainWavesRecipeControls(
+            recipe_id=BOULDER_RECIPE_ID,
+            boulder_moist=BoulderMoistControls(ridge_half_width_m=11_000),
+        ),
     )
     monkeypatch.setattr(
         "cloud_chamber.mountain_waves_variations.verified_clean_git_commit",
@@ -216,29 +189,41 @@ def test_package_persists_identity_lineage_inputs_and_clean_preflight(
         lambda _settings: SimpleNamespace(report_record=lambda: {"release": "21.1"}),
     )
 
-    package = create_mountain_waves_variation(settings, request)
-    manifest_path = Path(package.manifest_path)
-    manifest = load_run_manifest(manifest_path)
-    preflight = preflight_mountain_waves_variation(manifest_path)
+    first = create_mountain_waves_variation(settings, request)
+    second = create_mountain_waves_variation(settings, request)
+    manifest = load_run_manifest(Path(first.manifest_path))
 
-    assert package.simulation_id.startswith("mountain_waves_smooth-lenticular-attempt_")
-    assert package.run_id.startswith("mw-smooth-lenticular-attempt-")
-    assert package.preflight["passed"] is True
-    assert preflight["passed"] is True
+    assert first.simulation_id == second.simulation_id
+    assert first.run_id != second.run_id
+    assert first.envelope.package_identity_sha256 == second.envelope.package_identity_sha256
     assert manifest.lifecycle_state == LifecycleState.PACKAGED
-    assert manifest.run_configuration["cloud_world_id"] == "mountain_waves"
-    assert manifest.run_configuration["parent_simulation_id"] == MOIST_SIMULATION_ID
-    assert manifest.run_configuration["reference_simulation_id"] == MOIST_SIMULATION_ID
-    assert manifest.run_configuration["user_question"] == request.user_question
-    assert manifest.run_configuration["mountain_waves_configuration"] == intended.model_dump(
-        mode="json"
+    assert manifest.recipe_id == BOULDER_RECIPE_ID
+    assert manifest.run_configuration["variation_envelope"]["availability_state"] == "packaged"
+    assert manifest.run_configuration["launch_review_snapshot_id"]
+    assert manifest.run_configuration["launch_specification"]["profile_id"] == (
+        "mountain_waves_boulder_quick_v1"
     )
+    assert first.preflight["passed"] is True
+    assert preflight_mountain_waves_variation(Path(first.manifest_path))["passed"] is True
     assert "uinterp" in manifest.required_output_fields
-    assert manifest.run_configuration["configuration_difference"]["terrain"]
-    assert manifest.generated_inputs.input_sounding is not None
-    assert Path(manifest.generated_inputs.input_sounding).read_text().startswith("1000.0000")
-    terrain_path = Path(package.package_dir) / "perts.dat"
-    assert terrain_path.stat().st_size == 220 * 4
+    assert not list(Path(first.package_dir).glob("cm1out*"))
+
+
+def _request(
+    *,
+    parent: str,
+    recipe_id: RecipeId,
+    profile_id: str,
+    controls: MountainWavesRecipeControls,
+) -> MountainWavesVariationRequest:
+    return MountainWavesVariationRequest(
+        parent_simulation_id=parent,
+        simulation_name="Bounded wave experiment",
+        user_question="How does the approved control change the wave response?",
+        recipe_id=recipe_id,
+        run_profile_id=profile_id,
+        controls=controls,
+    )
 
 
 def _settings(tmp_path: Path) -> CloudChamberSettings:
@@ -260,46 +245,48 @@ def _write_parent(
     *,
     run_id: str,
     case_id: str,
-    configuration: MountainWavesConfiguration | None,
+    moist: bool,
 ) -> None:
     run_dir = settings.runtime_home / "runs" / run_id
     run_dir.mkdir(parents=True)
     output = run_dir / "cm1out_000001.nc"
     output.write_bytes(b"CDF fixture")
     namelist = run_dir / "namelist.input"
-    namelist.write_text(_parent_namelist(dry=configuration is None))
+    namelist.write_text(_parent_namelist(dry=not moist))
     sounding = run_dir / "input_sounding"
-    sounding.write_text("1000.0000 288.000000 0.000000000\n0.0 288.0 0.0 10.0 0.0\n")
+    sounding.write_text(
+        "1000.0000 288.000000 8.000000000\n"
+        "0.0 288.0 8.0 12.0 0.0\n"
+        "4000.0 305.0 4.0 16.0 0.0\n"
+        "10000.0 335.0 0.5 22.0 0.0\n"
+        "25000.0 460.0 0.0 28.0 0.0\n"
+    )
+    (run_dir / "case_manifest.json").write_text("{}\n")
     now = datetime(2026, 7, 21, tzinfo=UTC)
     manifest_path = run_dir / "run_manifest.json"
     domain = {
-        "nx": 100 if configuration is None else 220,
+        "nx": 200 if not moist else 440,
         "ny": 1,
-        "nz": 100 if configuration is None else 125,
-        "dx_m": 200.0 if configuration is None else 1000.0,
-        "dy_m": 200.0 if configuration is None else 1000.0,
-        "dz_m": 200.0,
-        ("active_model_top_m" if configuration is None else "active_top_m"): (
-            20_000.0 if configuration is None else 25_000.0
-        ),
+        "nz": 200 if not moist else 250,
+        "dx_m": 100.0 if not moist else 500.0,
+        "dy_m": 100.0 if not moist else 500.0,
+        "dz_m": 100.0,
+        "active_top_m": 20_000.0 if not moist else 25_000.0,
     }
-    run_configuration: dict[str, Any] = {
-        "duration_seconds": 2_160 if configuration is None else 4_000,
-        "output_cadence_seconds": 216 if configuration is None else 200,
-        "domain": domain,
-        "terrain": {
-            "height_m": 400.0 if configuration is None else 2_000.0,
-            "half_width_m": 1_000.0 if configuration is None else 10_000.0,
-            "center_m": 100.0 if configuration is None else 500.0,
-        },
-    }
-    if configuration is not None:
-        run_configuration["mountain_waves_configuration"] = configuration.model_dump(mode="json")
     manifest = RunManifest(
         run_id=run_id,
         scenario=ScenarioReference(id=case_id, schema_version="test-v1"),
         controls={},
-        run_configuration=run_configuration,
+        run_configuration={
+            "duration_seconds": 2_160 if not moist else 7_200,
+            "output_cadence_seconds": 30,
+            "domain": domain,
+            "terrain": {
+                "height_m": 400.0 if not moist else 2_000.0,
+                "half_width_m": 1_000.0 if not moist else 10_000.0,
+                "center_m": 0.0 if not moist else 250.0,
+            },
+        },
         physical_question="What happens over the ridge?",
         expected_diagnostics=[],
         generated_inputs=GeneratedInputs(
@@ -321,52 +308,17 @@ def _write_parent(
     write_run_manifest(manifest_path, manifest)
 
 
-def _configuration() -> MountainWavesConfiguration:
-    return MountainWavesConfiguration.model_validate(
-        {
-            "terrain": {"height_m": 2000.0, "half_width_m": 10000.0, "center_m": 500.0},
-            "sounding": [
-                {
-                    "height_m": 0.0,
-                    "pressure_pa": 100000.0,
-                    "theta_k": 288.0,
-                    "qv_g_kg": 4.0,
-                    "u_m_s": 12.0,
-                    "v_m_s": 0.0,
-                },
-                {
-                    "height_m": 12500.0,
-                    "pressure_pa": 20000.0,
-                    "theta_k": 340.0,
-                    "qv_g_kg": 0.5,
-                    "u_m_s": 20.0,
-                    "v_m_s": 0.0,
-                },
-                {
-                    "height_m": 25200.0,
-                    "pressure_pa": 3000.0,
-                    "theta_k": 440.0,
-                    "qv_g_kg": 0.0,
-                    "u_m_s": 25.0,
-                    "v_m_s": 0.0,
-                },
-            ],
-            "duration_seconds": 4000,
-            "output_cadence_seconds": 200,
-        }
-    )
-
-
 def _parent_namelist(*, dry: bool) -> str:
     values = {
-        "nx": "100" if dry else "220",
+        "nx": "200" if dry else "440",
         "ny": "1",
-        "nz": "100" if dry else "125",
-        "dx": "200.0" if dry else "1000.0",
-        "dy": "200.0" if dry else "1000.0",
-        "dz": "200.0",
-        "timax": "2160.0" if dry else "4000.0",
-        "tapfrq": "216.0" if dry else "200.0",
+        "nz": "200" if dry else "250",
+        "dx": "100.0" if dry else "500.0",
+        "dy": "100.0" if dry else "500.0",
+        "dz": "100.0",
+        "dtl": "1.0",
+        "timax": "2160.0" if dry else "7200.0",
+        "tapfrq": "30.0",
         "stretch_z": "0",
         "ztop": "18000.0" if dry else "25000.0",
         "zd": "14000.0",

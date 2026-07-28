@@ -34,6 +34,7 @@ from cloud_chamber.run_manifest import (
     RunManifest,
     RunManifestError,
     load_run_manifest,
+    write_run_manifest,
 )
 from cloud_chamber.settings import CloudChamberSettings
 
@@ -49,6 +50,8 @@ DRY_CASE_ID = "cm1_r21_1_dry_mountain_wave_presentation_v1"
 MOIST_SIMULATION_ID = "mountain_waves_boulder_moist_reference"
 MOIST_RUN_ID = "moist-mountain-wave-presentation-v1-20260722"
 MOIST_CASE_ID = "cm1_r21_1_toy2011_boulder_moist_wave_7200s_presentation_v1"
+BROADER_BOULDER_SIMULATION_ID = "mountain_waves_broader-boulder-ridge_f8f714fb"
+BROADER_BOULDER_RUN_ID = "mw-broader-boulder-ridge-20260722T040319Z-f8f7"
 
 AvailabilityState = Literal["available", "partial", "unavailable", "conflict"]
 SimulationState = Literal[
@@ -96,6 +99,11 @@ class MountainWavesSimulationRecord(BaseModel):
     parent_run_id: str | None = None
     reference_simulation_id: str = MOIST_SIMULATION_ID
     user_question: str | None = None
+    recipe_id: str | None = None
+    recipe_contract_version: str | None = None
+    relationship_classification: str | None = None
+    legacy_contract: bool = False
+    parent_eligibility_reason: str | None = None
     state: SimulationState
     state_message: str
     inspectable: bool
@@ -190,7 +198,10 @@ _BUILT_INS = (
         ),
         caveats=(
             "This dry benchmark does not simulate moisture or cloud formation.",
-            "Its built-in analytic sounding is not exposed as an editable parent profile.",
+            (
+                "Variations use the hash-locked Dry Ridge analytic Recipe generator; "
+                "the native source formula is not exposed as arbitrary sounding rows."
+            ),
         ),
     ),
     _BuiltInSpec(
@@ -218,6 +229,8 @@ _BUILT_INS = (
 def mountain_waves_world_detail(settings: CloudChamberSettings) -> MountainWavesWorldDetail:
     built_ins = [_built_in_record(settings, spec) for spec in _BUILT_INS]
     variations = _variation_records(settings)
+    if not any(item.simulation_id == BROADER_BOULDER_SIMULATION_ID for item in variations):
+        variations.append(_missing_broader_boulder_record())
     completed = [item for item in variations if item.inspectable]
     simulations = [*built_ins, *completed]
     active_states = {"queued", "running"}
@@ -251,6 +264,53 @@ def mountain_waves_world_detail(settings: CloudChamberSettings) -> MountainWaves
             failed_run_count=failed_count,
             total_variation_count=len(variations),
         ),
+    )
+
+
+def _missing_broader_boulder_record() -> MountainWavesSimulationRecord:
+    return MountainWavesSimulationRecord(
+        simulation_id=BROADER_BOULDER_SIMULATION_ID,
+        display_name="Broader Boulder Ridge",
+        role="variation",
+        run_id=BROADER_BOULDER_RUN_ID,
+        case_id="mountain_waves_exploratory_variation_v1",
+        parent_simulation_id=MOIST_SIMULATION_ID,
+        parent_run_id="moist-mountain-wave-toy-1972-20260721T215226Z",
+        reference_simulation_id=MOIST_SIMULATION_ID,
+        user_question="How does a 10% broader ridge change the mountain-wave cloud pattern?",
+        recipe_id="boulder_moist_wave",
+        legacy_contract=True,
+        parent_eligibility_reason=(
+            "This Legacy-contract Simulation remains recorded, but its retained output was "
+            "removed and it cannot parent a new variation."
+        ),
+        state="unavailable",
+        state_message=(
+            "The stable Simulation identity and lineage are preserved, but its local run "
+            "artifacts are no longer present."
+        ),
+        inspectable=False,
+        can_create_variation=False,
+        moist=True,
+        moist_fields_available=True,
+        purpose=(
+            "Preserve the real broader-ridge experiment identity, lineage, and historical "
+            "question after local output cleanup."
+        ),
+        differences={
+            "terrain": [
+                {
+                    "path": "controls.ridge_half_width_m",
+                    "label": "Ridge half-width",
+                    "before": 10_000.0,
+                    "after": 11_000.0,
+                    "units": "m",
+                    "material": True,
+                }
+            ]
+        },
+        caveats=["Legacy-contract Simulation; retained CM1 histories are no longer present."],
+        created_at="2026-07-22T04:03:19+00:00",
     )
 
 
@@ -379,16 +439,20 @@ def _built_in_record(
                 (
                     "Exact preserved output is available for terrain-aware inspection."
                     if spec.moist
-                    else (
-                        "Exact preserved output is available for terrain-aware inspection; "
-                        "its source-defined dry setup is not an editable variation parent."
-                    )
+                    else "Exact preserved output is available for terrain-aware inspection."
                 )
                 if inspectable
                 else inspectability_message
             ),
             "inspectable": inspectable,
-            "can_create_variation": inspectable and spec.moist,
+            "can_create_variation": inspectable,
+            "recipe_id": "boulder_moist_wave" if spec.moist else "dry_ridge_mechanics",
+            "recipe_contract_version": "1",
+            "parent_eligibility_reason": (
+                None
+                if inspectable
+                else "The built-in must be available before it can parent a variation."
+            ),
             "configuration": _built_in_configuration(manifest, spec),
             "warnings": list(manifest.outputs.runtime_warnings),
             "created_at": manifest.created_at.isoformat(),
@@ -430,6 +494,10 @@ def _variation_record(
     exact_configuration = configuration.get("mountain_waves_configuration")
     moist = _configuration_is_moist(exact_configuration)
     inspectable, inspectability_message = _variation_inspectability(manifest, manifest_path)
+    envelope = _variation_envelope(configuration)
+    legacy_contract = envelope is None
+    if inspectable and envelope is not None:
+        envelope = _promote_variation_envelope(manifest, manifest_path, envelope)
     state = (
         "available"
         if inspectable
@@ -440,7 +508,11 @@ def _variation_record(
             else _state_from_lifecycle(manifest.lifecycle_state)
         )
     )
-    differences = configuration.get("configuration_difference")
+    differences = (
+        _grouped_envelope_differences(envelope)
+        if envelope is not None
+        else configuration.get("configuration_difference")
+    )
     warning_values = configuration.get("warnings")
     return MountainWavesSimulationRecord(
         simulation_id=simulation_id,
@@ -451,14 +523,39 @@ def _variation_record(
         parent_simulation_id=_string(configuration.get("parent_simulation_id")),
         parent_run_id=_string(configuration.get("parent_run_id")),
         user_question=_string(configuration.get("user_question")),
+        recipe_id=(
+            _string(envelope.get("recipe_id")) if envelope is not None else manifest.recipe_id
+        ),
+        recipe_contract_version=(
+            _string(envelope.get("recipe_contract_version")) if envelope is not None else None
+        ),
+        relationship_classification=(
+            _string(envelope.get("relationship_classification")) if envelope is not None else None
+        ),
+        legacy_contract=legacy_contract,
+        parent_eligibility_reason=(
+            _string(envelope.get("parent_eligibility_reason"))
+            if envelope is not None
+            else (
+                "This Legacy-contract Simulation remains inspectable but cannot parent "
+                "a new Recipe variation."
+            )
+        ),
         state=state,
         state_message=_variation_state_message(manifest, inspectable, inspectability_message),
         inspectable=inspectable,
-        can_create_variation=inspectable and isinstance(exact_configuration, dict),
+        can_create_variation=(
+            inspectable and envelope is not None and envelope.get("parent_eligible") is True
+        ),
         moist=moist,
         moist_fields_available=True,
         purpose=(
-            "Explore the retained configuration and use its exact state for another experiment."
+            "Explore this retained Recipe variation and its exact relationship to the parent."
+            if envelope is not None
+            else (
+                "Explore this retained Legacy-contract Simulation. Its earlier technical "
+                "configuration remains available for evidence, not as a new parent."
+            )
         ),
         configuration=exact_configuration if isinstance(exact_configuration, dict) else None,
         differences=(
@@ -642,9 +739,14 @@ def _evaluate_variation_inspectability(
         or manifest.provenance.product_state != ProductState.COMPLETED_CM1_RESULT
     ):
         return False, "Completed output lacks normal zero-exit process evidence."
-    missing_contract_fields = sorted(
-        MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS - set(manifest.required_output_fields)
+    exact_configuration = manifest.run_configuration.get("mountain_waves_configuration")
+    moist_fields_available = _configuration_is_moist(exact_configuration)
+    required_fields = (
+        MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS
+        if moist_fields_available
+        else MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS - {"qv", "ql"}
     )
+    missing_contract_fields = sorted(required_fields - set(manifest.required_output_fields))
     if missing_contract_fields:
         return False, (
             "Completed output does not declare every Explore field: "
@@ -663,7 +765,7 @@ def _evaluate_variation_inspectability(
             namelist_path=Path(manifest.generated_inputs.namelist_input or "").expanduser(),
             run_id=manifest.run_id,
             implementation_commit=manifest.app.commit or "unknown",
-            moist_fields_available=True,
+            moist_fields_available=moist_fields_available,
         )
     except (
         OSError,
@@ -772,6 +874,121 @@ def _configuration_is_moist(configuration: object) -> bool:
         and float(level["qv_g_kg"]) > 0.0
         for level in sounding
     )
+
+
+def _variation_envelope(configuration: dict[str, Any]) -> dict[str, Any] | None:
+    payload = configuration.get("variation_envelope")
+    if not isinstance(payload, dict):
+        return None
+    if (
+        payload.get("schema_version") != "cloud_world_variation_v1"
+        or payload.get("world_id") != WORLD_ID
+        or payload.get("recipe_id") not in {"dry_ridge_mechanics", "boulder_moist_wave"}
+        or payload.get("recipe_contract_version") != "1"
+    ):
+        return None
+    return payload
+
+
+def _grouped_envelope_differences(
+    envelope: dict[str, Any],
+) -> dict[str, list[dict[str, Any]]]:
+    groups: dict[str, list[dict[str, Any]]] = {
+        "terrain": [],
+        "wind": [],
+        "moisture": [],
+        "stability/thermodynamics": [],
+        "forcing/initiation": [],
+        "numerical realization": [],
+        "observation plan": [],
+    }
+    names = {
+        "terrain": "terrain",
+        "wind": "wind",
+        "moisture": "moisture",
+        "stability_thermodynamics": "stability/thermodynamics",
+        "forcing_initiation": "forcing/initiation",
+        "numerical_realization": "numerical realization",
+        "observation_plan": "observation plan",
+    }
+    differences = envelope.get("differences")
+    if not isinstance(differences, list):
+        return groups
+    for difference in differences:
+        if not isinstance(difference, dict):
+            continue
+        group = names.get(str(difference.get("category")))
+        if group is not None:
+            groups[group].append(
+                {
+                    key: difference.get(key)
+                    for key in ("path", "label", "before", "after", "units", "material")
+                }
+            )
+    return groups
+
+
+def _promote_variation_envelope(
+    manifest: RunManifest,
+    manifest_path: Path,
+    envelope: dict[str, Any],
+) -> dict[str, Any]:
+    caveated = bool(manifest.run_caveats or manifest.outputs.runtime_warnings)
+    promoted = {
+        **envelope,
+        "availability_state": "available_with_caveats" if caveated else "available",
+        "parent_eligible": True,
+        "parent_eligibility_reason": (
+            "Available native output passed the Recipe and World inspection contract."
+        ),
+    }
+    decisions = promoted.get("validation_decisions")
+    if isinstance(decisions, list):
+        replacements = {
+            "attempt_integrity": (
+                "passed",
+                "Generated-input identity and normal completion evidence are present.",
+            ),
+            "output_completeness": (
+                "passed",
+                "Required native histories and fields passed strict validation.",
+            ),
+            "world_inspectability": (
+                "passed",
+                "Mountain Waves Explore can inspect the retained output.",
+            ),
+            "availability": (
+                "caveated" if caveated else "passed",
+                (
+                    "Simulation is available with retained runtime caveats."
+                    if caveated
+                    else "Simulation is available."
+                ),
+            ),
+            "parent_eligibility": (
+                "passed",
+                "Simulation remains inside its Recipe envelope and may parent descendants.",
+            ),
+        }
+        retained = [
+            decision
+            for decision in decisions
+            if isinstance(decision, dict) and decision.get("stage") not in replacements
+        ]
+        promoted["validation_decisions"] = [
+            *retained,
+            *[
+                {"stage": stage, "disposition": disposition, "reason": reason}
+                for stage, (disposition, reason) in replacements.items()
+            ],
+        ]
+    if promoted != envelope:
+        manifest.run_configuration["variation_envelope"] = promoted
+        try:
+            write_run_manifest(manifest_path, manifest)
+        except OSError:
+            return envelope
+    return promoted
 
 
 def _iso(value: Any) -> str | None:
