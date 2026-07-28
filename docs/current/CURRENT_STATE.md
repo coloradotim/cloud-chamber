@@ -70,7 +70,7 @@ retained Experiments open directly in non-World Explore.
 | --- | --- | --- | --- |
 | **Trade Cumulus** | Canonical BOMEX Baseline and More Moisture retained Simulations | Overview, Simulations, Activity, History, featured and ordinary Compare, Saved Comparisons, Explore resume, and Saved Views | Shared variation creation is not implemented |
 | **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, Activity, History, ordinary Compare, Saved Comparisons, World-specific Create Variation, Explore resume, and Saved Views | Variation creation remains World-specific |
-| **Supercells** | Quarter-Circle and Straight-Line Hodograph retained Simulations | Overview, Simulations, ordinary Compare, Saved Comparisons, Explore resume, and Saved Views | No create-variation workflow |
+| **Supercells** | Quarter-Circle and Straight-Line Hodograph retained Simulations | Overview, Simulations, Activity, History, ordinary Compare, Saved Comparisons, Explore resume, and Saved Views | No create-variation workflow |
 
 The World Overview and Simulations surfaces use stable content identities and
 explicit availability states. Missing, invalid, or conflicting retained

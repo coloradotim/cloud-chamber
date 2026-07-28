@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { LifecycleWorkspace, type LifecycleRecord } from "./LifecycleWorkspace";
 import { SavedComparisonsCollection } from "./SavedComparisons";
 
 export type SupercellSimulation = {
@@ -40,7 +41,12 @@ export type SupercellsWorldDetail = {
   caveats: string[];
 };
 
-type WorldSection = "overview" | "simulations" | "saved_comparisons";
+type WorldSection =
+  | "overview"
+  | "simulations"
+  | "saved_comparisons"
+  | "activity"
+  | "history";
 
 export function SupercellsWorld({
   onBackToWorlds,
@@ -128,27 +134,51 @@ export function SupercellsWorld({
       </header>
 
       <nav className="world-section-nav" aria-label="Supercells sections">
-        {(["overview", "simulations", "saved_comparisons"] as WorldSection[]).map((item) => (
+        {(
+          [
+            "overview",
+            "simulations",
+            "saved_comparisons",
+            "activity",
+            "history",
+          ] as WorldSection[]
+        ).map((item) => (
           <button
             key={item}
             type="button"
             className={section === item ? "active-control" : ""}
             onClick={() => setSection(item)}
           >
-            {item === "overview"
-              ? "Overview"
-              : item === "simulations"
-                ? "Simulations"
-                : "Saved Comparisons"}
+            {sectionLabel(item)}
           </button>
         ))}
       </nav>
 
-      {section === "saved_comparisons" ? (
+      {section === "saved_comparisons" && (
         <section className="world-section">
           <SavedComparisonsCollection worldSlug="supercells" onOpen={onOpenSavedComparison} />
         </section>
-      ) : (
+      )}
+
+      {(section === "activity" || section === "history") && (
+        <section className="world-section">
+          <LifecycleWorkspace
+            ownerIds={["supercells"]}
+            view={section}
+            showViewTabs={false}
+            onExplore={(record) => {
+              const simulation = simulationForLifecycleRecord(world, record);
+              if (simulation) onExploreSimulation(simulation);
+            }}
+            onCompare={(record) => {
+              const simulation = simulationForLifecycleRecord(world, record);
+              if (simulation) onCompare?.(simulation);
+            }}
+          />
+        </section>
+      )}
+
+      {(section === "overview" || section === "simulations") && (
         <section className="world-section" aria-labelledby={`supercells-${section}-title`}>
           <div className="world-section-heading">
             <div>
@@ -178,6 +208,33 @@ export function SupercellsWorld({
         </section>
       )}
     </section>
+  );
+}
+
+function sectionLabel(section: WorldSection): string {
+  return {
+    overview: "Overview",
+    simulations: "Simulations",
+    saved_comparisons: "Saved Comparisons",
+    activity: "Activity",
+    history: "History",
+  }[section];
+}
+
+function simulationForLifecycleRecord(
+  world: SupercellsWorldDetail,
+  record: LifecycleRecord,
+): SupercellSimulation | null {
+  const actionRunIds = new Set(
+    record.actions
+      .map((action) => action.run_id)
+      .filter((runId): runId is string => Boolean(runId)),
+  );
+  return (
+    world.simulations.find(
+      (simulation) =>
+        simulation.simulation_id === record.simulation_id || actionRunIds.has(simulation.run_id),
+    ) ?? null
   );
 }
 
