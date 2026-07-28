@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from cloud_chamber.local_run_manager import LocalRunManagerError, RunStatus
 from cloud_chamber.pre_run_validation import report_blocks_execution
 from cloud_chamber.result_ingest import ResultIngestError, ingest_completed_run
+from cloud_chamber.run_cost import LaunchBudgetError, validate_manifest_launch_budget
 from cloud_chamber.run_manifest import (
     LifecycleState,
     ProductState,
@@ -200,8 +201,15 @@ class LocalRunQueueManager:
 
     def _launch_entry(self, entry: RunQueueEntry) -> None:
         try:
+            manifest = load_run_manifest(Path(entry.manifest_path))
+            snapshot_id = manifest.run_configuration.get("launch_review_snapshot_id")
+            validate_manifest_launch_budget(
+                self._settings,
+                manifest=manifest,
+                snapshot_id=snapshot_id if isinstance(snapshot_id, str) else None,
+            )
             status = self._run_manager.launch(Path(entry.manifest_path))
-        except LocalRunManagerError as exc:
+        except (LaunchBudgetError, LocalRunManagerError, OSError, RunManifestError) as exc:
             now = _now()
             entry.state = "launch_failed"
             entry.error = str(exc)

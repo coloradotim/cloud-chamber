@@ -99,6 +99,20 @@ from cloud_chamber.result_ingest import (
     ResultIngestError,
     ingest_completed_run,
 )
+from cloud_chamber.retained_assets import (
+    RetainedAssetInventory,
+    retained_asset_inventory,
+)
+from cloud_chamber.run_cost import (
+    ImmediatePrelaunchRequest,
+    LaunchBudgetError,
+    LaunchReviewRecord,
+    LaunchReviewRequest,
+    RunCostCatalog,
+    create_launch_review_snapshot,
+    immediate_prelaunch_disk_gate,
+    run_cost_catalog,
+)
 from cloud_chamber.run_manifest import RunManifestError, load_run_manifest
 from cloud_chamber.run_progress import run_progress_from_manifest
 from cloud_chamber.runtime_integrity import assess_runtime_integrity
@@ -163,6 +177,7 @@ from cloud_chamber.sounding_candidates import (
     screen_cached_soundings,
     update_saved_candidate,
 )
+from cloud_chamber.storage_policy import DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES
 from cloud_chamber.storm_examination import (
     DEFAULT_PRESENTATION_TIME_INDEX,
     StormExaminationError,
@@ -662,6 +677,67 @@ def cleanup_lan_worker(request: LanWorkerRunRequest) -> dict[str, object]:
 def storage_inventory() -> dict[str, object]:
     inventory = runtime_storage_inventory(load_settings())
     return inventory.model_dump(mode="json")
+
+
+@app.get("/api/storage/assets", response_model=RetainedAssetInventory)
+def retained_assets(refresh: bool = False) -> RetainedAssetInventory:
+    try:
+        settings = load_settings()
+        lifecycle = lifecycle_projection(
+            settings,
+            queue=_get_local_run_queue().snapshot(),
+        )
+        return retained_asset_inventory(
+            settings,
+            lifecycle=lifecycle,
+            refresh=refresh,
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="The retained-asset inventory could not be read.",
+        ) from exc
+
+
+@app.get("/api/storage/run-cost-profiles", response_model=RunCostCatalog)
+def storage_run_cost_profiles() -> RunCostCatalog:
+    return run_cost_catalog(load_settings())
+
+
+@app.post("/api/storage/launch-reviews", response_model=LaunchReviewRecord)
+def create_storage_launch_review(request: LaunchReviewRequest) -> LaunchReviewRecord:
+    try:
+        settings = load_settings()
+        manifest = None
+        if request.manifest_path:
+            manifest_path = Path(request.manifest_path).expanduser().resolve()
+            runs_root = (settings.runtime_home.expanduser() / "runs").resolve()
+            if not manifest_path.is_relative_to(runs_root):
+                raise LaunchBudgetError(
+                    "Launch-review manifests must remain under the configured runs root."
+                )
+            manifest = load_run_manifest(manifest_path)
+        return create_launch_review_snapshot(
+            settings,
+            profile_id=request.profile_id,
+            warning_threshold_bytes=DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES,
+            manifest=manifest,
+        )
+    except (LaunchBudgetError, OSError, RunManifestError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/storage/launch-reviews/preflight", response_model=LaunchReviewRecord)
+def check_storage_launch_review(
+    request: ImmediatePrelaunchRequest,
+) -> LaunchReviewRecord:
+    try:
+        return immediate_prelaunch_disk_gate(
+            load_settings(),
+            snapshot_id=request.snapshot_id,
+        )
+    except LaunchBudgetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get(

@@ -346,6 +346,41 @@ on those local assets for retained Simulations and generated Experiments.
 Deleting a run can remove the corresponding output and result sidecars; the
 repository is not a durable store for those artifacts.
 
+## Storage And Launch Budget
+
+Cloud Chamber exposes a global read-only Storage utility at `/storage`. It
+projects stable World, Simulation, Experiment, attempt, run, result, and case
+identity over the configured runtime home, including missing durable records
+whose local bytes are unavailable.
+
+Storage reports:
+
+- total retained usage and current free space;
+- system-protected, ordinary retained, and temporary-attempt totals;
+- usage by owner and asset class;
+- protection/availability, attempt lifecycle, and trust as separate facets;
+- accepted and alternate backing relationships;
+- component sizes and durable dependent records;
+- explicit partially uncounted warnings for unreadable paths;
+- unknown repairability unless exact reconstructibility evidence is available.
+
+The inventory is searchable, filterable, sortable, and explicitly
+non-destructive. It does not offer cleanup, repair, backing selection, or
+protection editing.
+
+Run planning uses typed Quick, Standard, Presentation, Full-cycle, and Extended
+profiles where each World contract defines them. Estimates distinguish
+measured, scaled-from-measured, and uncharacterized evidence. An
+uncharacterized profile fails closed. The Storage surface records planning-only
+budget snapshots. Packaging can bind a separate immutable snapshot to one exact
+attempt and its World, Recipe/version, profile, numerical realization,
+observation plan, retained fields, and manifest fingerprint. An immediate
+prelaunch check recomputes free space and appends an audit record. Packages that
+carry the snapshot identifier are blocked by the serial queue when the binding
+does not match, the authorization was already consumed, or the current budget
+no longer passes. Legacy packages remain unchanged until they adopt the
+contract.
+
 ## Interpretation Rules
 
 - **Accessible** means the user can reach the World or surface in the current
