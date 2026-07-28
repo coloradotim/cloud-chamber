@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import "./StorageWorkspace.css";
 
-type AssetComponent = { component: string; size_bytes: number; file_count: number };
+type AssetComponent = {
+  component: string;
+  size_bytes: number;
+  file_count: number;
+  uncounted_file_count: number;
+};
 type AssetDependency = {
   kind: string;
   dependency_id: string;
@@ -17,6 +22,7 @@ type RetainedAsset = {
   owner_label: string;
   asset_class: string;
   lifecycle_role: string;
+  record_role: string | null;
   world_id: string | null;
   simulation_id: string | null;
   experiment_id: string | null;
@@ -25,6 +31,10 @@ type RetainedAsset = {
   parent_simulation_id: string | null;
   reference_simulation_id: string | null;
   attempt_id: string | null;
+  attempt_lifecycle_state: string | null;
+  attempt_queue_state: string | null;
+  attempt_process_state: string | null;
+  attempt_validation_status: string | null;
   run_id: string | null;
   result_id: string | null;
   case_id: string | null;
@@ -32,6 +42,8 @@ type RetainedAsset = {
   tags: string[];
   technical_path: string | null;
   size_bytes: number | null;
+  partially_uncounted: boolean;
+  uncounted_path_count: number;
   components: AssetComponent[];
   created_at: string | null;
   modified_at: string | null;
@@ -67,11 +79,14 @@ type AssetInventory = {
   usage_by_owner: UsageGroup[];
   usage_by_class: UsageGroup[];
   state_counts: Record<string, number>;
+  lifecycle_counts: Record<string, number>;
+  trust_counts: Record<string, number>;
   assets: RetainedAsset[];
   performance: {
     cache_hit: boolean;
     scan_duration_ms: number;
     scanned_file_count: number;
+    fingerprinted_path_count: number;
     fingerprint: string;
   };
   warnings: string[];
@@ -94,7 +109,7 @@ type RunCostProfile = {
     duration_seconds: number | null;
     output_cadence_seconds: number | null;
     expected_history_count: number | null;
-    retained_field_inventory: string;
+    retained_field_inventory: string[];
   };
   expected_runtime_min_seconds: number | null;
   expected_runtime_max_seconds: number | null;
@@ -122,9 +137,20 @@ type LaunchReviewRecord = {
     review_free_space_bytes: number;
     warning_threshold_bytes: number;
     minimum_free_space_bytes: number;
+    manifest_binding: {
+      attempt_id: string;
+      world_id: string;
+      recipe_id: string;
+      recipe_version: string;
+      profile_id: string;
+      specification_fingerprint: string;
+    } | null;
   };
   immediate_prelaunch_checks: Array<{
     check_id: string;
+    check_kind: "planning" | "launch";
+    attempt_id: string | null;
+    specification_fingerprint: string | null;
     checked_at: string;
     current_free_space_bytes: number;
     expected_size_high_bytes: number | null;
@@ -139,6 +165,8 @@ type Filters = {
   owner: string;
   assetClass: string;
   state: string;
+  lifecycle: string;
+  trust: string;
   builtIn: string;
   dependents: string;
   backing: string;
@@ -153,6 +181,8 @@ const DEFAULT_FILTERS: Filters = {
   owner: "all",
   assetClass: "all",
   state: "all",
+  lifecycle: "all",
+  trust: "all",
   builtIn: "all",
   dependents: "all",
   backing: "all",
@@ -219,15 +249,15 @@ export function StorageWorkspace() {
 
   async function recordLaunchReview() {
     if (!selectedProfileId) return;
-    setBudgetStatus("Recording launch review...");
+    setBudgetStatus("Recording budget review...");
     try {
       const record = await postJson<LaunchReviewRecord>("/api/storage/launch-reviews", {
         profile_id: selectedProfileId,
       });
       setLaunchReview(record);
-      setBudgetStatus("Launch review recorded.");
+      setBudgetStatus("Planning snapshot recorded.");
     } catch (caught) {
-      setBudgetStatus(errorMessage(caught, "Launch review could not be recorded."));
+      setBudgetStatus(errorMessage(caught, "Budget review could not be recorded."));
     }
   }
 
@@ -375,11 +405,22 @@ function StorageOverview({ inventory }: { inventory: AssetInventory }) {
           value={formatBytes(inventory.ordinary_retained_bytes)}
         />
         <StorageMetric
+          label="Usage warning"
+          value={formatBytes(inventory.warning_threshold_bytes)}
+          warning={inventory.above_usage_warning}
+        />
+        <StorageMetric
           label="Minimum free"
           value={formatBytes(inventory.minimum_free_space_bytes)}
           warning={inventory.below_minimum_free_space}
         />
       </dl>
+      {inventory.above_usage_warning && (
+        <p className="storage-alert" role="status">
+          Retained usage has reached the configured {formatBytes(inventory.warning_threshold_bytes)}{" "}
+          warning threshold.
+        </p>
+      )}
       <UsageBars groups={inventory.usage_by_owner} total={inventory.total_usage_bytes} />
       <div className="storage-summary-columns">
         <UsageList title="By owner" groups={inventory.usage_by_owner} />
@@ -460,6 +501,10 @@ function LaunchBudgetPanel({
                     : `${profile.observation_plan.expected_history_count} histories`
                 }
               />
+              <Detail
+                label="Retained fields"
+                value={profile.observation_plan.retained_field_inventory.join(", ")}
+              />
             </dl>
           </details>
         </div>
@@ -504,18 +549,22 @@ function LaunchBudgetPanel({
       <p className={`storage-budget-reason ${disposition}`}>
         {latestCheck?.reason ?? selectedEstimate.disposition_reason}
       </p>
+      <p className="storage-budget-scope">
+        This planning snapshot records the profile and current disk budget. A CM1 launch must use a
+        separate snapshot bound to its exact packaged attempt.
+      </p>
       <div className="storage-budget-actions">
         <button type="button" onClick={onRecord}>
-          Record launch review
+          Record budget review
         </button>
         {launchReview && (
           <button type="button" className="secondary-button" onClick={onRecheck}>
-            Recheck before launch
+            Recheck current budget
           </button>
         )}
         {launchReview && (
           <span>
-            Snapshot {launchReview.snapshot.snapshot_id.slice(0, 8)} ·{" "}
+            Planning snapshot {launchReview.snapshot.snapshot_id.slice(0, 8)} ·{" "}
             {formatDateTime(launchReview.snapshot.created_at)}
           </span>
         )}
@@ -542,6 +591,17 @@ function StorageFilters({
   const owners = uniqueOptions(assets.map((asset) => [asset.owner_id, asset.owner_label]));
   const classes = uniqueOptions(
     assets.map((asset) => [asset.asset_class, classLabel(asset.asset_class)]),
+  );
+  const lifecycles = uniqueOptions(
+    assets
+      .filter((asset) => asset.attempt_lifecycle_state)
+      .map((asset) => [
+        asset.attempt_lifecycle_state as string,
+        humanize(asset.attempt_lifecycle_state as string),
+      ]),
+  );
+  const trustStates = uniqueOptions(
+    assets.map((asset) => [asset.trust_state, humanize(asset.trust_state)]),
   );
   return (
     <div className="storage-filter-bar">
@@ -576,7 +636,9 @@ function StorageFilters({
             ["name", "Stable name"],
             ["modified", "Recently modified"],
             ["owner", "Owner"],
-            ["state", "State"],
+            ["state", "Protection / availability"],
+            ["lifecycle", "Attempt lifecycle"],
+            ["trust", "Trust"],
             ["dependents", "Most dependents"],
           ]}
         />
@@ -585,7 +647,7 @@ function StorageFilters({
         <summary>More filters</summary>
         <div>
           <SelectFilter
-            label="State"
+            label="Protection / availability"
             value={filters.state}
             onChange={(state) => update({ state })}
             options={[
@@ -598,6 +660,18 @@ function StorageFilters({
               ["conflicted", "Conflicted"],
               ["potentially_repairable", "Potentially repairable"],
             ]}
+          />
+          <SelectFilter
+            label="Attempt lifecycle"
+            value={filters.lifecycle}
+            onChange={(lifecycle) => update({ lifecycle })}
+            options={[["all", "All lifecycle states"], ...lifecycles]}
+          />
+          <SelectFilter
+            label="Trust"
+            value={filters.trust}
+            onChange={(trust) => update({ trust })}
+            options={[["all", "All trust states"], ...trustStates]}
           />
           <SelectFilter
             label="Ownership"
@@ -717,6 +791,10 @@ function AssetRow({ asset }: { asset: RetainedAsset }) {
       </header>
       <div className="storage-asset-meta">
         <span>{humanize(asset.lifecycle_role)}</span>
+        {asset.attempt_lifecycle_state && (
+          <span>Lifecycle: {humanize(asset.attempt_lifecycle_state)}</span>
+        )}
+        <span>Trust: {humanize(asset.trust_state)}</span>
         {asset.accepted_backing === "accepted" && <span>Accepted backing</span>}
         {asset.accepted_backing === "alternate" && <span>Alternate attempt</span>}
         {asset.dependencies.length > 0 && (
@@ -726,12 +804,36 @@ function AssetRow({ asset }: { asset: RetainedAsset }) {
           </span>
         )}
         {asset.modified_at && <span>Modified {formatDateTime(asset.modified_at)}</span>}
+        {asset.partially_uncounted && (
+          <span>
+            Partially uncounted · {asset.uncounted_path_count} unreadable{" "}
+            {asset.uncounted_path_count === 1 ? "path" : "paths"}
+          </span>
+        )}
       </div>
       <details className="storage-asset-details">
         <summary>Technical details</summary>
         <div className="storage-asset-detail-grid">
           <dl className="storage-technical-grid">
             <Detail label="Asset ID" value={asset.asset_id} />
+            <Detail label="Record role" value={humanize(asset.record_role ?? "not recorded")} />
+            <Detail label="Attempt relationship" value={humanize(asset.lifecycle_role)} />
+            <Detail
+              label="Attempt lifecycle"
+              value={humanize(asset.attempt_lifecycle_state ?? "not recorded")}
+            />
+            <Detail
+              label="Queue state"
+              value={humanize(asset.attempt_queue_state ?? "not recorded")}
+            />
+            <Detail
+              label="Process state"
+              value={humanize(asset.attempt_process_state ?? "not recorded")}
+            />
+            <Detail
+              label="Validation"
+              value={humanize(asset.attempt_validation_status ?? "not recorded")}
+            />
             <Detail label="Run ID" value={asset.run_id ?? "Not applicable"} />
             <Detail label="Simulation" value={asset.simulation_id ?? "Not applicable"} />
             <Detail label="Experiment" value={asset.experiment_id ?? "Not applicable"} />
@@ -750,6 +852,9 @@ function AssetRow({ asset }: { asset: RetainedAsset }) {
                   <li key={component.component}>
                     <span>
                       {humanize(component.component)} · {component.file_count} files
+                      {component.uncounted_file_count > 0
+                        ? ` · ${component.uncounted_file_count} unreadable`
+                        : ""}
                     </span>
                     <strong>{formatBytes(component.size_bytes)}</strong>
                   </li>
@@ -820,8 +925,8 @@ function UsageList({ title, groups }: { title: string; groups: UsageGroup[] }) {
 
 function StateSummary({ inventory }: { inventory: AssetInventory }) {
   return (
-    <section>
-      <h4>Availability and trust</h4>
+    <section className="storage-state-summary">
+      <h4>Protection and availability</h4>
       <ul className="storage-usage-list">
         {Object.entries(inventory.state_counts).map(([state, count]) => (
           <li key={state}>
@@ -836,7 +941,37 @@ function StateSummary({ inventory }: { inventory: AssetInventory }) {
           </li>
         )}
       </ul>
+      <h4>Attempt lifecycle</h4>
+      <CountList counts={inventory.lifecycle_counts} emptyLabel="No attempts recorded" />
+      <h4>Trust</h4>
+      <CountList counts={inventory.trust_counts} emptyLabel="No trust facts recorded" />
     </section>
+  );
+}
+
+function CountList({
+  counts,
+  emptyLabel,
+}: {
+  counts: Record<string, number>;
+  emptyLabel: string;
+}) {
+  const entries = Object.entries(counts);
+  return (
+    <ul className="storage-usage-list">
+      {entries.length === 0 ? (
+        <li>
+          <span>{emptyLabel}</span>
+        </li>
+      ) : (
+        entries.map(([state, count]) => (
+          <li key={state}>
+            <span>{humanize(state)}</span>
+            <strong>{count}</strong>
+          </li>
+        ))
+      )}
+    </ul>
   );
 }
 
@@ -881,6 +1016,13 @@ function filterAndSortAssets(assets: RetainedAsset[], filters: Filters): Retaine
       asset.result_id,
       asset.case_id,
       asset.asset_id,
+      asset.record_role,
+      asset.lifecycle_role,
+      asset.attempt_lifecycle_state,
+      asset.attempt_queue_state,
+      asset.attempt_process_state,
+      asset.attempt_validation_status,
+      asset.trust_state,
       ...asset.tags,
     ]
       .filter(Boolean)
@@ -891,6 +1033,9 @@ function filterAndSortAssets(assets: RetainedAsset[], filters: Filters): Retaine
       (filters.owner === "all" || asset.owner_id === filters.owner) &&
       (filters.assetClass === "all" || asset.asset_class === filters.assetClass) &&
       (filters.state === "all" || assetState(asset) === filters.state) &&
+      (filters.lifecycle === "all" ||
+        asset.attempt_lifecycle_state === filters.lifecycle) &&
+      (filters.trust === "all" || asset.trust_state === filters.trust) &&
       (filters.builtIn === "all" || asset.built_in === (filters.builtIn === "yes")) &&
       (filters.dependents === "all" ||
         asset.dependencies.length > 0 === (filters.dependents === "yes")) &&
@@ -906,6 +1051,11 @@ function filterAndSortAssets(assets: RetainedAsset[], filters: Filters): Retaine
       return (right.modified_at ?? "").localeCompare(left.modified_at ?? "");
     if (filters.sort === "owner") return left.owner_label.localeCompare(right.owner_label);
     if (filters.sort === "state") return stateLabel(left).localeCompare(stateLabel(right));
+    if (filters.sort === "lifecycle")
+      return (left.attempt_lifecycle_state ?? "").localeCompare(
+        right.attempt_lifecycle_state ?? "",
+      );
+    if (filters.sort === "trust") return left.trust_state.localeCompare(right.trust_state);
     if (filters.sort === "dependents") return right.dependencies.length - left.dependencies.length;
     return (right.size_bytes ?? -1) - (left.size_bytes ?? -1);
   });

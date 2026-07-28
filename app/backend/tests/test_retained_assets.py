@@ -1,5 +1,8 @@
+import os
 from pathlib import Path
 from typing import Literal
+
+import pytest
 
 from cloud_chamber.lifecycle import (
     LifecycleAttempt,
@@ -164,6 +167,7 @@ def test_inventory_preserves_missing_asset_and_uses_persistent_cache(tmp_path: P
     assert first.performance.cache_hit is False
     assert second.performance.cache_hit is True
     assert second.performance.scanned_file_count == 0
+    assert second.performance.fingerprinted_path_count == 0
 
 
 def test_inventory_distinguishes_user_package_and_source_assets(tmp_path: Path) -> None:
@@ -199,8 +203,11 @@ def test_inventory_distinguishes_user_package_and_source_assets(tmp_path: Path) 
     assert package.asset_class == "package_logs"
     assert package.protection_state == "ordinary"
     assert package.repairability_state == "unknown"
+    assert package.attempt_lifecycle_state == "packaged"
+    assert package.attempt_process_state == "not_started"
     assert source.asset_class == "source_asset"
-    assert source.owner_id == "fun_with_soundings"
+    assert source.owner_id == "legacy_unassigned"
+    assert inventory.lifecycle_counts["packaged"] == 1
 
 
 def test_inventory_distinguishes_user_experiment_and_attempt_states(
@@ -324,6 +331,78 @@ def test_inventory_distinguishes_user_experiment_and_attempt_states(
     assert by_run["sounding-experiment"].owner_id == "fun_with_soundings"
     assert by_run["failed-attempt"].availability_state == "invalid"
     assert by_run["failed-attempt"].protection_state == "ordinary"
+    assert by_run["failed-attempt"].attempt_validation_status == "failed"
     assert by_run["cancelled-attempt"].asset_class == "attempt"
     assert by_run["cancelled-attempt"].protection_state == "temporary"
+    assert by_run["cancelled-attempt"].attempt_lifecycle_state == "canceled"
+    assert by_run["cancelled-attempt"].attempt_process_state == "canceled"
     assert by_run["conflicted-attempt"].availability_state == "conflicted"
+    assert inventory.lifecycle_counts["canceled"] == 1
+    assert inventory.trust_counts["trusted"] >= 1
+
+
+def test_nested_file_growth_invalidates_cached_byte_rollup(tmp_path: Path) -> None:
+    run_id = "growing-output"
+    run_dir = tmp_path / "runs" / run_id / "nested"
+    run_dir.mkdir(parents=True)
+    output = run_dir / "cm1out_000001.nc"
+    output.write_bytes(b"x" * 16)
+    projection = LifecycleProjection(
+        generated_at="2026-07-28T00:00:00+00:00",
+        records=[
+            record(
+                run_id=run_id,
+                simulation_id="trade_cumulus_user_variation",
+                display_name="Growing output",
+            )
+        ],
+    )
+    settings = fake_settings(tmp_path)
+
+    first = retained_asset_inventory(settings, lifecycle=projection, refresh=True)
+    output.write_bytes(b"x" * 128)
+    second = retained_asset_inventory(settings, lifecycle=projection)
+
+    assert second.performance.cache_hit is False
+    assert second.total_usage_bytes == first.total_usage_bytes + 112
+
+
+def test_unreadable_file_is_reported_as_partially_uncounted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_id = "partially-unreadable"
+    run_dir = tmp_path / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    unreadable = run_dir / "cm1out_000001.nc"
+    unreadable.write_bytes(b"x" * 64)
+    projection = LifecycleProjection(
+        generated_at="2026-07-28T00:00:00+00:00",
+        records=[
+            record(
+                run_id=run_id,
+                simulation_id="trade_cumulus_user_variation",
+                display_name="Partially unreadable output",
+            )
+        ],
+    )
+    original_lstat = Path.lstat
+
+    def guarded_lstat(path: Path) -> os.stat_result:
+        if path == unreadable:
+            raise PermissionError("fixture denies retained file")
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", guarded_lstat)
+
+    inventory = retained_asset_inventory(
+        fake_settings(tmp_path),
+        lifecycle=projection,
+        refresh=True,
+    )
+
+    asset = next(item for item in inventory.assets if item.run_id == run_id)
+    assert asset.partially_uncounted is True
+    assert asset.uncounted_path_count == 1
+    assert inventory.uncounted_asset_count == 1
+    assert any("fixture denies retained file" in warning for warning in inventory.warnings)

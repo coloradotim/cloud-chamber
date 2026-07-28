@@ -405,10 +405,15 @@ See [Ingest, Results, and Runtime Cleanup Lifecycle](INGEST_RESULTS_STORAGE_LIFE
 inventory over the configured runtime home and the owner-aware lifecycle
 projection. It records asset identity, owner, class, lifecycle role, backing
 relationship, availability, protection, repairability, components, byte
-counts, and durable dependencies without reading scientific arrays.
+counts, attempt lifecycle, trust, and durable dependencies without reading
+scientific arrays. Shared support roots remain legacy/unassigned unless an
+authoritative owner adapter identifies them.
 
-The first inventory scan walks retained files once. Its bounded fingerprint
-uses directory and durable-metadata stat evidence rather than NetCDF contents.
+The inventory fingerprint records bounded stat evidence for every counted
+retained path, including nested outputs and logs, without opening or hashing
+NetCDF contents. Nested size or modification changes therefore invalidate the
+cached byte rollup. Queued or running attempts force a fresh rollup, and
+unreadable paths remain visible as warnings and partially uncounted assets.
 The resulting projection is cached at:
 
 ```text
@@ -428,8 +433,11 @@ the shared launch-budget calculation. Each characterized profile reserves its
 high retained-size estimate plus a 2 GiB post-run safety margin.
 Uncharacterized profiles fail closed.
 
-Launch review creates an immutable snapshot, while immediate prelaunch checks
-append separate audit records:
+A Storage planning review creates an immutable unbound snapshot for inspection.
+Packaging may instead create a snapshot bound to one exact attempt, World,
+Recipe/version, run profile, numerical realization, observation plan, retained
+field inventory, and complete manifest-specification fingerprint. Immediate
+checks append separate audit records:
 
 ```text
 POST /api/storage/launch-reviews
@@ -440,8 +448,11 @@ POST /api/storage/launch-reviews/preflight
 ```
 
 The local serial queue enforces the immediate gate when a package contains a
-`launch_review_snapshot_id`. This opt-in boundary preserves existing package
-behavior while allowing later shared variation work to require the contract.
+`launch_review_snapshot_id`. It rejects planning-only snapshots, package or
+specification mismatches, and reuse after one successful launch authorization
+before checking current free space. This opt-in boundary preserves existing
+package behavior while allowing later shared variation work to require the
+contract.
 The Storage frontend contains no cleanup, repair, protection-editing, or
 backing-selection action.
 

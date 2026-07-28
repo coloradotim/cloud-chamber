@@ -17,6 +17,7 @@ from cloud_chamber.run_manifest import (
     OutputMetadata,
     ProductState,
     ProvenanceMetadata,
+    RunManifest,
     load_run_manifest,
     write_run_manifest,
 )
@@ -246,8 +247,10 @@ def test_queue_enforces_opted_in_launch_budget_before_process_start(
     def block_budget(
         _settings: CloudChamberSettings,
         *,
+        manifest: RunManifest,
         snapshot_id: str | None,
     ) -> None:
+        assert manifest.run_id == "run-budget-blocked"
         checked.append(snapshot_id)
         raise LaunchBudgetError("Launch blocked: fixture storage budget.")
 

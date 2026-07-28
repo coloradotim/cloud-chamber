@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import shutil
 from datetime import UTC, datetime
@@ -11,6 +13,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from cloud_chamber.run_manifest import RunManifest
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.storage_policy import MINIMUM_FREE_SPACE_BYTES
 
@@ -21,12 +24,58 @@ RUN_COST_SCHEMA_VERSION: Literal["1"] = "1"
 EstimateBasis = Literal["measured", "scaled_from_measured", "uncharacterized"]
 LaunchBudgetDisposition = Literal["passes", "blocked"]
 
-TRADE_CUMULUS_RETAINED_FIELDS = "ql, qv, th, prs, u, v, w, tke, kmh, khh, cwp, hfx, qfx, and rain"
-MOUNTAIN_WAVES_DRY_RETAINED_FIELDS = "zs, zhval, th, prs, u, v, and w"
-MOUNTAIN_WAVES_MOIST_RETAINED_FIELDS = "zs, zhval, th, prs, qv, ql, uinterp, winterp, and w"
+TRADE_CUMULUS_RETAINED_FIELDS = (
+    "ql",
+    "qv",
+    "th",
+    "prs",
+    "u",
+    "v",
+    "w",
+    "tke",
+    "kmh",
+    "khh",
+    "cwp",
+    "hfx",
+    "qfx",
+    "rain",
+)
+MOUNTAIN_WAVES_DRY_RETAINED_FIELDS = ("zs", "zhval", "th", "prs", "u", "v", "w")
+MOUNTAIN_WAVES_MOIST_RETAINED_FIELDS = (
+    "zs",
+    "zhval",
+    "th",
+    "prs",
+    "qv",
+    "ql",
+    "uinterp",
+    "winterp",
+    "w",
+)
 SUPERCELLS_RETAINED_FIELDS = (
-    "th, prs, qv, qc, qr, qi, qs, qg, nci, ncs, ncr, ncg, dbz, uinterp, "
-    "vinterp, winterp, xvort, yvort, zvort, rain, prate, uh, and cref"
+    "th",
+    "prs",
+    "qv",
+    "qc",
+    "qr",
+    "qi",
+    "qs",
+    "qg",
+    "nci",
+    "ncs",
+    "ncr",
+    "ncg",
+    "dbz",
+    "uinterp",
+    "vinterp",
+    "winterp",
+    "xvort",
+    "yvort",
+    "zvort",
+    "rain",
+    "prate",
+    "uh",
+    "cref",
 )
 
 
@@ -47,7 +96,7 @@ class ObservationPlan(BaseModel):
     output_cadence_seconds: int | None
     diagnostic_cadence_seconds: int | None = None
     expected_history_count: int | None
-    retained_field_inventory: str
+    retained_field_inventory: tuple[str, ...]
 
 
 class RunCostProfile(BaseModel):
@@ -85,6 +134,19 @@ class RunCostEstimate(BaseModel):
     disposition_reason: str
 
 
+class LaunchManifestBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    attempt_id: str
+    world_id: str
+    recipe_id: str
+    recipe_version: str
+    profile_id: str
+    numerical_realization: NumericalRealization
+    observation_plan: ObservationPlan
+    specification_fingerprint: str
+
+
 class LaunchReviewSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -95,6 +157,7 @@ class LaunchReviewSnapshot(BaseModel):
     review_free_space_bytes: int
     warning_threshold_bytes: int
     minimum_free_space_bytes: int
+    manifest_binding: LaunchManifestBinding | None = None
 
 
 class ImmediatePrelaunchCheck(BaseModel):
@@ -103,6 +166,9 @@ class ImmediatePrelaunchCheck(BaseModel):
     schema_version: Literal["1"] = RUN_COST_SCHEMA_VERSION
     check_id: str
     snapshot_id: str
+    check_kind: Literal["planning", "launch"]
+    attempt_id: str | None = None
+    specification_fingerprint: str | None = None
     checked_at: str
     current_free_space_bytes: int
     expected_size_high_bytes: int | None
@@ -130,6 +196,7 @@ class LaunchReviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     profile_id: str
+    manifest_path: str | None = None
 
 
 class ImmediatePrelaunchRequest(BaseModel):
@@ -183,9 +250,11 @@ def create_launch_review_snapshot(
     *,
     profile_id: str,
     warning_threshold_bytes: int,
+    manifest: RunManifest | None = None,
 ) -> LaunchReviewRecord:
     profile = profile_by_id(profile_id)
     estimate = estimate_profile(settings, profile)
+    binding = _manifest_binding(profile, manifest) if manifest else None
     now = datetime.now(UTC)
     snapshot = LaunchReviewSnapshot(
         snapshot_id=uuid4().hex,
@@ -194,6 +263,7 @@ def create_launch_review_snapshot(
         review_free_space_bytes=estimate.current_free_space_bytes,
         warning_threshold_bytes=warning_threshold_bytes,
         minimum_free_space_bytes=MINIMUM_FREE_SPACE_BYTES,
+        manifest_binding=binding,
     )
     record = LaunchReviewRecord(snapshot=snapshot)
     _write_new_record(_snapshot_path(settings, snapshot.snapshot_id), record)
@@ -217,15 +287,23 @@ def immediate_prelaunch_disk_gate(
     settings: CloudChamberSettings,
     *,
     snapshot_id: str,
+    check_kind: Literal["planning", "launch"] = "planning",
+    attempt_id: str | None = None,
+    specification_fingerprint: str | None = None,
+    forced_block_reason: str | None = None,
 ) -> LaunchReviewRecord:
     record = load_launch_review_record(settings, snapshot_id)
     estimate = record.snapshot.estimate
     profile = estimate.profile
     current_free = shutil.disk_usage(settings.runtime_home.expanduser()).free
     high = profile.expected_size_max_bytes
-    if profile.estimate_basis == "uncharacterized" or high is None:
-        projected = None
+    if forced_block_reason:
+        projected = current_free - high if high is not None else None
         disposition: LaunchBudgetDisposition = "blocked"
+        reason = forced_block_reason
+    elif profile.estimate_basis == "uncharacterized" or high is None:
+        projected = None
+        disposition = "blocked"
         reason = (
             "Launch blocked: the selected profile remains uncharacterized and has no "
             "approved conservative reservation."
@@ -242,6 +320,9 @@ def immediate_prelaunch_disk_gate(
     check = ImmediatePrelaunchCheck(
         check_id=uuid4().hex,
         snapshot_id=record.snapshot.snapshot_id,
+        check_kind=check_kind,
+        attempt_id=attempt_id,
+        specification_fingerprint=specification_fingerprint,
         checked_at=datetime.now(UTC).isoformat(),
         current_free_space_bytes=current_free,
         expected_size_high_bytes=high,
@@ -260,16 +341,156 @@ def immediate_prelaunch_disk_gate(
 def validate_manifest_launch_budget(
     settings: CloudChamberSettings,
     *,
+    manifest: RunManifest | None,
     snapshot_id: str | None,
 ) -> ImmediatePrelaunchCheck | None:
     """Enforce the shared gate when a package opts into the approved contract."""
     if not snapshot_id:
         return None
-    record = immediate_prelaunch_disk_gate(settings, snapshot_id=snapshot_id)
+    if manifest is None:
+        raise LaunchBudgetError("Launch-review validation requires the requesting manifest.")
+    record = load_launch_review_record(settings, snapshot_id)
+    binding = record.snapshot.manifest_binding
+    if binding is None:
+        reason = "Launch blocked: this is a planning-only review with no bound package."
+        immediate_prelaunch_disk_gate(
+            settings,
+            snapshot_id=snapshot_id,
+            check_kind="launch",
+            attempt_id=manifest.run_id,
+            forced_block_reason=reason,
+        )
+        raise LaunchBudgetError(reason)
+    try:
+        current_binding = _manifest_binding(record.snapshot.estimate.profile, manifest)
+    except LaunchBudgetError as exc:
+        reason = f"Launch blocked: {exc}"
+        immediate_prelaunch_disk_gate(
+            settings,
+            snapshot_id=snapshot_id,
+            check_kind="launch",
+            attempt_id=manifest.run_id,
+            forced_block_reason=reason,
+        )
+        raise LaunchBudgetError(reason) from exc
+    if current_binding != binding:
+        reason = (
+            "Launch blocked: the requesting package no longer matches the reviewed "
+            "World, Recipe, profile, attempt, or specification."
+        )
+        immediate_prelaunch_disk_gate(
+            settings,
+            snapshot_id=snapshot_id,
+            check_kind="launch",
+            attempt_id=manifest.run_id,
+            specification_fingerprint=current_binding.specification_fingerprint,
+            forced_block_reason=reason,
+        )
+        raise LaunchBudgetError(reason)
+    if _has_successful_launch_check(settings, snapshot_id):
+        reason = "Launch blocked: this launch-review authorization has already been consumed."
+        immediate_prelaunch_disk_gate(
+            settings,
+            snapshot_id=snapshot_id,
+            check_kind="launch",
+            attempt_id=manifest.run_id,
+            specification_fingerprint=current_binding.specification_fingerprint,
+            forced_block_reason=reason,
+        )
+        raise LaunchBudgetError(reason)
+    record = immediate_prelaunch_disk_gate(
+        settings,
+        snapshot_id=snapshot_id,
+        check_kind="launch",
+        attempt_id=manifest.run_id,
+        specification_fingerprint=current_binding.specification_fingerprint,
+    )
     check = record.immediate_prelaunch_checks[-1]
     if check.disposition != "passes":
         raise LaunchBudgetError(check.reason)
     return check
+
+
+def _manifest_binding(profile: RunCostProfile, manifest: RunManifest) -> LaunchManifestBinding:
+    contract = manifest.run_configuration.get("launch_specification")
+    expected_contract = {
+        "world_id": profile.world_id,
+        "recipe_id": profile.recipe_id,
+        "recipe_version": profile.recipe_version,
+        "profile_id": profile.profile_id,
+        "numerical_realization": profile.numerical_realization.model_dump(mode="json"),
+        "observation_plan": profile.observation_plan.model_dump(mode="json"),
+    }
+    if contract != expected_contract:
+        raise LaunchBudgetError(
+            "the manifest launch specification does not match the approved run-cost profile"
+        )
+    if manifest.recipe_id != profile.recipe_id:
+        raise LaunchBudgetError("the manifest Recipe does not match the reviewed Recipe")
+    if manifest.required_output_fields != list(profile.observation_plan.retained_field_inventory):
+        raise LaunchBudgetError(
+            "the manifest retained fields do not match the reviewed observation plan"
+        )
+    return LaunchManifestBinding(
+        attempt_id=manifest.run_id,
+        world_id=profile.world_id,
+        recipe_id=profile.recipe_id,
+        recipe_version=profile.recipe_version,
+        profile_id=profile.profile_id,
+        numerical_realization=profile.numerical_realization,
+        observation_plan=profile.observation_plan,
+        specification_fingerprint=_manifest_specification_fingerprint(manifest),
+    )
+
+
+def _manifest_specification_fingerprint(manifest: RunManifest) -> str:
+    run_configuration = {
+        key: value
+        for key, value in manifest.run_configuration.items()
+        if key not in {"launch_review_snapshot_id"}
+    }
+    payload = {
+        "run_id": manifest.run_id,
+        "scenario": manifest.scenario.model_dump(mode="json"),
+        "controls": manifest.controls,
+        "run_configuration": run_configuration,
+        "physical_question": manifest.physical_question,
+        "expected_diagnostics": manifest.expected_diagnostics,
+        "generated_inputs": manifest.generated_inputs.model_dump(mode="json"),
+        "runtime_paths": manifest.runtime_paths.model_dump(mode="json"),
+        "run_recipe": manifest.run_recipe,
+        "recipe_id": manifest.recipe_id,
+        "assumption_set_id": manifest.assumption_set_id,
+        "recipe_assumptions": manifest.recipe_assumptions,
+        "required_output_fields": manifest.required_output_fields,
+        "expected_outputs": manifest.expected_outputs,
+        "input_source": manifest.input_source,
+        "trigger_type": manifest.trigger_type,
+        "trigger_parameters": manifest.trigger_parameters,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _has_successful_launch_check(
+    settings: CloudChamberSettings,
+    snapshot_id: str,
+) -> bool:
+    path = _preflight_path(settings, snapshot_id)
+    if not path.is_file():
+        return False
+    try:
+        lines = path.read_text().splitlines()
+    except OSError as exc:
+        raise LaunchBudgetError("Launch-review audit could not be read.") from exc
+    for line in lines:
+        try:
+            check = ImmediatePrelaunchCheck.model_validate_json(line)
+        except ValueError as exc:
+            raise LaunchBudgetError("Launch-review audit is invalid.") from exc
+        if check.check_kind == "launch" and check.disposition == "passes":
+            return True
+    return False
 
 
 def profile_by_id(profile_id: str) -> RunCostProfile:
@@ -651,7 +872,7 @@ def _profile(
     )
 
 
-def _retained_field_inventory(world_id: str, recipe_id: str) -> str:
+def _retained_field_inventory(world_id: str, recipe_id: str) -> tuple[str, ...]:
     if world_id == "trade_cumulus":
         return TRADE_CUMULUS_RETAINED_FIELDS
     if world_id == "mountain_waves":
@@ -683,11 +904,7 @@ def _write_new_record(path: Path, record: LaunchReviewRecord) -> None:
 
 
 def _append_check(settings: CloudChamberSettings, check: ImmediatePrelaunchCheck) -> None:
-    path = (
-        settings.runtime_home.expanduser()
-        / "launch-reviews"
-        / f"{check.snapshot_id}.preflight.jsonl"
-    )
+    path = _preflight_path(settings, check.snapshot_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with path.open("a") as handle:
@@ -696,3 +913,9 @@ def _append_check(settings: CloudChamberSettings, check: ImmediatePrelaunchCheck
             os.fsync(handle.fileno())
     except OSError as exc:
         raise LaunchBudgetError("Immediate prelaunch disposition could not be recorded.") from exc
+
+
+def _preflight_path(settings: CloudChamberSettings, snapshot_id: str) -> Path:
+    if not snapshot_id or not snapshot_id.isalnum():
+        raise LaunchBudgetError("Launch-review snapshot identity is invalid.")
+    return settings.runtime_home.expanduser() / "launch-reviews" / f"{snapshot_id}.preflight.jsonl"

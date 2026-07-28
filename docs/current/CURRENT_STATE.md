@@ -358,11 +358,11 @@ Storage reports:
 - total retained usage and current free space;
 - system-protected, ordinary retained, and temporary-attempt totals;
 - usage by owner and asset class;
-- retained, missing, invalid, and conflicted state;
+- protection/availability, attempt lifecycle, and trust as separate facets;
 - accepted and alternate backing relationships;
 - component sizes and durable dependent records;
-- cautious rerun or repairability claims only when supporting evidence is
-  retained.
+- explicit partially uncounted warnings for unreadable paths;
+- unknown repairability unless exact reconstructibility evidence is available.
 
 The inventory is searchable, filterable, sortable, and explicitly
 non-destructive. It does not offer cleanup, repair, backing selection, or
@@ -371,12 +371,15 @@ protection editing.
 Run planning uses typed Quick, Standard, Presentation, Full-cycle, and Extended
 profiles where each World contract defines them. Estimates distinguish
 measured, scaled-from-measured, and uncharacterized evidence. An
-uncharacterized profile fails closed. A launch review records an immutable
-snapshot of free space, expected retained size, runtime, observation plan, and
-required 2 GiB post-run reserve. An immediate prelaunch check recomputes free
-space and appends an audit record. Packages that carry the snapshot identifier
-are blocked by the serial queue when the current budget no longer passes;
-legacy packages remain unchanged until they adopt the contract.
+uncharacterized profile fails closed. The Storage surface records planning-only
+budget snapshots. Packaging can bind a separate immutable snapshot to one exact
+attempt and its World, Recipe/version, profile, numerical realization,
+observation plan, retained fields, and manifest fingerprint. An immediate
+prelaunch check recomputes free space and appends an audit record. Packages that
+carry the snapshot identifier are blocked by the serial queue when the binding
+does not match, the authorization was already consumed, or the current budget
+no longer passes. Legacy packages remain unchanged until they adopt the
+contract.
 
 ## Interpretation Rules
 

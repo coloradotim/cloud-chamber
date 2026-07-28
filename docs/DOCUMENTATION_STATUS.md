@@ -50,7 +50,7 @@ Keep product approval separate from software availability:
 | Compare | Related Simulations can be compared | Ordinary Compare and durable Saved Comparisons are implemented for real pairs across all three Worlds |
 | Variation | Create a related Simulation from a World Simulation | Approved variation contracts and a working Mountain Waves path; no shared three-World workflow |
 | Activity and History | Owner-aware current work and durable scientific records | One shared lifecycle projection is implemented for current World work, Fun With Soundings, and legacy/unassigned Experiments |
-| Storage and launch budget | Understand retained scientific assets before creating more | Global read-only inventory, dependency visibility, typed World cost profiles, immutable launch-review snapshots, and an immediate prelaunch disk gate are implemented |
+| Storage and launch budget | Understand retained scientific assets before creating more | Global read-only inventory, dependency visibility, typed World cost profiles, planning and exact-package-bound immutable snapshots, and a single-use immediate prelaunch disk gate are implemented |
 | Explore | World-specific science in a shared application vocabulary | Implemented separately for all three accessible Worlds |
 | Curated Explore defaults | Authored Simulation and Field/Lens starting states with complete reset and visible fallback | Implemented across all three accessible Worlds as the fallback below explicit Saved Views and last-active state |
 

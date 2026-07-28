@@ -15,6 +15,7 @@ describe("StorageWorkspace", () => {
 
     expect(await screen.findByRole("heading", { name: "Storage" })).toBeVisible();
     expect(screen.getAllByText("12 GB").length).toBeGreaterThan(0);
+    expect(screen.getByText("50 GB")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Canonical BOMEX Baseline" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Boulder Windstorm" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /delete|remove|clean/i })).not.toBeInTheDocument();
@@ -29,6 +30,31 @@ describe("StorageWorkspace", () => {
     expect(screen.getByText("1 of 2")).toBeVisible();
   });
 
+  it("filters attempt lifecycle and trust independently", async () => {
+    vi.stubGlobal("fetch", storageFetch());
+
+    render(<StorageWorkspace />);
+
+    await screen.findByRole("heading", { name: "Retained assets" });
+    fireEvent.click(screen.getByText("More filters"));
+    fireEvent.change(screen.getByRole("combobox", { name: "Attempt lifecycle" }), {
+      target: { value: "canceled" },
+    });
+    expect(screen.getByRole("heading", { name: "Boulder Windstorm" })).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Canonical BOMEX Baseline" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Attempt lifecycle" }), {
+      target: { value: "all" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Trust" }), {
+      target: { value: "trusted" },
+    });
+    expect(screen.getByRole("heading", { name: "Canonical BOMEX Baseline" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Boulder Windstorm" })).not.toBeInTheDocument();
+  });
+
   it("records an immutable review and runs the immediate prelaunch check", async () => {
     const fetchMock = storageFetch();
     vi.stubGlobal("fetch", fetchMock);
@@ -36,9 +62,11 @@ describe("StorageWorkspace", () => {
     render(<StorageWorkspace />);
 
     await screen.findByRole("heading", { name: "Launch budget" });
-    fireEvent.click(screen.getByRole("button", { name: "Record launch review" }));
-    await waitFor(() => expect(screen.getByText(/Snapshot abcdef12/)).toBeVisible());
-    fireEvent.click(screen.getByRole("button", { name: "Recheck before launch" }));
+    fireEvent.click(screen.getByRole("button", { name: "Record budget review" }));
+    await waitFor(() =>
+      expect(screen.getByText(/Planning snapshot abcdef12/)).toBeVisible(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Recheck current budget" }));
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(
         "Launch budget passes at immediate prelaunch.",
@@ -114,6 +142,8 @@ function inventory() {
       },
     ],
     state_counts: { protected: 2 },
+    lifecycle_counts: { completed: 1, canceled: 1 },
+    trust_counts: { trusted: 1, needs_review: 1 },
     assets: [
       asset({
         asset_id: "run:trade",
@@ -128,12 +158,16 @@ function inventory() {
         owner_id: "mountain_waves",
         owner_label: "Mountain Waves",
         size_bytes: 2 * 1024 ** 3,
+        attempt_lifecycle_state: "canceled",
+        attempt_process_state: "canceled",
+        trust_state: "needs_review",
       }),
     ],
     performance: {
       cache_hit: true,
       scan_duration_ms: 0,
       scanned_file_count: 0,
+      fingerprinted_path_count: 12,
       fingerprint: "fixture",
     },
     warnings: [],
@@ -147,7 +181,8 @@ function asset(overrides: Record<string, unknown>) {
     owner_id: "trade_cumulus",
     owner_label: "Trade Cumulus",
     asset_class: "simulation_output",
-    lifecycle_role: "reference",
+    lifecycle_role: "initial",
+    record_role: "reference",
     world_id: "trade_cumulus",
     simulation_id: "fixture",
     experiment_id: null,
@@ -156,6 +191,10 @@ function asset(overrides: Record<string, unknown>) {
     parent_simulation_id: null,
     reference_simulation_id: "fixture",
     attempt_id: "fixture",
+    attempt_lifecycle_state: "completed",
+    attempt_queue_state: "not_applicable",
+    attempt_process_state: "completed",
+    attempt_validation_status: "valid",
     run_id: "fixture",
     result_id: "result-fixture",
     case_id: "fixture",
@@ -163,7 +202,16 @@ function asset(overrides: Record<string, unknown>) {
     tags: ["built-in"],
     technical_path: "/runtime/runs/fixture",
     size_bytes: 1,
-    components: [{ component: "model output", size_bytes: 1, file_count: 1 }],
+    partially_uncounted: false,
+    uncounted_path_count: 0,
+    components: [
+      {
+        component: "model output",
+        size_bytes: 1,
+        file_count: 1,
+        uncounted_file_count: 0,
+      },
+    ],
     created_at: "2026-07-28T10:00:00Z",
     modified_at: "2026-07-28T11:00:00Z",
     last_used_at: null,
@@ -207,7 +255,7 @@ function estimate() {
         output_cadence_seconds: 180,
         diagnostic_cadence_seconds: null,
         expected_history_count: 61,
-        retained_field_inventory: "World-required fields",
+        retained_field_inventory: ["ql", "qv", "w"],
       },
       expected_runtime_min_seconds: 600,
       expected_runtime_max_seconds: 1200,
@@ -237,12 +285,16 @@ function review(checked: boolean) {
       review_free_space_bytes: 300 * 1024 ** 3,
       warning_threshold_bytes: 50 * 1024 ** 3,
       minimum_free_space_bytes: 2 * 1024 ** 3,
+      manifest_binding: null,
     },
     immediate_prelaunch_checks: checked
       ? [
           {
             check_id: "check-1",
             snapshot_id: "abcdef1234567890",
+            check_kind: "planning",
+            attempt_id: null,
+            specification_fingerprint: null,
             checked_at: "2026-07-28T12:06:00Z",
             current_free_space_bytes: 300 * 1024 ** 3,
             expected_size_high_bytes: 1100 * 1024 ** 2,

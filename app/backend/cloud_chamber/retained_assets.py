@@ -15,7 +15,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from cloud_chamber.lifecycle import LifecycleAttempt, LifecycleProjection, LifecycleRecord
-from cloud_chamber.run_manifest import RunManifestError, load_run_manifest
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.storage_policy import (
     DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES,
@@ -68,6 +67,7 @@ class AssetComponent(BaseModel):
     component: str
     size_bytes: int
     file_count: int
+    uncounted_file_count: int = 0
 
 
 class AssetDependency(BaseModel):
@@ -89,6 +89,7 @@ class RetainedAsset(BaseModel):
     owner_label: str
     asset_class: AssetClass
     lifecycle_role: str
+    record_role: str | None = None
     world_id: str | None = None
     simulation_id: str | None = None
     experiment_id: str | None = None
@@ -97,6 +98,10 @@ class RetainedAsset(BaseModel):
     parent_simulation_id: str | None = None
     reference_simulation_id: str | None = None
     attempt_id: str | None = None
+    attempt_lifecycle_state: str | None = None
+    attempt_queue_state: str | None = None
+    attempt_process_state: str | None = None
+    attempt_validation_status: str | None = None
     run_id: str | None = None
     result_id: str | None = None
     case_id: str | None = None
@@ -104,6 +109,8 @@ class RetainedAsset(BaseModel):
     tags: list[str] = Field(default_factory=list)
     technical_path: str | None = None
     size_bytes: int | None = None
+    partially_uncounted: bool = False
+    uncounted_path_count: int = 0
     components: list[AssetComponent] = Field(default_factory=list)
     created_at: str | None = None
     modified_at: str | None = None
@@ -138,6 +145,7 @@ class InventoryPerformance(BaseModel):
     cache_hit: bool
     scan_duration_ms: float
     scanned_file_count: int
+    fingerprinted_path_count: int
     fingerprint: str
 
 
@@ -160,6 +168,8 @@ class RetainedAssetInventory(BaseModel):
     usage_by_owner: list[UsageGroup]
     usage_by_class: list[UsageGroup]
     state_counts: dict[str, int]
+    lifecycle_counts: dict[str, int]
+    trust_counts: dict[str, int]
     assets: list[RetainedAsset]
     performance: InventoryPerformance
     warnings: list[str] = Field(default_factory=list)
@@ -179,6 +189,8 @@ class _CachedInventory(BaseModel):
     usage_by_owner: list[UsageGroup]
     usage_by_class: list[UsageGroup]
     state_counts: dict[str, int]
+    lifecycle_counts: dict[str, int]
+    trust_counts: dict[str, int]
     assets: list[RetainedAsset]
     scanned_file_count: int
     scan_duration_ms: float
@@ -194,11 +206,19 @@ def retained_asset_inventory(
     """Return a cached product-level inventory without reading scientific arrays."""
     runtime_home = settings.runtime_home.expanduser()
     runtime_home.mkdir(parents=True, exist_ok=True)
-    fingerprint = _inventory_fingerprint(runtime_home)
+    fingerprint, fingerprinted_path_count, fingerprint_warnings = _inventory_fingerprint(
+        runtime_home
+    )
     cache_path = runtime_home / _CACHE_RELATIVE_PATH
-    cached = None if refresh else _load_cache(cache_path, fingerprint)
+    active_attempts = _has_active_attempts(lifecycle)
+    cached = None if refresh or active_attempts else _load_cache(cache_path, fingerprint)
     if cached is None:
-        cached = _build_inventory(runtime_home, lifecycle, fingerprint)
+        cached = _build_inventory(
+            runtime_home,
+            lifecycle,
+            fingerprint,
+            fingerprint_warnings=fingerprint_warnings,
+        )
         _write_cache(cache_path, cached)
         cache_hit = False
     else:
@@ -221,14 +241,21 @@ def retained_asset_inventory(
         usage_by_owner=cached.usage_by_owner,
         usage_by_class=cached.usage_by_class,
         state_counts=cached.state_counts,
+        lifecycle_counts=cached.lifecycle_counts,
+        trust_counts=cached.trust_counts,
         assets=cached.assets,
         performance=InventoryPerformance(
             cache_hit=cache_hit,
             scan_duration_ms=0.0 if cache_hit else cached.scan_duration_ms,
             scanned_file_count=0 if cache_hit else cached.scanned_file_count,
+            fingerprinted_path_count=fingerprinted_path_count,
             fingerprint=fingerprint,
         ),
-        warnings=[*cached.warnings, *lifecycle.warnings],
+        warnings=[
+            *cached.warnings,
+            *(["Active attempts force a fresh retained-byte rollup."] if active_attempts else []),
+            *lifecycle.warnings,
+        ],
     )
 
 
@@ -236,10 +263,13 @@ def _build_inventory(
     runtime_home: Path,
     lifecycle: LifecycleProjection,
     fingerprint: str,
+    *,
+    fingerprint_warnings: list[str],
 ) -> _CachedInventory:
     started = time.perf_counter()
     assets: list[RetainedAsset] = []
     scanned_files = 0
+    warnings = list(fingerprint_warnings)
     record_by_run: dict[str, tuple[LifecycleRecord, LifecycleAttempt]] = {}
     for record in lifecycle.records:
         for attempt in record.attempts:
@@ -259,10 +289,20 @@ def _build_inventory(
             current_attempt: LifecycleAttempt | None = (
                 record_and_attempt[1] if record_and_attempt else None
             )
-            components, file_count = _component_inventory(run_dir)
+            components, file_count, uncounted_count, component_warnings = _component_inventory(
+                run_dir
+            )
             scanned_files += file_count
+            warnings.extend(component_warnings)
             assets.append(
-                _run_asset(run_dir, current_record, current_attempt, lifecycle, components)
+                _run_asset(
+                    run_dir,
+                    current_record,
+                    current_attempt,
+                    lifecycle,
+                    components,
+                    uncounted_count=uncounted_count,
+                )
             )
 
     for run_id, (record, attempt) in record_by_run.items():
@@ -286,9 +326,10 @@ def _build_inventory(
         asset_class, label = recognized_roots.get(
             path.name, ("durable_metadata", "Runtime metadata")
         )
-        size, file_count = _path_size(path)
+        size, file_count, uncounted_count, path_warnings = _path_size(path)
         scanned_files += file_count
-        owner_id = _source_owner(path)
+        warnings.extend(path_warnings)
+        owner_id: OwnerId = "legacy_unassigned"
         assets.append(
             RetainedAsset(
                 asset_id=f"runtime:{path.name}",
@@ -299,11 +340,14 @@ def _build_inventory(
                 lifecycle_role="supporting_asset",
                 technical_path=str(path),
                 size_bytes=size,
+                partially_uncounted=uncounted_count > 0,
+                uncounted_path_count=uncounted_count,
                 components=[
                     AssetComponent(
                         component="retained files",
                         size_bytes=size,
                         file_count=file_count,
+                        uncounted_file_count=uncounted_count,
                     )
                 ],
                 created_at=_created_at(path),
@@ -339,7 +383,9 @@ def _build_inventory(
         system_protected_bytes=protected,
         ordinary_retained_bytes=ordinary,
         temporary_bytes=temporary,
-        uncounted_asset_count=sum(asset.size_bytes is None for asset in assets),
+        uncounted_asset_count=sum(
+            asset.size_bytes is None or asset.partially_uncounted for asset in assets
+        ),
         usage_by_owner=_usage_groups(
             assets,
             key=lambda asset: asset.owner_id,
@@ -351,9 +397,14 @@ def _build_inventory(
             label=lambda asset: _class_label(asset.asset_class),
         ),
         state_counts=dict(Counter(_state_label(asset) for asset in assets)),
+        lifecycle_counts=dict(
+            Counter(asset.attempt_lifecycle_state or "not_applicable" for asset in assets)
+        ),
+        trust_counts=dict(Counter(asset.trust_state for asset in assets)),
         assets=assets,
         scanned_file_count=scanned_files,
         scan_duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        warnings=list(dict.fromkeys(warnings)),
     )
 
 
@@ -363,6 +414,8 @@ def _run_asset(
     attempt: LifecycleAttempt | None,
     lifecycle: LifecycleProjection,
     components: list[AssetComponent],
+    *,
+    uncounted_count: int,
 ) -> RetainedAsset:
     built_in = bool(
         record
@@ -379,7 +432,6 @@ def _run_asset(
         if asset_class == "attempt" and availability == "retained"
         else "ordinary"
     )
-    rerunnable = _has_required_package_inputs(run_dir)
     dependencies = _asset_dependencies(record, attempt, lifecycle, built_in)
     size = sum(item.size_bytes for item in components)
     return RetainedAsset(
@@ -388,7 +440,8 @@ def _run_asset(
         owner_id=record.owner_id if record else "legacy_unassigned",
         owner_label=record.owner_label if record else _OWNER_LABELS["legacy_unassigned"],
         asset_class=asset_class,
-        lifecycle_role=record.role if record and record.role else "technical_attempt",
+        lifecycle_role=attempt.relationship if attempt else "technical_attempt",
+        record_role=record.role if record else None,
         world_id=record.world_id if record else None,
         simulation_id=record.simulation_id if record else None,
         experiment_id=record.experiment_id if record else None,
@@ -397,6 +450,10 @@ def _run_asset(
         parent_simulation_id=record.parent_simulation_id if record else None,
         reference_simulation_id=record.reference_simulation_id if record else None,
         attempt_id=attempt.attempt_id if attempt else run_dir.name,
+        attempt_lifecycle_state=attempt.lifecycle_state if attempt else None,
+        attempt_queue_state=attempt.queue_state if attempt else None,
+        attempt_process_state=_attempt_process_state(attempt),
+        attempt_validation_status=attempt.validation_status if attempt else None,
         run_id=run_dir.name,
         result_id=attempt.result_id if attempt else None,
         case_id=record.case_id if record else None,
@@ -404,6 +461,8 @@ def _run_asset(
         tags=record.tags if record else [],
         technical_path=str(run_dir),
         size_bytes=size,
+        partially_uncounted=uncounted_count > 0,
+        uncounted_path_count=uncounted_count,
         components=components,
         created_at=(attempt.created_at if attempt else None) or _created_at(run_dir),
         modified_at=(attempt.updated_at if attempt else None) or _modified_at(run_dir),
@@ -417,14 +476,10 @@ def _run_asset(
         ),
         availability_state=availability,
         protection_state=protection,
-        repairability_state=("rerunnable" if not built_in and rerunnable else "unknown"),
+        repairability_state="unknown",
         trust_state=record.trust_state if record else "unassessed",
         caveats=record.caveats if record else [],
-        recreation_method=(
-            "Re-run from the retained manifest and exact generated inputs."
-            if not built_in and rerunnable
-            else None
-        ),
+        recreation_method=None,
         dependencies=dependencies,
         required_for_explore=bool(
             accepted and record and record.facts.world_inspectability == "passed"
@@ -453,7 +508,8 @@ def _missing_run_asset(
         asset_class=(
             "simulation_output" if record.record_kind == "simulation" else "experiment_output"
         ),
-        lifecycle_role=record.role or "technical_attempt",
+        lifecycle_role=attempt.relationship,
+        record_role=record.role,
         world_id=record.world_id,
         simulation_id=record.simulation_id,
         experiment_id=record.experiment_id,
@@ -462,6 +518,10 @@ def _missing_run_asset(
         parent_simulation_id=record.parent_simulation_id,
         reference_simulation_id=record.reference_simulation_id,
         attempt_id=attempt.attempt_id,
+        attempt_lifecycle_state=attempt.lifecycle_state,
+        attempt_queue_state=attempt.queue_state,
+        attempt_process_state=_attempt_process_state(attempt),
+        attempt_validation_status=attempt.validation_status,
         run_id=attempt.run_id,
         result_id=attempt.result_id,
         case_id=record.case_id,
@@ -611,26 +671,76 @@ def _attempt_availability(attempt: LifecycleAttempt | None) -> AvailabilityState
     return "retained"
 
 
-def _component_inventory(run_dir: Path) -> tuple[list[AssetComponent], int]:
+def _attempt_process_state(attempt: LifecycleAttempt | None) -> str | None:
+    if attempt is None or not attempt.lifecycle_state:
+        return None
+    if attempt.lifecycle_state in {"created", "packaged", "queued"}:
+        return "not_started"
+    if attempt.lifecycle_state == "running":
+        return "running"
+    if attempt.lifecycle_state in {"completed", "ingested", "saved"}:
+        return "completed"
+    if attempt.lifecycle_state == "failed":
+        return "failed"
+    if attempt.lifecycle_state == "canceled":
+        return "canceled"
+    return "unknown"
+
+
+def _has_active_attempts(lifecycle: LifecycleProjection) -> bool:
+    return any(
+        attempt.lifecycle_state in {"queued", "running"}
+        or attempt.queue_state in {"queued", "running"}
+        for record in lifecycle.records
+        for attempt in record.attempts
+    )
+
+
+def _component_inventory(
+    run_dir: Path,
+) -> tuple[list[AssetComponent], int, int, list[str]]:
     sizes: defaultdict[str, int] = defaultdict(int)
     counts: Counter[str] = Counter()
-    for root, directories, files in os.walk(run_dir, followlinks=False):
+    uncounted: Counter[str] = Counter()
+    warnings: list[str] = []
+
+    def walk_error(error: OSError) -> None:
+        warnings.append(f"Could not count retained path {error.filename or run_dir}: {error}.")
+
+    for root, directories, files in os.walk(
+        run_dir,
+        followlinks=False,
+        onerror=walk_error,
+    ):
         directories[:] = [name for name in directories if not (Path(root) / name).is_symlink()]
         root_path = Path(root)
         for name in files:
             path = root_path / name
+            component = _component_name(path.relative_to(run_dir))
             try:
                 size = path.lstat().st_size
-            except OSError:
+            except OSError as exc:
+                uncounted[component] += 1
+                warnings.append(f"Could not count retained file {path}: {exc}.")
                 continue
-            component = _component_name(path.relative_to(run_dir))
             sizes[component] += size
             counts[component] += 1
+    component_names = set(sizes) | set(uncounted)
     components = [
-        AssetComponent(component=name, size_bytes=sizes[name], file_count=counts[name])
-        for name in sorted(sizes, key=lambda item: (-sizes[item], item))
+        AssetComponent(
+            component=name,
+            size_bytes=sizes[name],
+            file_count=counts[name],
+            uncounted_file_count=uncounted[name],
+        )
+        for name in sorted(component_names, key=lambda item: (-sizes[item], item))
     ]
-    return components, sum(counts.values())
+    return (
+        components,
+        sum(counts.values()),
+        sum(uncounted.values()),
+        warnings,
+    )
 
 
 def _component_name(relative_path: Path) -> str:
@@ -660,76 +770,42 @@ def _component_name(relative_path: Path) -> str:
     return "metadata and supporting files"
 
 
-def _has_required_package_inputs(run_dir: Path) -> bool:
-    manifest_path = run_dir / "run_manifest.json"
-    try:
-        manifest = load_run_manifest(manifest_path)
-    except (OSError, RunManifestError):
-        return False
-
-    declared_inputs = [
-        manifest.generated_inputs.manifest_path,
-        manifest.generated_inputs.namelist_input,
-        manifest.generated_inputs.input_sounding,
-        manifest.generated_inputs.dry_run_report,
-        manifest.generated_inputs.surface_forcing_patch,
-        manifest.generated_inputs.cm1_source_customization,
-        *manifest.generated_inputs.runtime_file_checklist,
-    ]
-    if not manifest.generated_inputs.namelist_input:
-        return False
-    if any(
-        not _declared_input_is_retained(run_dir, declared_path)
-        for declared_path in declared_inputs
-        if declared_path
-    ):
-        return False
-
-    source_paths = [
-        manifest.runtime_paths.cm1_root,
-        manifest.runtime_paths.cm1_run_dir,
-    ]
-    return any(path and Path(path).expanduser().exists() for path in source_paths)
-
-
-def _declared_input_is_retained(run_dir: Path, declared_path: str) -> bool:
-    path = Path(declared_path).expanduser()
-    return path.exists() or (run_dir / path.name).exists()
-
-
-def _path_size(path: Path) -> tuple[int, int]:
+def _path_size(path: Path) -> tuple[int, int, int, list[str]]:
+    warnings: list[str] = []
     if path.is_symlink():
-        return path.lstat().st_size, 1
+        try:
+            return path.lstat().st_size, 1, 0, warnings
+        except OSError as exc:
+            return 0, 0, 1, [f"Could not count retained path {path}: {exc}."]
     if path.is_file():
         try:
-            return path.stat().st_size, 1
-        except OSError:
-            return 0, 0
+            return path.stat().st_size, 1, 0, warnings
+        except OSError as exc:
+            return 0, 0, 1, [f"Could not count retained file {path}: {exc}."]
     total = 0
     count = 0
-    for root, directories, files in os.walk(path, followlinks=False):
+    uncounted = 0
+
+    def walk_error(error: OSError) -> None:
+        nonlocal uncounted
+        uncounted += 1
+        warnings.append(f"Could not count retained path {error.filename or path}: {error}.")
+
+    for root, directories, files in os.walk(
+        path,
+        followlinks=False,
+        onerror=walk_error,
+    ):
         directories[:] = [name for name in directories if not (Path(root) / name).is_symlink()]
         for name in files:
             candidate = Path(root) / name
             try:
                 total += candidate.lstat().st_size
                 count += 1
-            except OSError:
-                continue
-    return total, count
-
-
-def _source_owner(path: Path) -> OwnerId:
-    text = path.name.casefold()
-    if "trade" in text or path.name == "comparisons":
-        return "trade_cumulus"
-    if "mountain" in text:
-        return "mountain_waves"
-    if "supercell" in text or path.name == "cm1_source_builds":
-        return "supercells"
-    if "sounding" in text or path.name == "cache":
-        return "fun_with_soundings"
-    return "legacy_unassigned"
+            except OSError as exc:
+                uncounted += 1
+                warnings.append(f"Could not count retained file {candidate}: {exc}.")
+    return total, count, uncounted, warnings
 
 
 def _usage_groups(
@@ -781,37 +857,55 @@ def _state_label(asset: RetainedAsset) -> str:
     return "ordinary"
 
 
-def _inventory_fingerprint(runtime_home: Path) -> str:
+def _inventory_fingerprint(runtime_home: Path) -> tuple[str, int, list[str]]:
     records: list[str] = []
+    warnings: list[str] = []
+    fingerprinted_path_count = 0
     for path in sorted(runtime_home.iterdir()) if runtime_home.is_dir() else []:
         if path.name == _CACHE_RELATIVE_PATH.parts[0]:
             continue
-        records.append(_stat_fingerprint(path, runtime_home))
-        if path.name == "runs" and path.is_dir():
-            for run_dir in sorted(path.iterdir()):
-                records.append(_stat_fingerprint(run_dir, runtime_home))
-                for filename in (
-                    "run_manifest.json",
-                    "result_metadata.json",
-                    "result_card.json",
-                    "worker_status.json",
-                ):
-                    candidate = run_dir / filename
-                    if candidate.exists() or candidate.is_symlink():
-                        records.append(_stat_fingerprint(candidate, runtime_home))
-        elif path.name in {"explore-state", "saved-comparisons", "simulation-notes"}:
-            for candidate in sorted(path.rglob("*.json")):
-                records.append(_stat_fingerprint(candidate, runtime_home))
-    return hashlib.sha256("\n".join(records).encode()).hexdigest()
+        record, warning = _stat_fingerprint(path, runtime_home)
+        records.append(record)
+        fingerprinted_path_count += 1
+        if warning:
+            warnings.append(warning)
+        if not path.is_dir() or path.is_symlink():
+            continue
+
+        def walk_error(error: OSError, base_path: Path = path) -> None:
+            warnings.append(
+                f"Could not fingerprint retained path {error.filename or base_path}: {error}."
+            )
+
+        for root, directories, files in os.walk(
+            path,
+            followlinks=False,
+            onerror=walk_error,
+        ):
+            directories[:] = sorted(
+                name for name in directories if not (Path(root) / name).is_symlink()
+            )
+            for name in [*directories, *sorted(files)]:
+                candidate = Path(root) / name
+                record, warning = _stat_fingerprint(candidate, runtime_home)
+                records.append(record)
+                fingerprinted_path_count += 1
+                if warning:
+                    warnings.append(warning)
+    return (
+        hashlib.sha256("\n".join(records).encode()).hexdigest(),
+        fingerprinted_path_count,
+        warnings,
+    )
 
 
-def _stat_fingerprint(path: Path, runtime_home: Path) -> str:
+def _stat_fingerprint(path: Path, runtime_home: Path) -> tuple[str, str | None]:
     try:
         stat = path.lstat()
         relative = path.relative_to(runtime_home)
-        return f"{relative}:{stat.st_mode}:{stat.st_size}:{stat.st_mtime_ns}"
-    except (OSError, ValueError):
-        return f"{path}:unreadable"
+        return f"{relative}:{stat.st_mode}:{stat.st_size}:{stat.st_mtime_ns}", None
+    except (OSError, ValueError) as exc:
+        return f"{path}:unreadable", f"Could not fingerprint retained path {path}: {exc}."
 
 
 def _load_cache(path: Path, fingerprint: str) -> _CachedInventory | None:

@@ -205,6 +205,7 @@ class LocalRunQueueManager:
             snapshot_id = manifest.run_configuration.get("launch_review_snapshot_id")
             validate_manifest_launch_budget(
                 self._settings,
+                manifest=manifest,
                 snapshot_id=snapshot_id if isinstance(snapshot_id, str) else None,
             )
             status = self._run_manager.launch(Path(entry.manifest_path))

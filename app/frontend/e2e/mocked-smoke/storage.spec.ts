@@ -33,6 +33,7 @@ test.describe("mocked smoke: global Storage", () => {
       await expect(page.getByRole("heading", { name: "Retained locally" })).toBeVisible();
       await expect(page.getByRole("heading", { name: "Launch budget" })).toBeVisible();
       await expect(page.getByRole("heading", { name: "Retained assets" })).toBeVisible();
+      await expect(page.getByText("Usage warning")).toBeVisible();
       await expect(page.getByText("Quarter-Circle Supercell")).toBeVisible();
       await expect(page.getByText("Boulder Windstorm")).toBeVisible();
       await expect(page.getByRole("button", { name: /delete|remove|clean/i })).toHaveCount(0);
@@ -49,6 +50,15 @@ test.describe("mocked smoke: global Storage", () => {
       await expect(page.getByText("Quarter-Circle Supercell")).toHaveCount(0);
 
       await page.getByRole("searchbox", { name: "Search" }).fill("");
+      await page.getByText("More filters").click();
+      await page.getByRole("combobox", { name: "Attempt lifecycle" }).selectOption("canceled");
+      await expect(page.getByText("Boulder Windstorm")).toBeVisible();
+      await expect(page.getByText("Quarter-Circle Supercell")).toHaveCount(0);
+      await page.getByRole("combobox", { name: "Attempt lifecycle" }).selectOption("all");
+      await page.getByRole("combobox", { name: "Trust" }).selectOption("trusted");
+      await expect(page.getByText("Quarter-Circle Supercell")).toBeVisible();
+      await expect(page.getByText("Boulder Windstorm")).toHaveCount(0);
+      await page.getByRole("combobox", { name: "Trust" }).selectOption("all");
       await page
         .getByRole("combobox", { name: "World run profile" })
         .selectOption("supercells_extended_v1");
@@ -69,9 +79,9 @@ test.describe("mocked smoke: global Storage", () => {
   test("records and immediately rechecks a passing launch budget", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/storage");
-    await page.getByRole("button", { name: "Record launch review" }).click();
-    await expect(page.getByText(/Snapshot 11111111/)).toBeVisible();
-    await page.getByRole("button", { name: "Recheck before launch" }).click();
+    await page.getByRole("button", { name: "Record budget review" }).click();
+    await expect(page.getByText(/Planning snapshot 11111111/)).toBeVisible();
+    await page.getByRole("button", { name: "Recheck current budget" }).click();
     await expect(page.getByRole("status")).toHaveText(
       "Launch budget passes at immediate prelaunch.",
     );

@@ -707,12 +707,23 @@ def storage_run_cost_profiles() -> RunCostCatalog:
 @app.post("/api/storage/launch-reviews", response_model=LaunchReviewRecord)
 def create_storage_launch_review(request: LaunchReviewRequest) -> LaunchReviewRecord:
     try:
+        settings = load_settings()
+        manifest = None
+        if request.manifest_path:
+            manifest_path = Path(request.manifest_path).expanduser().resolve()
+            runs_root = (settings.runtime_home.expanduser() / "runs").resolve()
+            if not manifest_path.is_relative_to(runs_root):
+                raise LaunchBudgetError(
+                    "Launch-review manifests must remain under the configured runs root."
+                )
+            manifest = load_run_manifest(manifest_path)
         return create_launch_review_snapshot(
-            load_settings(),
+            settings,
             profile_id=request.profile_id,
             warning_threshold_bytes=DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES,
+            manifest=manifest,
         )
-    except LaunchBudgetError as exc:
+    except (LaunchBudgetError, OSError, RunManifestError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
