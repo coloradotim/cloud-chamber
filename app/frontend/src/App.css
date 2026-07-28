@@ -859,6 +859,12 @@ textarea {
   padding: 0.1rem 0 0.75rem;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .brand-mark {
   display: grid;
   gap: 0.12rem;

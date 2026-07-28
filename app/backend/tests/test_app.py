@@ -1552,6 +1552,59 @@ def test_storage_inventory_api_uses_runtime_home_override(
     assert payload["runs"][0]["category"] == "missing_manifest"
 
 
+def test_read_only_asset_inventory_and_launch_budget_apis(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CLOUD_CHAMBER_RUNTIME_HOME", str(tmp_path))
+    projection = LifecycleProjection(
+        generated_at="2026-07-28T00:00:00+00:00",
+        records=[],
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.app.lifecycle_projection",
+        lambda *_args, **_kwargs: projection,
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.app._get_local_run_queue",
+        lambda: SimpleNamespace(
+            snapshot=lambda: RunQueueState(
+                entries=[],
+                queued_count=0,
+                updated_at="2026-07-28T00:00:00+00:00",
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    inventory = client.get("/api/storage/assets")
+    catalog = client.get("/api/storage/run-cost-profiles")
+    review = client.post(
+        "/api/storage/launch-reviews",
+        json={"profile_id": "mountain_waves_boulder_quick_v1"},
+    )
+    preflight = client.post(
+        "/api/storage/launch-reviews/preflight",
+        json={"snapshot_id": review.json()["snapshot"]["snapshot_id"]},
+    )
+
+    assert inventory.status_code == 200
+    assert inventory.json()["runtime_home"] == str(tmp_path)
+    assert inventory.json()["performance"]["cache_hit"] is False
+    assert catalog.status_code == 200
+    assert {item["profile"]["world_id"] for item in catalog.json()["estimates"]} == {
+        "trade_cumulus",
+        "mountain_waves",
+        "supercells",
+    }
+    assert review.status_code == 200
+    assert review.json()["snapshot"]["estimate"]["disposition"] == "passes"
+    assert preflight.status_code == 200
+    assert preflight.json()["immediate_prelaunch_checks"][-1]["disposition"] == "passes"
+    assert list((tmp_path / "launch-reviews").glob("*.snapshot.json"))
+    assert list((tmp_path / "launch-reviews").glob("*.preflight.jsonl"))
+
+
 def test_storage_delete_run_api_requires_explicit_confirm(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

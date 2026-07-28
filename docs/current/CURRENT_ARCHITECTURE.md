@@ -43,6 +43,7 @@ primary product routes resolve these locations:
 
 ```text
 Cloud Worlds home
+Global read-only Storage
 World overview and section
 Trade Cumulus Explore and featured Comparison
 Mountain Waves World and Explore
@@ -64,6 +65,7 @@ Fun With Soundings uses stable frontend routes:
 ```text
 /fun-with-soundings
 /fun-with-soundings/explore/{result_id}
+/storage
 ```
 
 Its five jobs compose existing sounding catalog, candidate screening, package,
@@ -396,6 +398,52 @@ lifecycle evidence so Activity and History can separate workbench execution
 from World-associated or legacy/unassigned technical work after reload.
 
 See [Ingest, Results, and Runtime Cleanup Lifecycle](INGEST_RESULTS_STORAGE_LIFECYCLE.md).
+
+## Retained-Asset Inventory And Launch Gate
+
+`app/backend/cloud_chamber/retained_assets.py` builds one read-only product
+inventory over the configured runtime home and the owner-aware lifecycle
+projection. It records asset identity, owner, class, lifecycle role, backing
+relationship, availability, protection, repairability, components, byte
+counts, and durable dependencies without reading scientific arrays.
+
+The first inventory scan walks retained files once. Its bounded fingerprint
+uses directory and durable-metadata stat evidence rather than NetCDF contents.
+The resulting projection is cached at:
+
+```text
+<runtime-home>/.inventory-cache/retained-assets-v1.json
+```
+
+Unchanged requests reuse that cache while recomputing current filesystem free
+space. The API reports whether a response scanned or used the cache:
+
+```text
+GET /api/storage/assets
+GET /api/storage/assets?refresh=true
+```
+
+`app/backend/cloud_chamber/run_cost.py` owns typed World run-cost profiles and
+the shared launch-budget calculation. Each characterized profile reserves its
+high retained-size estimate plus a 2 GiB post-run safety margin.
+Uncharacterized profiles fail closed.
+
+Launch review creates an immutable snapshot, while immediate prelaunch checks
+append separate audit records:
+
+```text
+POST /api/storage/launch-reviews
+POST /api/storage/launch-reviews/preflight
+
+<runtime-home>/launch-reviews/<snapshot-id>.snapshot.json
+<runtime-home>/launch-reviews/<snapshot-id>.preflight.jsonl
+```
+
+The local serial queue enforces the immediate gate when a package contains a
+`launch_review_snapshot_id`. This opt-in boundary preserves existing package
+behavior while allowing later shared variation work to require the contract.
+The Storage frontend contains no cleanup, repair, protection-editing, or
+backing-selection action.
 
 ## Persistence and Asset Boundaries
 

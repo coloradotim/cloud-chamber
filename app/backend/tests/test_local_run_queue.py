@@ -11,6 +11,7 @@ from cloud_chamber.dry_run_package import generate_dry_run_package
 from cloud_chamber.local_run_manager import LocalRunManagerError, RunStatus
 from cloud_chamber.local_run_queue import LocalRunQueueManager
 from cloud_chamber.result_ingest import ResultIngestError
+from cloud_chamber.run_cost import LaunchBudgetError
 from cloud_chamber.run_manifest import (
     LifecycleState,
     OutputMetadata,
@@ -221,6 +222,48 @@ def test_queue_records_launch_failures_when_local_launch_remains_blocked(tmp_pat
     assert entries["run-launch-fails"].state == "launch_failed"
     assert entries["run-waits"].state == "launch_failed"
     assert queued_state.active_run_id is None
+
+
+def test_queue_enforces_opted_in_launch_budget_before_process_start(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_path = create_manifest(tmp_path, "run-budget-blocked")
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(
+            update={
+                "run_configuration": {
+                    **manifest.run_configuration,
+                    "launch_review_snapshot_id": "snapshot-blocked",
+                }
+            }
+        ),
+    )
+    checked: list[str | None] = []
+
+    def block_budget(
+        _settings: CloudChamberSettings,
+        *,
+        snapshot_id: str | None,
+    ) -> None:
+        checked.append(snapshot_id)
+        raise LaunchBudgetError("Launch blocked: fixture storage budget.")
+
+    monkeypatch.setattr(
+        "cloud_chamber.local_run_queue.validate_manifest_launch_budget",
+        block_budget,
+    )
+    fake_manager = FakeRunManager()
+    queue = LocalRunQueueManager(settings=fake_settings(tmp_path), run_manager=fake_manager)
+
+    state = queue.enqueue(manifest_path)
+
+    assert checked == ["snapshot-blocked"]
+    assert fake_manager.launched == []
+    assert state.entries[0].state == "launch_failed"
+    assert state.entries[0].error == "Launch blocked: fixture storage budget."
 
 
 def test_queue_recovers_running_entry_from_manifest_after_stale_launch_failure(

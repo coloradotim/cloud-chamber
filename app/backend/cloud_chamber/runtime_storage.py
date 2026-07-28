@@ -23,8 +23,9 @@ from cloud_chamber.run_manifest import (
 )
 from cloud_chamber.run_progress import run_progress_from_manifest
 from cloud_chamber.settings import CloudChamberSettings
-
-DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES = 50 * 1024**3
+from cloud_chamber.storage_policy import (
+    DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES as DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES,
+)
 
 
 class RuntimeStorageError(RuntimeError):

@@ -42,6 +42,7 @@ import { MountainWavesExplore } from "./MountainWavesExplore";
 import { type MountainWavesSimulation, MountainWavesWorld } from "./MountainWavesWorld";
 import { NativeSlicePositionControl } from "./NativeSlicePositionControl";
 import { SimulationNotes } from "./SimulationNotes";
+import { StorageWorkspace } from "./StorageWorkspace";
 import { SupercellsExplore } from "./SupercellsExplore";
 import { type SupercellSimulation, SupercellsWorld } from "./SupercellsWorld";
 import {
@@ -1348,9 +1349,11 @@ type ProductLocation =
   | "supercells-world"
   | "supercells-explore"
   | "soundings"
-  | "soundings-explore";
+  | "soundings-explore"
+  | "storage";
 
 function productLocationFromPath(pathname: string): ProductLocation {
+  if (pathname === "/storage") return "storage";
   if (pathname.startsWith("/fun-with-soundings/explore/")) return "soundings-explore";
   if (pathname.startsWith("/fun-with-soundings")) return "soundings";
   return "worlds";
@@ -4694,12 +4697,25 @@ export function App() {
         <div className="brand-mark">
           <h1>Cloud Chamber</h1>
         </div>
-        {productLocation !== "worlds" && (
-          <button type="button" className="secondary-button" onClick={returnHome}>
-            Home
-          </button>
-        )}
+        <div className="topbar-actions">
+          {productLocation !== "storage" && (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => navigateProduct("storage", "/storage")}
+            >
+              Storage
+            </button>
+          )}
+          {productLocation !== "worlds" && (
+            <button type="button" className="secondary-button" onClick={returnHome}>
+              Home
+            </button>
+          )}
+        </div>
       </header>
+
+      {productLocation === "storage" && <StorageWorkspace />}
 
       {productLocation === "worlds" && (
         <CloudWorldsHome

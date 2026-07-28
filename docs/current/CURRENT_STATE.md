@@ -346,6 +346,38 @@ on those local assets for retained Simulations and generated Experiments.
 Deleting a run can remove the corresponding output and result sidecars; the
 repository is not a durable store for those artifacts.
 
+## Storage And Launch Budget
+
+Cloud Chamber exposes a global read-only Storage utility at `/storage`. It
+projects stable World, Simulation, Experiment, attempt, run, result, and case
+identity over the configured runtime home, including missing durable records
+whose local bytes are unavailable.
+
+Storage reports:
+
+- total retained usage and current free space;
+- system-protected, ordinary retained, and temporary-attempt totals;
+- usage by owner and asset class;
+- retained, missing, invalid, and conflicted state;
+- accepted and alternate backing relationships;
+- component sizes and durable dependent records;
+- cautious rerun or repairability claims only when supporting evidence is
+  retained.
+
+The inventory is searchable, filterable, sortable, and explicitly
+non-destructive. It does not offer cleanup, repair, backing selection, or
+protection editing.
+
+Run planning uses typed Quick, Standard, Presentation, Full-cycle, and Extended
+profiles where each World contract defines them. Estimates distinguish
+measured, scaled-from-measured, and uncharacterized evidence. An
+uncharacterized profile fails closed. A launch review records an immutable
+snapshot of free space, expected retained size, runtime, observation plan, and
+required 2 GiB post-run reserve. An immediate prelaunch check recomputes free
+space and appends an audit record. Packages that carry the snapshot identifier
+are blocked by the serial queue when the current budget no longer passes;
+legacy packages remain unchanged until they adopt the contract.
+
 ## Interpretation Rules
 
 - **Accessible** means the user can reach the World or surface in the current

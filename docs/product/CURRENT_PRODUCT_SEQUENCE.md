@@ -232,17 +232,19 @@ The approved sequence is:
 
 ```text
 #394 — shared Activity and History — complete
-#436 — shared variation envelope — next
-#447
-#448
-#449
+#436 — retained-asset inventory and prelaunch disk budget — complete
+#447 — shared variation envelope and Mountain Waves migration — next
+#448 — queued after #447
+#449 — queued after #448
 ```
 
 Issue #435 is complete and
 `docs/product/CLOUD_WORLD_VARIATION_CONTRACTS.md` now controls the bounded
-variation-contract decisions. Issue #436 is the next queued major increment.
-The current bodies and latest explicit PM comments for #436, #447, #448, and
-#449 control their exact scope when activated.
+variation-contract decisions. Issue #436 adds the read-only retained-asset
+inventory, World run-cost profiles, immutable launch-review snapshots, and
+immediate prelaunch disk gate. Issue #447 is the next queued major increment.
+The current bodies and latest explicit PM comments for #447, #448, and #449
+control their exact scope when activated.
 
 Do not copy current Trade Cumulus or Mountain Waves controls into another World
 without its approved contract. The user may change several supported settings

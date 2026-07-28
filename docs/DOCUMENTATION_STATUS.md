@@ -50,6 +50,7 @@ Keep product approval separate from software availability:
 | Compare | Related Simulations can be compared | Ordinary Compare and durable Saved Comparisons are implemented for real pairs across all three Worlds |
 | Variation | Create a related Simulation from a World Simulation | Approved variation contracts and a working Mountain Waves path; no shared three-World workflow |
 | Activity and History | Owner-aware current work and durable scientific records | One shared lifecycle projection is implemented for current World work, Fun With Soundings, and legacy/unassigned Experiments |
+| Storage and launch budget | Understand retained scientific assets before creating more | Global read-only inventory, dependency visibility, typed World cost profiles, immutable launch-review snapshots, and an immediate prelaunch disk gate are implemented |
 | Explore | World-specific science in a shared application vocabulary | Implemented separately for all three accessible Worlds |
 | Curated Explore defaults | Authored Simulation and Field/Lens starting states with complete reset and visible fallback | Implemented across all three accessible Worlds as the fallback below explicit Saved Views and last-active state |
 
@@ -98,8 +99,10 @@ examinations, preserve missing dependencies, and record bounded restoration
 status. Issue #435 approves the Cloud World variation contracts. Issue #394
 completes the owner-aware Activity and History lifecycle foundation.
 
-The next approved sequence is #436, #447, #448, and #449. Their current issue
-bodies and latest explicit PM comments control exact scope when activated.
+Issue #436 completes the read-only retained-asset inventory and prelaunch disk
+budget foundation. The next approved sequence is #447, #448, and #449. Their
+current issue bodies and latest explicit PM comments control exact scope when
+activated.
 Issues #389, #390, and #391 were closed as superseded and are not current
 assignment authority.
 
