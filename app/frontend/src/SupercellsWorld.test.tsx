@@ -79,6 +79,8 @@ describe("SupercellsWorld", () => {
     expect(within(navigation).getByRole("button", { name: "Overview" })).toBeVisible();
     expect(within(navigation).getByRole("button", { name: "Simulations" })).toBeVisible();
     expect(within(navigation).getByRole("button", { name: "Saved Comparisons" })).toBeVisible();
+    expect(within(navigation).getByRole("button", { name: "Activity" })).toBeVisible();
+    expect(within(navigation).getByRole("button", { name: "History" })).toBeVisible();
     expect(within(navigation).queryByRole("button", { name: /Lab|Compare$/ })).toBeNull();
     expect(
       screen.getByRole("heading", { name: "Straight-Line Hodograph Supercell" }),
@@ -93,6 +95,38 @@ describe("SupercellsWorld", () => {
       within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole("button"),
     );
     expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it("uses the shared Activity and History lifecycle projection", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/worlds/supercells")) return ok(world);
+      if (url.endsWith("/api/lifecycle")) {
+        return ok({
+          schema_version: "1",
+          generated_at: "2026-07-28T06:00:00Z",
+          records: [],
+          warnings: [],
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+    render(
+      <SupercellsWorld
+        onBackToWorlds={vi.fn()}
+        onExploreSimulation={vi.fn()}
+        onCompare={vi.fn()}
+        onOpenSavedComparison={vi.fn()}
+      />,
+    );
+
+    const navigation = await screen.findByRole("navigation", { name: "Supercells sections" });
+    fireEvent.click(within(navigation).getByRole("button", { name: "Activity" }));
+    expect(await screen.findByRole("heading", { name: "Current work" })).toBeVisible();
+
+    fireEvent.click(within(navigation).getByRole("button", { name: "History" }));
+    expect(await screen.findByRole("heading", { name: "Retained scientific work" })).toBeVisible();
+    expect(fetch).toHaveBeenCalledWith("/api/lifecycle");
   });
 
   it("fails closed when the retained reference output is unavailable", async () => {

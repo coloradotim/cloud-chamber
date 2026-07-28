@@ -101,24 +101,46 @@ const world: TradeCumulusWorldDetail = {
 
 describe("TradeCumulusWorld", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok(world)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input) === "/api/lifecycle"
+          ? ok({
+              schema_version: "1",
+              generated_at: "2026-07-27T12:00:00Z",
+              records: [],
+              warnings: [],
+            })
+          : ok(world),
+      ),
+    );
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("shows the five approved sections and stable simulation names", async () => {
+  it("shows the owner-aware sections and stable simulation names", async () => {
     renderWorld();
     expect(await screen.findByRole("heading", { name: "Trade Cumulus" })).toBeInTheDocument();
     const nav = screen.getByRole("navigation", { name: "Trade Cumulus sections" });
-    for (const name of ["Overview", "Simulations", "Saved Views", "Comparisons", "Lab"]) {
+    for (const name of [
+      "Overview",
+      "Simulations",
+      "Saved Views",
+      "Comparisons",
+      "Saved Comparisons",
+      "Activity",
+      "History",
+    ]) {
       expect(within(nav).getByRole("button", { name })).toBeInTheDocument();
     }
     expect(screen.getAllByRole("heading", { name: "Canonical BOMEX Baseline" })).not.toHaveLength(
       0,
     );
     expect(screen.getByRole("heading", { name: "More Moisture" })).toBeInTheDocument();
+    expect(screen.getByText("Current work and retained history")).toBeInTheDocument();
+    expect(screen.queryByText("Lab is idle")).not.toBeInTheDocument();
     fireEvent.click(within(nav).getByRole("button", { name: "Simulations" }));
     expect(screen.getByRole("heading", { name: "More Moisture" })).toBeInTheDocument();
     expect(screen.getAllByRole("article", { name: /Simulation$/ })).toHaveLength(2);
@@ -142,7 +164,7 @@ describe("TradeCumulusWorld", () => {
     expect(onCompare).toHaveBeenCalledOnce();
   });
 
-  it("keeps Saved Views honest and unlineaged results in Lab history", async () => {
+  it("keeps Saved Views honest and moves lifecycle browsing to Activity and History", async () => {
     renderWorld();
     await screen.findByRole("heading", { name: "Trade Cumulus" });
     fireEvent.click(screen.getByRole("button", { name: "Saved Views" }));
@@ -150,12 +172,14 @@ describe("TradeCumulusWorld", () => {
       screen.getByText("Saved Views are not implemented in this increment."),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Lab" }));
-    expect(screen.getByText("Build workspace retained")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Results" }));
-    expect(screen.getByText("Results workspace retained")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("Lab history (1)"));
-    expect(screen.getByText("result-unlineaged")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+    expect(await screen.findByRole("heading", { name: "Current work" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    expect(
+      await screen.findByRole("heading", { name: "Retained scientific work" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Build workspace retained")).not.toBeInTheDocument();
+    expect(screen.queryByText("Results workspace retained")).not.toBeInTheDocument();
   });
 
   it("shows a missing reference and disables reference Explore", async () => {
@@ -192,13 +216,13 @@ describe("TradeCumulusWorld", () => {
     expect(within(card).getByText("Caveated output")).toBeVisible();
   });
 
-  it("shows retry and retained Lab content when World detail fails", async () => {
+  it("shows retry without embedding unrelated global content when World detail fails", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(error(500, "Trade Cumulus detail unavailable."))
       .mockResolvedValueOnce(ok(world));
     renderWorld();
     expect(await screen.findByRole("alert")).toHaveTextContent("Trade Cumulus detail unavailable.");
-    expect(screen.getByText("Build workspace retained")).toBeInTheDocument();
+    expect(screen.queryByText("Build workspace retained")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry Trade Cumulus" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
     expect(await screen.findByRole("heading", { name: "Trade Cumulus" })).toBeInTheDocument();
@@ -217,9 +241,6 @@ function renderWorld(
       onExploreSimulation={overrides.onExploreSimulation ?? vi.fn()}
       onOpenFeaturedComparison={overrides.onOpenFeaturedComparison ?? vi.fn()}
       onOpenSavedComparison={vi.fn()}
-      buildContent={<div>Build workspace retained</div>}
-      resultsContent={<div>Results workspace retained</div>}
-      initialLabSection="build"
     />,
   );
 }

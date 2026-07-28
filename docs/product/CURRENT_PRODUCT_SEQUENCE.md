@@ -95,6 +95,12 @@ The presentation-quality and third-World program established:
 
 #434 — durable World-owned Saved Comparisons that reopen as live dual
        examinations — complete
+
+#435 — approved Cloud World variation contracts and variation-program
+       sequencing — complete
+
+#394 — one owner-aware Activity and History model across current Worlds and
+       Fun With Soundings — complete
 ```
 
 The completed work preserves stable World and Simulation identities while allowing backing run assets to improve.
@@ -123,12 +129,12 @@ current Field or Lens without changing Simulation, erasing Notes, or starting
 playback. A visible technical fallback remains distinct from an authored
 scientific presentation.
 
-## Completed program: personal scientific memory
+## Completed program: personal scientific memory and lifecycle
 
-Issue #432 establishes one versioned, World-aware Explore-state contract before
-ordinary Compare. Issue #394 remains queued and incomplete; it still depends on
-#435 and explicit PM activation. Completing #395 satisfies only the Fun With
-Soundings dependency named by #394.
+Issues #432, #433, and #434 establish durable Explore state, ordinary Compare,
+and Saved Comparisons. Issue #435 approves the Cloud World variation contracts.
+Issue #394 then reconciles lifecycle browsing before the shared variation
+envelope is implemented.
 
 The implemented contract represents, as applicable:
 
@@ -174,6 +180,13 @@ reopen as live examinations, support rename and delete, preserve records when
 backing output is unavailable, and report healthy, partially restorable, or
 unavailable restoration. Notes remain separate.
 
+Activity and History now consume one owner-aware lifecycle projection over
+World inventory, run manifests, the queue, Results, runtime storage, and saved
+state dependencies. Activity shows current actionable work. History preserves
+the durable record and all known technical attempts. World ownership fails
+closed, and approved-contract output can become automatically available without
+a separate promotion ceremony.
+
 ## Completed program: World-aware Compare and Saved Comparisons
 
 Issue #433 establishes ordinary Compare across the three accessible Worlds.
@@ -213,41 +226,41 @@ hodograph curvature while retaining the other presentation-run contract.
 Coordinates and local evidence are comparable; storm objects are not assigned
 cross-Simulation lineage.
 
-## Variations require a fresh review
+## Current implementation sequence
 
-Do **not** execute the older general variation roadmap or copy current Trade Cumulus and Mountain Waves controls into Supercells without reconsideration.
+The approved sequence is:
 
-Review the variation model against the actual three-World product after Saved Views and ordinary Compare establish the required state and lineage contracts.
+```text
+#394 — shared Activity and History — complete
+#436 — shared variation envelope — next
+#447
+#448
+#449
+```
 
-Decide, World by World:
+Issue #435 is complete and
+`docs/product/CLOUD_WORLD_VARIATION_CONTRACTS.md` now controls the bounded
+variation-contract decisions. Issue #436 is the next queued major increment.
+The current bodies and latest explicit PM comments for #436, #447, #448, and
+#449 control their exact scope when activated.
 
-- which Simulations are eligible parents;
-- which physical and numerical settings are worth exposing;
-- which settings require profiles, grouped controls, or advanced disclosure;
-- appropriate default duration, grid, and output cadence for ordinary experiments;
-- how runtime and retained-storage cost are estimated and communicated;
-- which differences are required for lineage and Compare;
-- what makes a completed Result eligible to become a named Simulation;
-- which controls are genuinely shared and which are World-specific;
-- whether one shared variation shell with World-specific contracts is preferable;
-- what Supercells variations should initially permit.
+Do not copy current Trade Cumulus or Mountain Waves controls into another World
+without its approved contract. The user may change several supported settings
+in one variation. Do not reduce the experience to one-variable wizards or imply
+one-factor causation when several values changed.
 
-The user may change several supported settings in one variation. Do not reduce the experience to one-variable wizards or imply one-factor causation when several values changed.
-
-Existing issues #389, #390, and #391 are prior bounded plans. They must be updated or replaced before assignment; their older bodies are not current implementation authority.
+Existing issues #389, #390, and #391 are superseded and are not current
+implementation authority.
 
 ## Later durability and acceptance work
 
-After Saved Views, Compare, and refreshed variation direction are established, revisit:
+After the explicit sequence above, PM may choose bounded work such as:
 
-- Saved Comparison notes and explanations;
-- Activity and History consistency across Worlds;
-- the Result-to-Simulation promotion lifecycle;
-- protected built-in and user-created retained assets;
-- visible storage cost and dependency-aware deletion;
+- destructive cleanup;
+- protection editing;
+- backing selection;
 - repair or reimport of missing retained assets;
-- version migration for durable state;
-- measured performance and personal acceptance on the target machine.
+- personal acceptance.
 
 Do not create the entire follow-on backlog in advance. Create or rewrite the next bounded issue when preceding implementation and PM review provide the necessary evidence.
 

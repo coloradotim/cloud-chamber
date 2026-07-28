@@ -244,6 +244,8 @@ async function gotoSupercellsExplore(page: Page) {
   await gotoApp(page);
   await page.getByRole("button", { name: "Enter Supercells" }).click();
   await expect(page.getByRole("heading", { name: "Supercells" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Activity" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "History" })).toBeVisible();
   await page.getByRole("button", { name: "Explore" }).click();
   await expect(page.getByRole("heading", { name: "Quarter-Circle Supercell" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Rotating Updraft" })).toHaveAttribute(

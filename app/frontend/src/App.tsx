@@ -28,6 +28,7 @@ import {
   type SavedViewRecord,
   type TradeCumulusExploreState,
 } from "./ExploreStatePersistence";
+import { LifecycleWorkspace, type LifecycleRecord } from "./LifecycleWorkspace";
 import {
   curatedResolutionExplanation,
   resolveCuratedView,
@@ -49,7 +50,6 @@ import {
 } from "./TradeCumulusComparisonStory";
 import {
   type SimulationRecord,
-  type TradeCumulusLabSection,
   TradeCumulusWorld,
   type TradeCumulusWorldDetail,
   type TradeCumulusWorldSection,
@@ -2486,7 +2486,6 @@ export function App() {
   const [mountainWavesSimulation, setMountainWavesSimulation] =
     useState<MountainWavesSimulation | null>(null);
   const [worldSection, setWorldSection] = useState<TradeCumulusWorldSection>("overview");
-  const [worldLabSection, setWorldLabSection] = useState<TradeCumulusLabSection>("results");
   const [worldDetail, setWorldDetail] = useState<TradeCumulusWorldDetail | null>(null);
   const [worldExploreContext, setWorldExploreContext] = useState<WorldExploreContext | null>(null);
   const [worldCompareNavigation, setWorldCompareNavigation] = useState<WorldCompareNavigation>({
@@ -3971,6 +3970,16 @@ export function App() {
     navigateProduct("soundings", "/fun-with-soundings");
   }
 
+  function openLifecycleExperiment(record: LifecycleRecord) {
+    const resultId = lifecycleResultId(record);
+    if (!resultId) return;
+    selectOrdinaryResult(resultId);
+    navigateProduct(
+      "soundings-explore",
+      `/fun-with-soundings/explore/${encodeURIComponent(resultId)}`,
+    );
+  }
+
   function openSoundingsExploreSection() {
     setSoundingsSection("explore");
     const selectedSoundingsResult = soundingsExploreResults.find(
@@ -4017,8 +4026,7 @@ export function App() {
       if (section === "explore") {
         enterWorldExplore(resultId);
       } else {
-        setWorldSection("lab");
-        setWorldLabSection("results");
+        setWorldSection("activity");
       }
       return;
     }
@@ -4031,8 +4039,7 @@ export function App() {
       if (section === "explore") {
         if (selectedResultId) enterWorldExplore(selectedResultId);
       } else {
-        setWorldSection("lab");
-        setWorldLabSection(section);
+        setWorldSection(section === "results" ? "activity" : "overview");
       }
       return;
     }
@@ -4147,8 +4154,7 @@ export function App() {
   function returnToLabResults() {
     setComparisonStoryActive(false);
     setWorldExploreContext(null);
-    setWorldSection("lab");
-    setWorldLabSection("results");
+    setWorldSection("activity");
     setProductLocation("world");
   }
 
@@ -4724,8 +4730,15 @@ export function App() {
         >
           {soundingsSection === "activity" ? (
             <div className="soundings-activity-layout">
-              {buildWorkspace}
-              {resultsWorkspace}
+              <LifecycleWorkspace
+                ownerIds={["fun_with_soundings", "legacy_unassigned"]}
+                onExplore={openLifecycleExperiment}
+                onOpenRunControls={() => setSoundingsSection("build")}
+              />
+              <details className="soundings-technical-run-controls">
+                <summary>Technical run and storage controls</summary>
+                {buildWorkspace}
+              </details>
             </div>
           ) : (
             buildWorkspace
@@ -4736,9 +4749,7 @@ export function App() {
       {productLocation === "world" && (
         <TradeCumulusWorld
           section={worldSection}
-          labSection={worldLabSection}
           onSectionChange={setWorldSection}
-          onLabSectionChange={setWorldLabSection}
           onBackToWorlds={() => setProductLocation("worlds")}
           onExploreSimulation={openWorldSimulation}
           onOpenFeaturedComparison={(simulation) =>
@@ -4753,8 +4764,6 @@ export function App() {
             openSavedWorldComparison("trade-cumulus", savedComparisonId)
           }
           onWorldDetailChange={setWorldDetail}
-          buildContent={buildWorkspace}
-          resultsContent={resultsWorkspace}
         />
       )}
 
@@ -4842,14 +4851,14 @@ export function App() {
               simulationName={selectedSoundingsExploreResult.name}
               resultOptions={soundingsExploreResults}
               onSelectResult={(resultId) => openSoundingsResult(resultId, "explore")}
-              backLabel="Back to Past Experiments"
+              backLabel="Back to Activity & History"
               onBack={() => enterFunWithSoundings("activity")}
             />
           ) : (
             <ScenarioStatePanel
               title="This Soundings Experiment is not available in Explore"
               body="Choose an ingested Soundings experiment. World-owned Simulations remain available from their Cloud World."
-              actionLabel="Back to Past Experiments"
+              actionLabel="Back to Activity & History"
               onAction={() => enterFunWithSoundings("activity")}
             />
           )}
@@ -17657,6 +17666,14 @@ function soundingsExploreOptionLabel(result: ResultCard): string {
     result.observed_sounding?.station_name ?? result.input_source_label ?? result.name;
   const validTime = result.observed_sounding?.valid_time_utc;
   return validTime ? `${station} · ${formatDate(validTime)}` : station;
+}
+
+function lifecycleResultId(record: LifecycleRecord): string | null {
+  return (
+    record.actions.find((action) => action.kind === "explore" && action.result_id)?.result_id ??
+    record.attempts.find((attempt) => attempt.result_id)?.result_id ??
+    null
+  );
 }
 
 function resultCloudWorldId(

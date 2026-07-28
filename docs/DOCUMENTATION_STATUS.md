@@ -48,7 +48,8 @@ Keep product approval separate from software availability:
 | Fun With Soundings | A separate first-class atmospheric workbench | Accessible with five jobs, direct non-World Explore, and conservative World ownership |
 | Saved Views | Durable user-curated views | Implemented across all three accessible Worlds as named live examinations with bounded restoration status |
 | Compare | Related Simulations can be compared | Ordinary Compare and durable Saved Comparisons are implemented for real pairs across all three Worlds |
-| Variation | Create a related Simulation from a World Simulation | Working Mountain Waves Lab path; no shared three-World workflow |
+| Variation | Create a related Simulation from a World Simulation | Approved variation contracts and a working Mountain Waves path; no shared three-World workflow |
+| Activity and History | Owner-aware current work and durable scientific records | One shared lifecycle projection is implemented for current World work, Fun With Soundings, and legacy/unassigned Experiments |
 | Explore | World-specific science in a shared application vocabulary | Implemented separately for all three accessible Worlds |
 | Curated Explore defaults | Authored Simulation and Field/Lens starting states with complete reset and visible fallback | Implemented across all three accessible Worlds as the fallback below explicit Saved Views and last-active state |
 
@@ -62,9 +63,10 @@ identical.
 
 Fun With Soundings is an approved first-class workbench, not a Cloud World.
 Issue #395 implemented its stable entrance, Find Soundings, Candidates, Build &
-Run, Runs, Explore, atmosphere continuity, and Past Experiments ownership
-boundary. Runs remain technical execution; retained non-World work remains an
-Experiment; only current inventory-verified World objects are Simulations.
+Run, Explore, and atmosphere continuity. Issue #394 replaces its separate Runs
+and Past Experiments lifecycle representations with shared Activity and
+History. Runs remain technical execution; retained non-World work remains an
+Experiment; only current contract-verified World objects are Simulations.
 
 The Trade Cumulus Product Slice remains subordinate to the North Star, Product
 Vision, approved PM decisions, Application Semantics, and the MVP. Being
@@ -93,16 +95,13 @@ named Saved Views across all three Worlds. Issue #433 completes ordinary
 World-aware Compare, including a real controlled Supercells pair. Issue #434
 adds immutable World-owned Saved Comparisons that reopen directly as live dual
 examinations, preserve missing dependencies, and record bounded restoration
-status.
+status. Issue #435 approves the Cloud World variation contracts. Issue #394
+completes the owner-aware Activity and History lifecycle foundation.
 
-Rewritten issue #394 and issues #433 through #437 record bounded
-follow-on product work for Activity and History, Compare and Saved Comparisons, variation
-contracts, and retained assets. Their presence does not
-activate them or replace the sequencing authority. Issues #389, #390, and #391
-were closed as superseded and are not current assignment authority.
-
-Issue #394 remains queued and incomplete; its dependencies and explicit PM
-activation still govern any Activity and History reconciliation.
+The next approved sequence is #436, #447, #448, and #449. Their current issue
+bodies and latest explicit PM comments control exact scope when activated.
+Issues #389, #390, and #391 were closed as superseded and are not current
+assignment authority.
 
 Keep detailed ordering in Current Product Sequence and explicit later PM
 decisions rather than duplicating a second roadmap here.
@@ -130,8 +129,8 @@ These documents describe current software and operations. They may identify
 transitional behavior and implementation limits; they do not establish product
 direction.
 
-The current embedding of legacy Build and Results under Trade Cumulus does not
-override the approved World Lab or Fun With Soundings concepts.
+The shared Activity and History implementation replaces the former embedding
+of unrelated Build, Results, and Notebook content under Trade Cumulus.
 
 Do not update Current State or Current Architecture to describe an approved
 future capability before its implementation merges. Update them when the

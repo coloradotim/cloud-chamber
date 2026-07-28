@@ -165,12 +165,14 @@ describe("MountainWavesWorld", () => {
     expect(await screen.findByRole("heading", { name: "Mountain Waves" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Dry Ridge" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Boulder Windstorm" })).toBeInTheDocument();
+    expect(screen.getByText("Start a related Simulation")).toBeInTheDocument();
+    expect(screen.queryByText("Start an experiment")).not.toBeInTheDocument();
     const exploreButtons = screen.getAllByRole("button", { name: "Explore" });
     fireEvent.click(exploreButtons[1]);
     expect(onExplore).toHaveBeenCalledWith(world.simulations[1]);
   });
 
-  it("opens the shared Lab on the selected parent", async () => {
+  it("opens Create Variation on the selected parent", async () => {
     render(
       <MountainWavesWorld
         onBackToWorlds={vi.fn()}

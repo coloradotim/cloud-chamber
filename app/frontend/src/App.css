@@ -4579,6 +4579,22 @@ details[open] > summary {
   padding-top: 1.25rem;
 }
 
+.soundings-technical-run-controls {
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.7rem;
+}
+
+.soundings-technical-run-controls > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--color-accent-primary);
+  font-weight: 850;
+}
+
+.soundings-technical-run-controls[open] > summary {
+  margin-bottom: 1rem;
+}
+
 .soundings-runs-overview {
   display: grid;
   gap: 1rem;
@@ -5044,6 +5060,403 @@ details[open] > summary {
 .lab-content,
 .world-context-workspace {
   min-width: 0;
+}
+
+.lifecycle-workspace {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.lifecycle-heading,
+.lifecycle-heading-actions,
+.lifecycle-view-tabs,
+.lifecycle-activity-group > header,
+.lifecycle-card > header,
+.lifecycle-state-line,
+.lifecycle-card-meta,
+.lifecycle-primary-filters {
+  display: flex;
+  align-items: center;
+}
+
+.lifecycle-heading {
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.8rem;
+}
+
+.lifecycle-heading h3,
+.lifecycle-heading p,
+.lifecycle-card h4,
+.lifecycle-card p,
+.lifecycle-empty h4,
+.lifecycle-empty p {
+  margin-bottom: 0;
+}
+
+.lifecycle-heading-actions,
+.lifecycle-view-tabs {
+  gap: 0.45rem;
+}
+
+.lifecycle-view-tabs {
+  padding: 0.2rem;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.lifecycle-view-tabs button {
+  padding: 0.45rem 0.75rem;
+  background: transparent;
+  color: var(--color-text-muted);
+  box-shadow: none;
+}
+
+.lifecycle-view-tabs .active-control {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-primary);
+  box-shadow: inset 0 0 0 1px rgba(47, 116, 168, 0.16);
+}
+
+.lifecycle-activity-groups,
+.lifecycle-history-list {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.lifecycle-activity-group {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.lifecycle-activity-group > header {
+  gap: 0.55rem;
+}
+
+.lifecycle-activity-group > header h4 {
+  margin: 0;
+}
+
+.lifecycle-activity-group > header span {
+  min-width: 1.6rem;
+  border-radius: 999px;
+  padding: 0.14rem 0.42rem;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-primary);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-align: center;
+}
+
+.lifecycle-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr));
+  gap: 0.75rem;
+}
+
+.lifecycle-card {
+  display: grid;
+  align-content: start;
+  gap: 0.72rem;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-border-strong);
+  border-radius: 7px;
+  padding: 1rem;
+  background: var(--color-surface);
+}
+
+.lifecycle-card.lifecycle-needs_attention {
+  border-left-color: var(--color-danger);
+}
+
+.lifecycle-card.lifecycle-running,
+.lifecycle-card.lifecycle-queued {
+  border-left-color: var(--color-accent-primary);
+}
+
+.lifecycle-card.lifecycle-available_with_caveats {
+  border-left-color: var(--color-warning);
+}
+
+.lifecycle-card > header {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.lifecycle-card .eyebrow {
+  margin-bottom: 0.15rem;
+}
+
+.lifecycle-badge {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  padding: 0.24rem 0.45rem;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.lifecycle-badge.active {
+  border-color: rgba(47, 116, 168, 0.36);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-primary);
+}
+
+.lifecycle-badge.warning {
+  border-color: rgba(183, 121, 31, 0.4);
+  background: var(--color-warning-soft);
+  color: #80520f;
+}
+
+.lifecycle-badge.danger {
+  border-color: rgba(185, 74, 72, 0.4);
+  background: var(--color-danger-soft);
+  color: #8e302f;
+}
+
+.lifecycle-question,
+.lifecycle-state-line span,
+.lifecycle-card-meta,
+.lifecycle-relationship {
+  color: var(--color-text-muted);
+}
+
+.lifecycle-state-line {
+  align-items: baseline;
+  gap: 0.45rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.65rem;
+}
+
+.lifecycle-state-line strong {
+  color: var(--color-text-primary);
+}
+
+.lifecycle-card-meta {
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.lifecycle-difference-summary {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  border-left: 3px solid var(--color-accent-primary);
+  padding-left: 0.65rem;
+}
+
+.lifecycle-difference-summary > div {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.7fr) minmax(12rem, 1.3fr);
+  gap: 0.65rem;
+}
+
+.lifecycle-difference-summary dt {
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.lifecycle-difference-summary dd {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-weight: 750;
+}
+
+.lifecycle-actions {
+  margin-top: 0.1rem;
+}
+
+.lifecycle-details {
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.65rem;
+}
+
+.lifecycle-details > summary,
+.lifecycle-more-filters > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--color-accent-primary);
+  font-weight: 850;
+}
+
+.lifecycle-technical-content {
+  display: grid;
+  gap: 1rem;
+  margin-top: 0.8rem;
+}
+
+.lifecycle-facts,
+.lifecycle-identifiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0;
+  margin: 0;
+  border: 1px solid var(--color-border);
+}
+
+.lifecycle-card-grid .lifecycle-facts,
+.lifecycle-card-grid .lifecycle-identifiers {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lifecycle-facts > div,
+.lifecycle-identifiers > div {
+  min-width: 0;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.55rem 0.65rem;
+}
+
+.lifecycle-facts dt,
+.lifecycle-identifiers dt {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.lifecycle-facts dd,
+.lifecycle-identifiers dd {
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text-primary);
+  font-weight: 750;
+}
+
+.lifecycle-facts .fact-failed,
+.lifecycle-facts .fact-conflict,
+.lifecycle-facts .fact-missing {
+  color: var(--color-danger);
+}
+
+.lifecycle-facts .fact-passed,
+.lifecycle-facts .fact-present,
+.lifecycle-facts .fact-eligible {
+  color: var(--color-success);
+}
+
+.lifecycle-attempts,
+.lifecycle-dependencies,
+.lifecycle-caveats,
+.lifecycle-notes {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.lifecycle-attempts h5,
+.lifecycle-dependencies h5,
+.lifecycle-caveats h5,
+.lifecycle-notes h5 {
+  margin: 0;
+}
+
+.lifecycle-attempts article {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.8fr) minmax(14rem, 1fr) minmax(12rem, 0.8fr);
+  gap: 0.4rem 0.8rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.55rem;
+}
+
+.lifecycle-card-grid .lifecycle-attempts article {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.lifecycle-attempts article > code:last-child,
+.lifecycle-attempts article > p {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+}
+
+.lifecycle-backing {
+  margin-left: 0.45rem;
+  color: var(--color-success);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.lifecycle-dependencies p {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.4rem;
+}
+
+.lifecycle-caveats ul {
+  margin: 0;
+}
+
+.lifecycle-history-toolbar {
+  display: grid;
+  gap: 0.65rem;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.8rem;
+}
+
+.lifecycle-primary-filters {
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.lifecycle-primary-filters label:first-child {
+  flex: 1 1 32rem;
+}
+
+.lifecycle-primary-filters label:nth-child(2) {
+  flex: 0 1 15rem;
+}
+
+.lifecycle-primary-filters label,
+.lifecycle-more-filters label {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.lifecycle-primary-filters p {
+  flex: 0 0 auto;
+  margin: 0 0 0.65rem;
+  color: var(--color-text-muted);
+  font-weight: 750;
+}
+
+.lifecycle-more-filters > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.65rem;
+}
+
+.lifecycle-empty,
+.lifecycle-error {
+  display: grid;
+  justify-items: start;
+  gap: 0.4rem;
+  border-left: 4px solid var(--color-border-strong);
+  padding: 0.8rem 1rem;
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.lifecycle-error {
+  border-left-color: var(--color-danger);
+  background: var(--color-danger-soft);
 }
 
 .world-context-header {

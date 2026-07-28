@@ -1223,6 +1223,197 @@ function mockPointCloudPoints(fieldName: string, dryFailed: boolean, threshold: 
   return (pointValues[fieldName] ?? pointValues.qc).filter((point) => point[3] >= threshold);
 }
 
+function mockLifecycleRecord({
+  recordId,
+  displayName,
+  ownerId,
+  ownerLabel,
+  runId,
+  resultId = null,
+  simulationId = null,
+  worldId = null,
+  lifecycleLabel = "Ready to inspect",
+  lifecycleDetail = "Retained output is ready to inspect.",
+  activityGroup = "recently_completed",
+  relationship = "initial",
+  parentSimulationId = null,
+  differences = [],
+  actions = [],
+}: {
+  recordId: string;
+  displayName: string;
+  ownerId: string;
+  ownerLabel: string;
+  runId: string;
+  resultId?: string | null;
+  simulationId?: string | null;
+  worldId?: string | null;
+  lifecycleLabel?: string;
+  lifecycleDetail?: string;
+  activityGroup?: string;
+  relationship?: string;
+  parentSimulationId?: string | null;
+  differences?: Array<Record<string, unknown>>;
+  actions?: Array<Record<string, unknown>>;
+}) {
+  const running = lifecycleLabel === "Running";
+  return {
+    record_id: recordId,
+    record_kind: simulationId ? "simulation" : "experiment",
+    owner_id: ownerId,
+    owner_label: ownerLabel,
+    simulation_id: simulationId,
+    experiment_id: simulationId ? null : (resultId ?? runId),
+    world_id: worldId,
+    recipe_id: ownerId === "fun_with_soundings" ? "observed_surface_forced_evolution_v0" : null,
+    recipe_version: null,
+    parent_simulation_id: parentSimulationId,
+    reference_simulation_id: parentSimulationId,
+    display_name: displayName,
+    question:
+      ownerId === "mountain_waves"
+        ? "How does a broader ridge change the wave cloud?"
+        : ownerId === "fun_with_soundings"
+          ? "Will this observed atmosphere support deep cloud?"
+          : null,
+    role: simulationId ? (parentSimulationId ? "variation" : "reference") : "experiment",
+    case_id: null,
+    differences,
+    attempts: [
+      {
+        attempt_id: runId,
+        run_id: runId,
+        relationship,
+        accepted_backing: Boolean(simulationId),
+        manifest_path: `/mock/${runId}/run_manifest.json`,
+        lifecycle_state: running ? "running" : "completed",
+        queue_state: running ? "running" : null,
+        product_state: running ? "configured_experiment" : "completed_cm1_result",
+        validation_status: running ? "pending" : "valid",
+        result_id: resultId,
+        output_artifact_count: running ? 0 : 2,
+        size_bytes: 2_048,
+        retained_state: "retained",
+        created_at: "2026-07-26T16:00:00Z",
+        started_at: "2026-07-26T16:01:00Z",
+        finished_at: running ? null : "2026-07-26T16:10:00Z",
+        updated_at: "2026-07-26T16:10:00Z",
+        message: running ? "CM1 is running locally." : null,
+        failure_reason: null,
+      },
+    ],
+    facts: {
+      scientific_work: "present",
+      package: "present",
+      attempt: "present",
+      queue: running ? "pending" : "not_applicable",
+      process: running ? "pending" : "passed",
+      expected_output: running ? "pending" : "present",
+      technical_integrity: running ? "unknown" : "passed",
+      ingest: resultId ? "present" : running ? "not_applicable" : "pending",
+      world_inspectability: simulationId ? "passed" : "not_applicable",
+      simulation_availability: simulationId ? "present" : "not_applicable",
+      parent_eligibility: simulationId ? "eligible" : "not_applicable",
+      retained_assets: "present",
+    },
+    trust_state: running ? "unassessed" : "trusted",
+    caveats: [],
+    tags: ownerId === "fun_with_soundings" ? ["topeka", "observed sounding"] : [],
+    notes: null,
+    lifecycle_label: lifecycleLabel,
+    lifecycle_detail: lifecycleDetail,
+    activity_group: activityGroup,
+    in_activity: true,
+    created_at: "2026-07-26T16:00:00Z",
+    updated_at: "2026-07-26T16:10:00Z",
+    size_bytes: 2_048,
+    dependencies: [],
+    actions,
+  };
+}
+
+const lifecycleProjection = {
+  schema_version: "1",
+  generated_at: "2026-07-27T18:00:00Z",
+  records: [
+    mockLifecycleRecord({
+      recordId: "simulation:trade_cumulus:trade_cumulus_canonical_bomex",
+      displayName: "Canonical BOMEX Baseline",
+      ownerId: "trade_cumulus",
+      ownerLabel: "Trade Cumulus",
+      runId: "trade-cumulus-5b-full-baseline-20260720T162342Z",
+      resultId: "result-trade-cumulus-5b-full-baseline-20260720T162342Z",
+      simulationId: "trade_cumulus_canonical_bomex",
+      worldId: "trade_cumulus",
+      lifecycleLabel: "Available",
+      lifecycleDetail: "The Simulation is inspectable in its Cloud World.",
+      actions: [
+        {
+          kind: "explore",
+          label: "Explore",
+          world_id: "trade_cumulus",
+          simulation_id: "trade_cumulus_canonical_bomex",
+          result_id: "result-trade-cumulus-5b-full-baseline-20260720T162342Z",
+        },
+      ],
+    }),
+    mockLifecycleRecord({
+      recordId: "simulation:mountain_waves:mountain_waves_broader_ridge",
+      displayName: "Broader Boulder Ridge",
+      ownerId: "mountain_waves",
+      ownerLabel: "Mountain Waves",
+      runId: "broader-boulder-ridge",
+      simulationId: "mountain_waves_broader_ridge",
+      worldId: "mountain_waves",
+      parentSimulationId: "mountain_waves_boulder_moist_reference",
+      relationship: "later_backing_candidate",
+      lifecycleLabel: "Available",
+      lifecycleDetail: "The retained variation is inspectable.",
+      differences: [
+        {
+          category: "terrain",
+          label: "Ridge half-width",
+          before: 10_000,
+          after: 15_000,
+          units: "m",
+          material: true,
+        },
+      ],
+    }),
+    mockLifecycleRecord({
+      recordId: "experiment:result-observed-sounding",
+      displayName: "Observed Surface-Forced Evolution — TOPEKA/MUN.; KS.",
+      ownerId: "fun_with_soundings",
+      ownerLabel: "Fun With Soundings",
+      runId: "run-observed-sounding",
+      resultId: "result-observed-sounding",
+      actions: [
+        {
+          kind: "explore",
+          label: "Explore",
+          run_id: "run-observed-sounding",
+          result_id: "result-observed-sounding",
+        },
+      ],
+    }),
+    mockLifecycleRecord({
+      recordId: "experiment:legacy-running",
+      displayName: "Legacy surface-forcing attempt",
+      ownerId: "legacy_unassigned",
+      ownerLabel: "Legacy / unassigned",
+      runId: "legacy-running",
+      lifecycleLabel: "Running",
+      lifecycleDetail: "CM1 is running locally.",
+      activityGroup: "running",
+      actions: [
+        { kind: "cancel", label: "Cancel", run_id: "legacy-running" },
+        { kind: "open_run_controls", label: "Open run controls", run_id: "legacy-running" },
+      ],
+    }),
+  ],
+  warnings: [],
+};
+
 export async function mockCloudChamberApis(page: Page) {
   const simulationNotes = new Map<
     string,
@@ -1288,6 +1479,8 @@ export async function mockCloudChamberApis(page: Page) {
     queued_count: 0,
     updated_at: "2026-05-22T15:15:00Z",
   };
+
+  await page.route("**/api/lifecycle", (route) => json(route, lifecycleProjection));
 
   await page.route("**/api/worlds/*/simulations/*/note", (route) => {
     const url = new URL(route.request().url());

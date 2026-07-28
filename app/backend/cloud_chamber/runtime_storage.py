@@ -44,6 +44,15 @@ class RunStorageEntry(BaseModel):
     has_observed_sounding: bool = False
     run_configuration: dict[str, object] | None = None
     pre_run_validation_report: dict[str, object] | None = None
+    physical_question: str | None = None
+    run_recipe: str | None = None
+    recipe_id: str | None = None
+    recipe_display_name: str | None = None
+    run_caveats: list[str] = Field(default_factory=list)
+    manual_validation_status: str | None = None
+    user_name: str | None = None
+    user_tags: list[str] = Field(default_factory=list)
+    user_notes: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
     saved: bool = False
@@ -136,6 +145,25 @@ def runtime_storage_inventory(settings: CloudChamberSettings) -> RuntimeStorageI
         ),
         runs=run_entries,
         largest_runs=largest,
+    )
+
+
+def runtime_lifecycle_inventory(settings: CloudChamberSettings) -> RuntimeStorageInventory:
+    """Return manifest-level run inventory without traversing retained output sizes."""
+    runtime_home = settings.runtime_home.expanduser()
+    runs_dir = runtime_home / "runs"
+    run_entries = [
+        _run_storage_entry(path, reconcile=False, size_bytes=0)
+        for path in _run_directories(runs_dir)
+    ]
+    return RuntimeStorageInventory(
+        runtime_home=str(runtime_home),
+        runs_directory=str(runs_dir),
+        total_size_bytes=0,
+        warning_threshold_bytes=DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES,
+        above_warning_threshold=False,
+        runs=run_entries,
+        largest_runs=[],
     )
 
 
@@ -263,13 +291,18 @@ def _run_directories(runs_dir: Path) -> list[Path]:
     return sorted(path for path in runs_dir.iterdir() if path.is_dir() or path.is_symlink())
 
 
-def _run_storage_entry(run_dir: Path, *, reconcile: bool = True) -> RunStorageEntry:
+def _run_storage_entry(
+    run_dir: Path,
+    *,
+    reconcile: bool = True,
+    size_bytes: int | None = None,
+) -> RunStorageEntry:
     manifest_path = run_dir / "run_manifest.json"
-    size_bytes = _directory_size(run_dir)
+    resolved_size_bytes = _directory_size(run_dir) if size_bytes is None else size_bytes
     if not manifest_path.exists():
         return RunStorageEntry(
             run_id=run_dir.name,
-            size_bytes=size_bytes,
+            size_bytes=resolved_size_bytes,
             path=str(run_dir),
             category="missing_manifest",
         )
@@ -283,14 +316,14 @@ def _run_storage_entry(run_dir: Path, *, reconcile: bool = True) -> RunStorageEn
     except (RunManifestError, OSError, ValueError) as exc:
         return RunStorageEntry(
             run_id=run_dir.name,
-            size_bytes=size_bytes,
+            size_bytes=resolved_size_bytes,
             path=str(run_dir),
             category="malformed_manifest",
             manifest_path=str(manifest_path),
             manifest_error=str(exc),
         )
 
-    return _entry_from_manifest(run_dir, manifest_path, manifest, size_bytes)
+    return _entry_from_manifest(run_dir, manifest_path, manifest, resolved_size_bytes)
 
 
 def _entry_from_manifest(
@@ -315,6 +348,15 @@ def _entry_from_manifest(
         has_observed_sounding=manifest.observed_sounding is not None,
         run_configuration=manifest.run_configuration,
         pre_run_validation_report=manifest.pre_run_validation_report,
+        physical_question=manifest.physical_question,
+        run_recipe=manifest.run_recipe,
+        recipe_id=manifest.recipe_id,
+        recipe_display_name=manifest.recipe_display_name,
+        run_caveats=manifest.run_caveats,
+        manual_validation_status=manifest.manual_validation_status,
+        user_name=manifest.user.name,
+        user_tags=manifest.user.tags,
+        user_notes=manifest.user.notes,
         created_at=manifest.created_at.isoformat(),
         updated_at=manifest.updated_at.isoformat(),
         saved=manifest.user.saved,
