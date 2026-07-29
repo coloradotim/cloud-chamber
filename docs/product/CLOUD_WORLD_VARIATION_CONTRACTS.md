@@ -595,41 +595,67 @@ Ineligible:
 
 ## 8.3 Surface-exchange controls
 
-These are ordinary controls. They are independent, so the user can explore both total forcing and the balance between heat and moisture supply.
+These are independent direct physical controls. The reviewed and persisted
+specification records signed target values rather than reference multipliers.
 
-| Control | Recipe-reference mapping | Supported envelope | Evidence and product treatment |
+| Control | User-facing value | Supported envelope | Reference and interpretation |
 | --- | --- | --- | --- |
-| **Surface moisture supply** | Absolute factor applied to canonical `5.2e-5 g/g m/s` | `0.50–1.75×`; named stops at `0.50, 0.75, 1.00, 1.25, 1.50, 1.75` | Baseline and `1.50×` are measured. Full envelope requires bounded endpoint characterization. |
-| **Surface sensible heating** | Absolute factor applied to canonical `8.0e-3 K m/s` | `0.50–1.50×`; named stops at `0.50, 0.75, 1.00, 1.25, 1.50` | Scientifically grounded but not yet measured in the product. |
+| **Surface sensible-heat flux** | Signed kinematic flux, `K m s⁻¹` | `−0.020` to `+0.050` | Canonical reference `+0.008`; negative values mean surface cooling |
+| **Surface moisture flux** | Signed kinematic flux, `g kg⁻¹ m s⁻¹` | `−0.10` to `+0.25` | Canonical reference `+0.052`; negative values mean downward moisture exchange |
 
-The review shows both actual flux values and a concise derived **heat-to-moisture supply balance**. Negative fluxes and values outside the envelope are blocked.
+The review shows the canonical reference, selected parent, requested child, and
+exact parent-to-child difference. Reference-relative values may be offered as
+shortcuts, but the child specification and generated package contain the
+resolved direct values.
 
 ## 8.4 Atmospheric-structure controls
 
-These are ordinary or advanced curated profile transforms. They are calculated from the Recipe reference, not from the latest parent profile.
+These curated transforms resolve absolute target metrics through the canonical
+Recipe generator. They do not compound a child's prior transform.
 
-| Control | Exact transform | Supported envelope | Placement and validation |
+| Control | Direct target | Supported envelope | Generation behavior |
 | --- | --- | --- | --- |
-| **Boundary-layer moisture** | Add a vertically tapered total-water offset below the inversion; zero perturbation above the inversion top | `−1.5 to +1.5 g/kg` | Ordinary. Block initial supersaturation or negative water vapor. |
-| **Trade inversion height** | Shift the authored inversion base and top together, remapping the reference profile continuously | `−300 to +400 m` | Ordinary. Preserve minimum cloud layer and free-tropospheric depth. |
-| **Trade inversion strength** | Scale the reference liquid-water-potential-temperature jump while preserving the subcloud profile and upper anchor | `0.50–1.50×` | Ordinary. Require static stability and continuous profile. |
-| **Free-tropospheric humidity** | Scale the reference relative-humidity deficit above the inversion, then derive qv from pressure and temperature | deficit factor `0.50–2.00×` | Ordinary. Bound RH to `5–95%` and prevent initial cloud outside a separately authored cloudy-initial-state Recipe. |
-| **Cloud-layer wind shear** | Scale departures from the 0–3 km layer-mean reference wind while preserving that mean | `0–2.00×` | Advanced. Show resulting shear and wind profile. |
+| **Sub-inversion moisture** | Mean total-water mixing ratio below inversion base, `g kg⁻¹` | `0` to `25` | Preserve the authored vertical shape while solving the requested layer mean |
+| **Inversion base** | `m AGL` | `300` to `2,800` | Absolute base target; the upper bound preserves room for the minimum inversion thickness beneath the 3 km Standard model top |
+| **Inversion thickness** | `m` | `50` to `2,000` | Advanced direct field; preserve a continuous profile |
+| **Inversion strength** | Liquid-water-potential-temperature jump, `K` | `−5` to `+20` | Weak, absent, or reversed inversion is permitted and warned |
+| **Free-tropospheric humidity** | Layer-mean RH above the inversion through the authored free-tropospheric layer, `%` | `0` to `100` | Solve and report the achieved layer mean |
+| **Cloud-layer shear** | `0–3 km` vector-shear magnitude, `m s⁻¹` | `0` to `50` | Preserve the separately exposed layer-mean wind |
+| **Shear direction** | Vector bearing, degrees | `0` to `360` | Advanced; inactive when shear is zero |
 
-The product shows the resulting profiles, inversion markers, initial relative humidity, static stability, and wind shear before launch.
+The product shows the complete resulting theta, total-water, RH, and wind
+profiles; inversion markers; static stability; initial cloud or saturation
+state; and achieved target values before packaging.
 
 ## 8.5 Large-scale-forcing controls
 
-The large-scale forcings remain physically distinct. The user may change them together through a named **Large-scale forcing strength** control or reveal the individual advanced controls.
+The large-scale forcings remain physically distinct signed direct values.
+There is no generic forcing-strength multiplier.
 
-| Control | Transform | Supported envelope |
+| Control | Direct target | Supported envelope |
 | --- | --- | --- |
-| **Large-scale forcing strength** | Scale subsidence, prescribed cooling, and prescribed drying together from the Recipe reference | `0.75–1.25×` ordinary; `0.50–1.50×` advanced |
-| **Subsidence strength** | Scale the complete authored subsidence profile | `0.50–1.50×` advanced |
-| **Prescribed cooling** | Scale the complete authored cooling profile | `0.50–1.50×` advanced |
-| **Prescribed drying** | Scale the complete authored drying profile | `0.50–1.50×` advanced |
+| **Large-scale vertical motion** | Signed peak authored-profile vertical velocity, `m s⁻¹` | `−0.050` to `+0.050` |
+| **Temperature tendency** | Signed peak authored-profile tendency, `K day⁻¹` | `−20` to `+10` |
+| **Total-water tendency** | Signed peak authored-profile tendency, `g kg⁻¹ day⁻¹` | `−20` to `+10` |
 
-Changing individual components is a legitimate multi-factor balance experiment, not an error. The preview must show the complete resulting tendency profiles and must not imply steady-state preservation.
+Negative vertical motion is subsidence and positive is ascent. Negative
+temperature and total-water tendencies are cooling and drying; positive values
+are warming and moistening. **Restore reference forcing** and **Zero forcing**
+set all three fields visibly. The preview shows their complete authored
+profiles and does not imply steady-state preservation.
+
+Every Trade Cumulus package retains the native CM1 domain-diagnostic stream at
+60-second cadence from model time zero through completion. Availability and
+descendant eligibility require finite `wprof`, `ptb_frc`, and `qvb_frc`
+profiles at every diagnostic time, with native units and vertical support that
+reproduce the reviewed direct forcing targets. Packaged source changes alone
+are not forcing evidence.
+
+Odd, weak, cloud-free, initially cloudy, strongly forced, stably stratified,
+unstable, or otherwise surprising requests are valid experiments. They receive
+prominent warnings or caveats. Block only nonfinite values, incoherent or
+unattainable generated profiles, unsafe or impossible numerical/domain
+contracts, and execution or storage safety failures.
 
 ## 8.6 Fixed or separate-Recipe choices
 
@@ -657,12 +683,22 @@ All profiles retain the required Trade Cumulus Explore and Updraft Lens fields, 
 
 Control choices may alter adaptive timestep behavior. The prelaunch range must widen when prior local evidence shows that a control state runs materially slower.
 
+Issue #448 authorizes exactly one reference-control Extended package for
+bounded cost characterization. That package uses the ordinary immutable
+package, snapshot, disk, provenance, diagnostics, and output-validation paths,
+but remains visibly a characterization and does not enable Extended for
+ordinary variation creation.
+
 ## 8.8 Trade Cumulus dependencies and comparison rules
 
-- A controlled surface-moisture experiment requires every other physical control and the numerical realization to match.
-- Changing Surface moisture supply while switching Presentation to Standard creates a mixed variation.
+- A controlled surface-moisture-flux experiment requires every other physical
+  control and the numerical realization to match.
+- Changing Surface moisture flux while switching Presentation to Standard
+  creates a mixed variation.
 - When a lower-cost controlled pair is desired, Cloud Chamber should offer to create or select a same-profile reference, not pretend the Presentation parent is numerically matched.
-- Atmospheric profile transforms must preserve positive pressure, finite values, static stability where the Recipe requires it, and no unintended initial cloud.
+- Atmospheric profile transforms must preserve positive pressure and finite,
+  coherent values. Static instability and initial cloud are warned rather than
+  rejected when the exact requested state can be generated safely.
 - Inversion changes must retain enough vertical domain above the inversion.
 - Large-scale forcing profiles must retain their authored vertical support and smoothness.
 - No physical-response threshold is required for availability. No cloud or a weak response may be the result.

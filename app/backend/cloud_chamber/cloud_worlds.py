@@ -20,10 +20,21 @@ from cloud_chamber.result_ingest import (
     list_result_metadata,
     result_metadata_from_json,
 )
-from cloud_chamber.run_manifest import LifecycleState, RunManifestError, load_run_manifest
+from cloud_chamber.run_cost import profile_by_id
+from cloud_chamber.run_manifest import (
+    LifecycleState,
+    RunManifest,
+    RunManifestError,
+    load_run_manifest,
+    write_run_manifest,
+)
 from cloud_chamber.saved_comparisons import SavedComparisonError, saved_comparison_count
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.supercells_world import SupercellsWorldSummary, supercells_world_detail
+from cloud_chamber.trade_cumulus_attempt_provenance import (
+    TradeCumulusAttemptProvenanceError,
+    validate_trade_cumulus_attempt_provenance,
+)
 from cloud_chamber.trade_cumulus_comparison_story import (
     CASE_ID,
     COMPARISON_GROUP_ID,
@@ -34,6 +45,23 @@ from cloud_chamber.trade_cumulus_comparison_story import (
     TradeCumulusComparisonStoryConflict,
     TradeCumulusComparisonStoryNotFound,
     trade_cumulus_moisture_comparison_story,
+)
+from cloud_chamber.trade_cumulus_output_validation import (
+    TradeCumulusOutputValidationError,
+    validate_trade_cumulus_variation_outputs,
+)
+from cloud_chamber.trade_cumulus_recipes import (
+    RECIPE_CONTRACT_VERSION,
+    RECIPE_ID,
+    TradeCumulusControls,
+    default_controls,
+    normalize_controls,
+)
+from cloud_chamber.variation_envelope import (
+    VariationAttempt,
+    VariationEnvelope,
+    VariationValidationDecision,
+    canonical_payload_sha256,
 )
 
 WORLD_ID: Literal["trade_cumulus"] = "trade_cumulus"
@@ -98,6 +126,7 @@ class SimulationRecord(BaseModel):
     result_id: str
     run_id: str
     source_recipe_id: str | None = None
+    recipe_contract_version: str | None = None
     parent_simulation_id: str | None = None
     reference_simulation_id: str | None = None
     technical_state: TechnicalState
@@ -107,6 +136,15 @@ class SimulationRecord(BaseModel):
     compare_suggestions: list[CompareSuggestion] = Field(default_factory=list)
     configuration_difference_from_reference: list[ConfigurationDifference] | None = None
     lineage_state: LineageState
+    relationship_classification: str | None = None
+    run_profile_id: str | None = None
+    scientific_design: dict[str, Any] | None = None
+    numerical_realization: dict[str, Any] | None = None
+    observation_plan: dict[str, Any] | None = None
+    configuration: dict[str, Any] | None = None
+    can_create_variation: bool = False
+    parent_eligibility_reason: str | None = None
+    attempt_count: int = 1
     created_at: str | None = None
     completed_at: str | None = None
 
@@ -237,6 +275,17 @@ class _LineageCandidate:
     shape_valid: bool
 
 
+@dataclass(frozen=True)
+class _VariationSelection:
+    candidate: _LineageCandidate
+    manifest: RunManifest | None
+    manifest_path: Path | None
+    envelope: VariationEnvelope | None
+    attempts: tuple[VariationAttempt, ...]
+    accepted_backing: bool
+    conflict_reason: str | None = None
+
+
 _REFERENCE_SPEC = _KnownSimulationSpec(
     simulation_id=REFERENCE_SIMULATION_ID,
     display_name=REFERENCE_DISPLAY_NAME,
@@ -353,6 +402,7 @@ def trade_cumulus_world_detail(settings: CloudChamberSettings) -> TradeCumulusWo
         and _is_trade_cumulus_result(metadata)
     ]
     retained, lab_history = _ordinary_simulations(
+        settings,
         other_metadata,
         known_metadata={
             record.record.simulation_id: record.metadata
@@ -361,7 +411,18 @@ def trade_cumulus_world_detail(settings: CloudChamberSettings) -> TradeCumulusWo
         },
     )
 
-    simulations = [reference.record, more_moisture.record, *retained]
+    simulations = [
+        _with_variation_eligibility(settings, record)
+        for record in [reference.record, more_moisture.record, *retained]
+    ]
+    reference = _LoadedKnownSimulation(
+        record=simulations[0],
+        metadata=reference.metadata,
+    )
+    more_moisture = _LoadedKnownSimulation(
+        record=simulations[1],
+        metadata=more_moisture.metadata,
+    )
     lab_summary = _lab_summary(settings, all_metadata, lab_history)
     availability_state, availability_message = _world_availability(
         reference.record, more_moisture.record, featured
@@ -418,6 +479,7 @@ def trade_cumulus_simulation_exists(
         and _is_trade_cumulus_result(metadata)
     ]
     retained, _ = _ordinary_simulations(
+        settings,
         other_metadata,
         known_metadata={
             record.record.simulation_id: record.metadata
@@ -493,6 +555,12 @@ def _known_record(
     inspectability: _Inspectability,
 ) -> SimulationRecord:
     source_recipe = metadata.run_configuration.get("recipe_candidate_id")
+    profile = profile_by_id("trade_cumulus_presentation_v1")
+    controls = default_controls()
+    relationship_classification = None
+    if spec.simulation_id == MORE_MOISTURE_SIMULATION_ID:
+        controls = controls.model_copy(update={"surface_moisture_flux_g_kg_m_s": 0.078})
+        relationship_classification = "controlled_physical_variation"
     return SimulationRecord(
         simulation_id=spec.simulation_id,
         display_name=spec.display_name,
@@ -502,6 +570,7 @@ def _known_record(
         result_id=spec.result_id,
         run_id=spec.run_id,
         source_recipe_id=source_recipe if isinstance(source_recipe, str) else None,
+        recipe_contract_version=RECIPE_CONTRACT_VERSION,
         parent_simulation_id=spec.parent_simulation_id,
         reference_simulation_id=REFERENCE_SIMULATION_ID,
         technical_state=inspectability.technical_state,
@@ -513,6 +582,12 @@ def _known_record(
         ),
         explore_available=inspectability.explore_available,
         lineage_state="known",
+        relationship_classification=relationship_classification,
+        run_profile_id=profile.profile_id,
+        scientific_design={"controls": controls.model_dump(mode="json")},
+        numerical_realization=profile.numerical_realization.model_dump(mode="json"),
+        observation_plan=profile.observation_plan.model_dump(mode="json"),
+        configuration=_trade_configuration_summary(metadata.run_configuration),
         created_at=metadata.created_at.isoformat(),
         completed_at=metadata.updated_at.isoformat(),
     )
@@ -588,22 +663,40 @@ def _featured_comparison(
 
 
 def _ordinary_simulations(
+    settings: CloudChamberSettings,
     metadata_records: list[ResultMetadata],
     *,
     known_metadata: dict[str, ResultMetadata],
 ) -> tuple[list[SimulationRecord], list[SimulationRecord]]:
     candidates = [_lineage_candidate(metadata) for metadata in metadata_records]
-    counts = Counter(
-        candidate.simulation_id for candidate in candidates if candidate.simulation_id is not None
-    )
-    candidate_ids = {
-        candidate.simulation_id
-        for candidate in candidates
-        if candidate.shape_valid
-        and candidate.simulation_id is not None
-        and counts[candidate.simulation_id] == 1
-        and candidate.simulation_id not in _RESERVED_SIMULATION_IDS
+    grouped: dict[str, list[_LineageCandidate]] = {}
+    history: list[SimulationRecord] = []
+    for candidate in candidates:
+        if (
+            not candidate.shape_valid
+            or candidate.simulation_id is None
+            or candidate.simulation_id in _RESERVED_SIMULATION_IDS
+        ):
+            history.append(
+                _lab_history_record(
+                    candidate,
+                    invalid=candidate.supplied_keys,
+                    inspectability=_variation_inspectability(settings, candidate),
+                )
+            )
+            continue
+        grouped.setdefault(candidate.simulation_id, []).append(candidate)
+
+    selections = {
+        simulation_id: _select_variation_backing(settings, grouped_candidates)
+        for simulation_id, grouped_candidates in grouped.items()
     }
+    selected_candidates = {
+        simulation_id: selection.candidate
+        for simulation_id, selection in selections.items()
+        if selection.conflict_reason is None
+    }
+    candidate_ids = set(selected_candidates)
     known_ids = set(known_metadata)
     resolvable_ids = known_ids | candidate_ids
     result_to_simulation = {
@@ -611,29 +704,23 @@ def _ordinary_simulations(
     }
     result_to_simulation.update(
         {
-            candidate.metadata.result_id: candidate.simulation_id
-            for candidate in candidates
-            if candidate.simulation_id in candidate_ids
+            candidate.metadata.result_id: simulation_id
+            for simulation_id, candidate in selected_candidates.items()
         }
     )
-    candidates_by_id = {
-        candidate.simulation_id: candidate
-        for candidate in candidates
-        if candidate.simulation_id in candidate_ids
-    }
+    counts = Counter({simulation_id: 1 for simulation_id in candidate_ids})
     structurally_valid_ids = {
-        candidate.simulation_id
-        for candidate in candidates
+        simulation_id
+        for simulation_id, candidate in selected_candidates.items()
         if _lineage_resolves(
             candidate,
             counts=counts,
             resolvable_ids=resolvable_ids,
             result_to_simulation=result_to_simulation,
         )
-        and candidate.simulation_id is not None
     }
     valid_candidate_ids = structurally_valid_ids - _cyclic_lineage_ids(
-        candidates_by_id,
+        selected_candidates,
         structurally_valid_ids=structurally_valid_ids,
         result_to_simulation=result_to_simulation,
     )
@@ -644,7 +731,7 @@ def _ordinary_simulations(
             if any(
                 target_id in candidate_ids and target_id not in valid_candidate_ids
                 for target_id in _resolved_lineage_target_ids(
-                    candidates_by_id[simulation_id], result_to_simulation
+                    selected_candidates[simulation_id], result_to_simulation
                 )
             )
         }
@@ -654,22 +741,29 @@ def _ordinary_simulations(
     metadata_by_simulation = dict(known_metadata)
     metadata_by_simulation.update(
         {
-            candidate.simulation_id: candidate.metadata
-            for candidate in candidates
-            if candidate.simulation_id in valid_candidate_ids
+            simulation_id: selected_candidates[simulation_id].metadata
+            for simulation_id in valid_candidate_ids
         }
     )
 
     retained: list[SimulationRecord] = []
-    history: list[SimulationRecord] = []
-    for candidate in candidates:
-        valid = candidate.simulation_id in valid_candidate_ids
-        inspectability = _inspectability(candidate.metadata)
-        if not valid:
+    for simulation_id, selection in selections.items():
+        candidate = selection.candidate
+        inspectability = _variation_inspectability(settings, candidate)
+        valid = simulation_id in valid_candidate_ids and selection.conflict_reason is None
+        if not valid or (
+            selection.envelope is not None and inspectability.technical_state != "available"
+        ):
+            if selection.conflict_reason:
+                inspectability = _Inspectability(
+                    technical_state="conflict",
+                    technical_state_message=selection.conflict_reason,
+                    explore_available=False,
+                )
             history.append(
                 _lab_history_record(
                     candidate,
-                    invalid=candidate.supplied_keys,
+                    invalid=True,
                     inspectability=inspectability,
                 )
             )
@@ -685,14 +779,24 @@ def _ordinary_simulations(
             else None
         )
         comparison_parent_id = parent_id or reference_id
-        differences = None
-        if comparison_parent_id is not None:
+        envelope = selection.envelope
+        differences = _envelope_configuration_differences(envelope)
+        if differences is None and comparison_parent_id is not None:
             parent_metadata = metadata_by_simulation.get(comparison_parent_id)
             if parent_metadata is not None:
                 differences = configuration_differences(parent_metadata, candidate.metadata)
+        if envelope is not None:
+            envelope = _promote_variation_envelope(
+                selection.manifest,
+                selection.manifest_path,
+                envelope,
+                metadata=candidate.metadata,
+                attempts=selection.attempts,
+                accepted_backing=selection.accepted_backing,
+            )
         retained.append(
             SimulationRecord(
-                simulation_id=candidate.simulation_id,
+                simulation_id=simulation_id,
                 display_name=candidate.display_name or "Retained Trade Cumulus Simulation",
                 role="variation",
                 product_slice_id=PRODUCT_SLICE_ID,
@@ -712,6 +816,30 @@ def _ordinary_simulations(
                 explore_available=inspectability.explore_available,
                 configuration_difference_from_reference=differences,
                 lineage_state="valid",
+                recipe_contract_version=(
+                    envelope.recipe_contract_version if envelope is not None else None
+                ),
+                relationship_classification=(
+                    envelope.relationship_classification if envelope is not None else None
+                ),
+                run_profile_id=envelope.run_profile_id if envelope is not None else None,
+                scientific_design=(
+                    envelope.scientific_design.payload if envelope is not None else None
+                ),
+                numerical_realization=(
+                    envelope.numerical_realization.payload if envelope is not None else None
+                ),
+                observation_plan=(
+                    envelope.observation_plan.payload if envelope is not None else None
+                ),
+                configuration=_trade_configuration_summary(candidate.metadata.run_configuration),
+                can_create_variation=(envelope.parent_eligible if envelope is not None else False),
+                parent_eligibility_reason=(
+                    envelope.parent_eligibility_reason
+                    if envelope is not None
+                    else "This Simulation predates the shared Recipe envelope."
+                ),
+                attempt_count=len(selection.attempts),
                 created_at=candidate.metadata.created_at.isoformat(),
                 completed_at=candidate.metadata.updated_at.isoformat(),
             )
@@ -719,6 +847,349 @@ def _ordinary_simulations(
     retained.sort(key=lambda record: (record.display_name, record.simulation_id or ""))
     history.sort(key=lambda record: (record.completed_at or "", record.result_id), reverse=True)
     return retained, history
+
+
+def _select_variation_backing(
+    settings: CloudChamberSettings,
+    candidates: list[_LineageCandidate],
+) -> _VariationSelection:
+    ordered = sorted(
+        candidates,
+        key=lambda candidate: (
+            candidate.metadata.created_at.isoformat(),
+            candidate.metadata.run_id,
+        ),
+    )
+    by_run = {candidate.metadata.run_id: candidate for candidate in ordered}
+    manifests: dict[str, tuple[RunManifest, Path]] = {}
+    envelopes: dict[str, VariationEnvelope] = {}
+    attempts_by_run: dict[str, VariationAttempt] = {}
+    accepted_claims: set[str] = set()
+    intended_contracts: set[str] = set()
+    conflicts: list[str] = []
+
+    for index, candidate in enumerate(ordered):
+        run_id = candidate.metadata.run_id
+        manifest_path = settings.runtime_home.expanduser() / "runs" / run_id / "run_manifest.json"
+        manifest: RunManifest | None = None
+        if manifest_path.is_file():
+            try:
+                manifest = load_run_manifest(manifest_path)
+            except (OSError, RunManifestError):
+                conflicts.append(f"Attempt {run_id} has an unreadable run manifest.")
+        if manifest is not None:
+            manifests[run_id] = (manifest, manifest_path)
+        payload = (
+            manifest.run_configuration.get("variation_envelope")
+            if manifest is not None
+            else candidate.metadata.run_configuration.get("variation_envelope")
+        )
+        envelope: VariationEnvelope | None = None
+        if isinstance(payload, Mapping):
+            try:
+                envelope = VariationEnvelope.model_validate(payload)
+            except ValueError:
+                conflicts.append(f"Attempt {run_id} has an invalid shared variation envelope.")
+        elif candidate.metadata.scenario_id == "trade_cumulus_recipe_variation_v1":
+            conflicts.append(f"Attempt {run_id} is missing its shared variation envelope.")
+        if envelope is not None:
+            envelopes[run_id] = envelope
+            intended_contracts.add(
+                canonical_payload_sha256(_intended_simulation_contract(envelope))
+            )
+            if candidate.simulation_id != envelope.simulation_id:
+                conflicts.append(f"Attempt {run_id} disagrees with its envelope Simulation ID.")
+            for attempt in envelope.attempts:
+                attempts_by_run[attempt.run_id] = attempt
+                if attempt.accepted_backing:
+                    accepted_claims.add(attempt.run_id)
+            attempts_by_run.setdefault(
+                run_id,
+                VariationAttempt(
+                    attempt_id=run_id,
+                    run_id=run_id,
+                    relationship="initial" if index == 0 else "unchanged_retry",
+                    package_identity_sha256=(
+                        envelope.package_identity_sha256 or envelope.scientific_design.sha256
+                    ),
+                ),
+            )
+        else:
+            attempts_by_run[run_id] = VariationAttempt(
+                attempt_id=run_id,
+                run_id=run_id,
+                relationship="initial" if index == 0 else "unchanged_retry",
+                package_identity_sha256=run_id,
+            )
+
+    if len(ordered) > 1 and not envelopes:
+        conflicts.append(
+            "Legacy results grouped under one Simulation ID have no accepted-backing contract."
+        )
+    if len(intended_contracts) > 1:
+        conflicts.append(
+            "Attempts grouped under one Simulation ID disagree on the canonical intended "
+            "Simulation contract."
+        )
+    missing_claims = sorted(accepted_claims - set(by_run))
+    if missing_claims:
+        conflicts.append(
+            "Accepted-backing claims reference missing retained attempts: "
+            + ", ".join(missing_claims)
+        )
+    if len(accepted_claims) > 1:
+        conflicts.append(
+            "Multiple attempts claim accepted backing: " + ", ".join(sorted(accepted_claims))
+        )
+
+    accepted_run_id = next(iter(accepted_claims), None) if len(accepted_claims) == 1 else None
+    if accepted_run_id is None and not conflicts:
+        for candidate in ordered:
+            inspectability = _variation_inspectability(settings, candidate)
+            if inspectability.technical_state == "available":
+                accepted_run_id = candidate.metadata.run_id
+                break
+
+    selected = (
+        by_run[accepted_run_id]
+        if accepted_run_id is not None and accepted_run_id in by_run
+        else ordered[-1]
+    )
+    selected_manifest, selected_manifest_path = manifests.get(
+        selected.metadata.run_id, (None, None)
+    )
+    selected_envelope = envelopes.get(selected.metadata.run_id)
+    attempts = tuple(
+        attempt.model_copy(update={"accepted_backing": run_id == accepted_run_id})
+        for run_id, attempt in sorted(
+            attempts_by_run.items(),
+            key=lambda item: (
+                by_run[item[0]].metadata.created_at.isoformat() if item[0] in by_run else "",
+                item[0],
+            ),
+        )
+    )
+    return _VariationSelection(
+        candidate=selected,
+        manifest=selected_manifest,
+        manifest_path=selected_manifest_path,
+        envelope=selected_envelope,
+        attempts=attempts,
+        accepted_backing=accepted_run_id is not None,
+        conflict_reason=" ".join(dict.fromkeys(conflicts)) or None,
+    )
+
+
+def _variation_inspectability(
+    settings: CloudChamberSettings,
+    candidate: _LineageCandidate,
+) -> _Inspectability:
+    base = _inspectability(candidate.metadata)
+    if base.technical_state != "available":
+        return base
+    if candidate.metadata.scenario_id != "trade_cumulus_recipe_variation_v1":
+        return base
+    manifest_path = (
+        settings.runtime_home.expanduser()
+        / "runs"
+        / candidate.metadata.run_id
+        / "run_manifest.json"
+    )
+    try:
+        manifest = load_run_manifest(manifest_path)
+        validate_trade_cumulus_variation_outputs(manifest, candidate.metadata)
+    except (
+        OSError,
+        RunManifestError,
+        TradeCumulusOutputValidationError,
+        ValueError,
+    ) as exc:
+        return _Inspectability(
+            technical_state="conflict",
+            technical_state_message=(
+                "Retained Trade Cumulus output failed contract validation: " + str(exc)
+            ),
+            explore_available=False,
+        )
+    return _Inspectability(
+        technical_state="available",
+        technical_state_message=(
+            "Complete native output passed the Trade Cumulus Recipe and Explore contract."
+        ),
+        explore_available=True,
+    )
+
+
+def _promote_variation_envelope(
+    manifest: RunManifest | None,
+    manifest_path: Path | None,
+    envelope: VariationEnvelope,
+    *,
+    metadata: ResultMetadata,
+    attempts: tuple[VariationAttempt, ...],
+    accepted_backing: bool,
+) -> VariationEnvelope:
+    if manifest is None or manifest_path is None:
+        return envelope
+    parent_eligible, parent_reason = _evaluate_variation_parent_eligibility(
+        manifest,
+        envelope,
+        metadata=metadata,
+        accepted_backing=accepted_backing,
+    )
+    caveated = bool(manifest.run_caveats or manifest.outputs.runtime_warnings)
+    replacements = {
+        "attempt_integrity": (
+            "passed",
+            (
+                "Generated inputs, normal completion, and accepted-backing selection are coherent."
+                if accepted_backing
+                else "This complete attempt remains alternate output."
+            ),
+        ),
+        "output_completeness": (
+            "passed",
+            "Expected native histories, fields, coordinates, units, and cadence passed.",
+        ),
+        "world_inspectability": (
+            "passed",
+            "Trade Cumulus Explore and the Updraft Lens can inspect the retained output.",
+        ),
+        "availability": (
+            "caveated" if caveated else "passed",
+            (
+                "Simulation is available with retained runtime caveats."
+                if caveated
+                else "Simulation is available."
+            ),
+        ),
+        "parent_eligibility": (
+            "passed" if parent_eligible else "failed",
+            parent_reason,
+        ),
+    }
+    retained = [
+        decision for decision in envelope.validation_decisions if decision.stage not in replacements
+    ]
+    updated = envelope.model_copy(
+        update={
+            "attempts": list(attempts),
+            "availability_state": "available_with_caveats" if caveated else "available",
+            "parent_eligible": parent_eligible,
+            "parent_eligibility_reason": parent_reason,
+            "validation_decisions": [
+                *retained,
+                *[
+                    VariationValidationDecision.model_validate(
+                        {
+                            "stage": stage,
+                            "disposition": disposition,
+                            "reason": reason,
+                        }
+                    )
+                    for stage, (disposition, reason) in replacements.items()
+                ],
+            ],
+        }
+    )
+    if updated != envelope:
+        manifest.run_configuration["variation_envelope"] = updated.model_dump(mode="json")
+        try:
+            write_run_manifest(manifest_path, manifest)
+        except OSError:
+            return envelope
+    return updated
+
+
+def _evaluate_variation_parent_eligibility(
+    manifest: RunManifest,
+    envelope: VariationEnvelope,
+    *,
+    metadata: ResultMetadata,
+    accepted_backing: bool,
+) -> tuple[bool, str]:
+    if not accepted_backing:
+        return False, "Only the accepted backing attempt can parent a new variation."
+    if manifest.run_configuration.get("characterization_authorization") is not None:
+        return (
+            False,
+            "A characterization output requires explicit PM acceptance before it can parent.",
+        )
+    if (
+        envelope.recipe_id != RECIPE_ID
+        or envelope.recipe_contract_version != RECIPE_CONTRACT_VERSION
+    ):
+        return False, "The retained Simulation is outside the current Trade Cumulus Recipe."
+    controls_payload = envelope.world_payload.get("controls")
+    try:
+        controls = TradeCumulusControls.model_validate(controls_payload)
+        normalized = normalize_controls(controls)
+    except ValueError:
+        return False, "The retained Simulation lacks valid absolute Recipe controls."
+    if controls != normalized:
+        return False, "The retained Simulation contains unresolved inactive controls."
+    try:
+        validate_trade_cumulus_attempt_provenance(manifest)
+    except TradeCumulusAttemptProvenanceError as exc:
+        return False, str(exc)
+    try:
+        validate_trade_cumulus_variation_outputs(manifest, metadata)
+    except TradeCumulusOutputValidationError as exc:
+        return False, str(exc)
+    return True, "Accepted output remains reconstructible inside Recipe contract version 1."
+
+
+def _intended_simulation_contract(envelope: VariationEnvelope) -> dict[str, Any]:
+    """Return every immutable fact that all attempts under one Simulation ID must share."""
+    return {
+        "schema_version": envelope.schema_version,
+        "world_id": envelope.world_id,
+        "recipe_id": envelope.recipe_id,
+        "recipe_contract_version": envelope.recipe_contract_version,
+        "simulation_id": envelope.simulation_id,
+        "parent_simulation_id": envelope.parent_simulation_id,
+        "reference_simulation_id": envelope.reference_simulation_id,
+        "display_name": envelope.display_name,
+        "question": envelope.question,
+        "scientific_design": envelope.scientific_design.model_dump(mode="json"),
+        "numerical_realization": envelope.numerical_realization.model_dump(mode="json"),
+        "observation_plan": envelope.observation_plan.model_dump(mode="json"),
+        "world_payload": envelope.world_payload,
+        "differences": [difference.model_dump(mode="json") for difference in envelope.differences],
+        "relationship_classification": envelope.relationship_classification,
+        "run_profile_id": envelope.run_profile_id,
+        "run_profile_contract": envelope.run_profile_contract,
+    }
+
+
+def _envelope_configuration_differences(
+    envelope: VariationEnvelope | None,
+) -> list[ConfigurationDifference] | None:
+    if envelope is None:
+        return None
+    category = {
+        "terrain": "atmospheric",
+        "wind": "atmospheric",
+        "moisture": "atmospheric",
+        "stability_thermodynamics": "atmospheric",
+        "forcing_initiation": "atmospheric",
+        "numerical_realization": "numerical",
+        "observation_plan": "output",
+    }
+    return [
+        ConfigurationDifference.model_validate(
+            {
+                "path": difference.path,
+                "label": difference.label,
+                "category": category[difference.category],
+                "left_value": difference.before,
+                "right_value": difference.after,
+                "units": difference.units,
+                "material": difference.material,
+            }
+        )
+        for difference in envelope.differences
+    ]
 
 
 def _lineage_candidate(metadata: ResultMetadata) -> _LineageCandidate:
@@ -1012,13 +1483,76 @@ def _trust_state(metadata: ResultMetadata) -> TrustState:
 
 
 def _is_trade_cumulus_result(metadata: ResultMetadata) -> bool:
-    return metadata.scenario_id == CASE_ID and _is_trade_cumulus_configuration(
-        metadata.run_configuration
-    )
+    return (
+        metadata.scenario_id == CASE_ID
+        or (
+            metadata.scenario_id == "trade_cumulus_recipe_variation_v1"
+            and metadata.run_configuration.get("cloud_world_id") == WORLD_ID
+        )
+    ) and _is_trade_cumulus_configuration(metadata.run_configuration)
 
 
 def _is_trade_cumulus_configuration(configuration: Mapping[str, object]) -> bool:
-    return configuration.get("case_id") == CASE_ID
+    return configuration.get("case_id") == CASE_ID or (
+        configuration.get("cloud_world_id") == WORLD_ID
+        and isinstance(configuration.get("variation_envelope"), Mapping)
+    )
+
+
+def _with_variation_eligibility(
+    settings: CloudChamberSettings,
+    record: SimulationRecord,
+) -> SimulationRecord:
+    if record.technical_state != "available" or not record.explore_available:
+        return record.model_copy(
+            update={
+                "can_create_variation": False,
+                "parent_eligibility_reason": (
+                    "Only an available, inspectable Simulation can parent a variation."
+                ),
+            }
+        )
+    if record.simulation_id in _RESERVED_SIMULATION_IDS:
+        return record.model_copy(
+            update={
+                "can_create_variation": True,
+                "parent_eligibility_reason": None,
+            }
+        )
+    manifest_path = (
+        settings.runtime_home.expanduser() / "runs" / record.run_id / "run_manifest.json"
+    )
+    try:
+        manifest = load_run_manifest(manifest_path)
+        payload = manifest.run_configuration.get("variation_envelope")
+        envelope = VariationEnvelope.model_validate(payload)
+    except (OSError, ValueError, RunManifestError):
+        return record.model_copy(
+            update={
+                "can_create_variation": False,
+                "parent_eligibility_reason": (
+                    "This Simulation predates the shared Recipe envelope."
+                ),
+            }
+        )
+    if envelope.world_id != WORLD_ID or envelope.recipe_id != "canonical_bomex_trade_cumulus":
+        return record.model_copy(
+            update={
+                "can_create_variation": False,
+                "parent_eligibility_reason": "The retained Recipe envelope does not match.",
+            }
+        )
+    return record.model_copy(
+        update={
+            "recipe_contract_version": envelope.recipe_contract_version,
+            "relationship_classification": envelope.relationship_classification,
+            "can_create_variation": envelope.parent_eligible,
+            "parent_eligibility_reason": (
+                None if envelope.parent_eligible else envelope.parent_eligibility_reason
+            ),
+            "attempt_count": len(envelope.attempts),
+        }
+    )
 
 
 def _comparison_payload(metadata: ResultMetadata) -> dict[str, Any]:
@@ -1033,6 +1567,19 @@ def _comparison_payload(metadata: ResultMetadata) -> dict[str, Any]:
         if key not in controls and key not in {"control_id", "control_state", "changed_assumptions"}
     }
     return {"controls": controls, "run_configuration": configuration}
+
+
+def _trade_configuration_summary(configuration: Mapping[str, object]) -> dict[str, Any]:
+    return {
+        key: configuration[key]
+        for key in (
+            "duration_seconds",
+            "output_cadence_seconds",
+            "expected_model_output_count",
+            "domain",
+        )
+        if key in configuration
+    }
 
 
 def _compare_values(

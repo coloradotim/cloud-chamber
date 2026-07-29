@@ -18,6 +18,7 @@ from cloud_chamber.local_run_manager import (
     LocalRunManagerError,
     default_process_factory,
 )
+from cloud_chamber.run_cost import LaunchBudgetError
 from cloud_chamber.run_manifest import (
     LifecycleState,
     ProductState,
@@ -282,6 +283,10 @@ def test_launch_constructs_cm1_command_and_captures_logs(tmp_path: Path) -> None
     assert manifest.lifecycle_state == LifecycleState.RUNNING
     assert manifest.provenance.product_state == ProductState.QUEUED_RUNNING_CM1_PROCESS
     assert manifest.execution.command == [str(settings.cm1_run_dir / "cm1.exe")]
+    assert (
+        manifest.execution.executable_sha256
+        == hashlib.sha256((settings.cm1_run_dir / "cm1.exe").read_bytes()).hexdigest()
+    )
     assert manifest.execution.process_id == fake_process.pid
 
 
@@ -456,6 +461,55 @@ def test_launch_applies_differential_surface_source_customization_before_cm1(
     assert launched_manifest.cm1_source_customization_status == status_payload
     assert SFCPHYS_MARKER not in (cm1_root / "src" / "sfcphys.F").read_text()
     assert custom_executable.exists()
+
+
+def test_launch_rechecks_disk_after_source_build_and_before_process_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = fake_settings(tmp_path)
+    assert settings.cm1_root is not None
+    write_fake_cm1_source_tree(settings)
+    manifest_path = differential_dry_run_manifest_path(tmp_path)
+    run_dir = tmp_path / "CloudChamber" / "runs" / "run-diff"
+    factory = FakeProcessFactory(FakeProcess())
+    build_completed = False
+
+    def fake_build(
+        command: list[str],
+        *,
+        cwd: Path,
+        check: bool,
+        capture_output: bool,
+        text: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal build_completed
+        build_completed = True
+        return subprocess.CompletedProcess(command, 0, stdout="built\n", stderr="")
+
+    def blocked_final_gate(*_args: Any, **_kwargs: Any) -> None:
+        assert build_completed is True
+        assert (run_dir / CUSTOM_EXECUTABLE_FILENAME).is_file()
+        raise LaunchBudgetError("post-build reserve no longer fits")
+
+    monkeypatch.setattr(
+        "cloud_chamber.local_run_manager.preflight_manifest_launch_budget",
+        blocked_final_gate,
+    )
+    manager = LocalRunManager(
+        settings=settings,
+        process_factory=factory,
+        source_build_runner=fake_build,
+    )
+
+    with pytest.raises(
+        LocalRunManagerError,
+        match="Final disk gate failed after source staging.*post-build reserve",
+    ):
+        manager.launch(manifest_path)
+
+    assert factory.commands == []
+    assert load_run_manifest(manifest_path).lifecycle_state == LifecycleState.PACKAGED
 
 
 def test_launch_applies_straight_line_hodograph_source_customization_before_cm1(

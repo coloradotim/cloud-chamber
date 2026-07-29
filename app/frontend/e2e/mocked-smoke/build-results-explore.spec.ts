@@ -855,6 +855,471 @@ async function mockTradeCumulusWorld(page: Parameters<typeof mockCloudChamberApi
   );
 }
 
+const tradeVariationReferenceControls = {
+  surface_sensible_heat_flux_k_m_s: 0.008,
+  surface_moisture_flux_g_kg_m_s: 0.052,
+  sub_inversion_total_water_g_kg: 16.65,
+  inversion_base_m_agl: 520,
+  inversion_thickness_m: 960,
+  inversion_strength_k: 3.7,
+  free_tropospheric_rh_percent: 41,
+  cloud_layer_shear_m_s: 4.14,
+  cloud_layer_shear_direction_deg: 0,
+  cloud_layer_mean_u_m_s: -7.5,
+  cloud_layer_mean_v_m_s: 0,
+  large_scale_vertical_motion_m_s: -0.0065,
+  temperature_tendency_k_day: -2,
+  total_water_tendency_g_kg_day: -1.0368,
+};
+
+function tradeVariationProfile(
+  profileId: string,
+  role: string,
+  duration: number,
+  cadence: number,
+  histories: number,
+  blocked = false,
+) {
+  return {
+    profile: {
+      schema_version: "1",
+      world_id: "trade_cumulus",
+      world_name: "Trade Cumulus",
+      recipe_id: "canonical_bomex_trade_cumulus",
+      recipe_version: "approved_variation_contract_v1",
+      profile_id: profileId,
+      profile_name: `${role} — Trade Cumulus experiment`,
+      role,
+      numerical_realization: {
+        domain: role === "Extended" ? "12.8 km square" : "6.4 km square",
+        grid: role === "Presentation" ? "96 × 96 × 100" : "64 × 64 × 75",
+        spacing: role === "Presentation" ? "66.7 × 66.7 × 30 m" : "100 × 100 × 40 m",
+        timestep_strategy: role === "Presentation" ? "target 2 s" : "target 3 s",
+        physics_source: "Canonical BOMEX",
+      },
+      observation_plan: {
+        duration_seconds: duration,
+        output_cadence_seconds: cadence,
+        diagnostic_cadence_seconds: null,
+        expected_history_count: histories,
+        retained_field_inventory: ["ql", "qv", "th", "prs", "u", "v", "w"],
+      },
+      expected_runtime_min_seconds: blocked ? null : 900,
+      expected_runtime_max_seconds: blocked ? null : 1800,
+      expected_size_min_bytes: blocked ? null : 1.6 * 1024 ** 3,
+      expected_size_max_bytes: blocked ? null : 2.2 * 1024 ** 3,
+      estimate_basis: blocked ? "uncharacterized" : "scaled_from_measured",
+      confidence: blocked ? "Requires bounded characterization." : "Scaled evidence.",
+      cost_change_reasons: [],
+      scientific_limitations:
+        role === "Quick" ? ["Early response, not a full steady-period assessment."] : [],
+      required_post_run_reserve_bytes: 2 * 1024 ** 3,
+    },
+    current_free_space_bytes: 100 * 1024 ** 3,
+    projected_free_space_bytes: blocked ? null : 97.8 * 1024 ** 3,
+    required_free_space_bytes: blocked ? null : 4.2 * 1024 ** 3,
+    disposition: blocked ? "blocked" : "passes",
+    disposition_reason: blocked
+      ? "This profile is uncharacterized."
+      : "The high estimate fits while preserving the safety margin.",
+  };
+}
+
+function tradeVariationTemplate(parent = worldBaselineSimulation) {
+  const more = parent.simulation_id === worldMoreMoistureSimulation.simulation_id;
+  return {
+    parent_simulation_id: parent.simulation_id,
+    parent_run_id: parent.run_id,
+    parent_display_name: parent.display_name,
+    parent_configuration_source: "Retained source-backed BOMEX atmosphere and forcing",
+    reference_simulation_id: worldBaselineSimulation.simulation_id,
+    recipe_id: "canonical_bomex_trade_cumulus",
+    recipe_name: "Canonical BOMEX Trade Cumulus",
+    recipe_contract_version: "1",
+    controls: {
+      ...tradeVariationReferenceControls,
+      surface_moisture_flux_g_kg_m_s: more ? 0.078 : 0.052,
+    },
+    canonical_reference_controls: tradeVariationReferenceControls,
+    run_profiles: [
+      tradeVariationProfile("trade_cumulus_quick_v1", "Quick", 10_800, 180, 61),
+      tradeVariationProfile("trade_cumulus_standard_v1", "Standard", 14_400, 120, 121),
+      tradeVariationProfile("trade_cumulus_full_cycle_v1", "Full-cycle", 21_600, 120, 181),
+      tradeVariationProfile("trade_cumulus_presentation_v1", "Presentation", 14_400, 60, 241),
+      tradeVariationProfile("trade_cumulus_extended_v1", "Extended", 14_400, 120, 121, true),
+    ],
+    default_run_profile_id: "trade_cumulus_presentation_v1",
+    can_create_variation: true,
+    unavailable_reason: null,
+  };
+}
+
+function tradeVariationPreview(request: {
+  controls: typeof tradeVariationReferenceControls;
+  run_profile_id: string;
+}) {
+  const physical = Object.entries(request.controls).filter(
+    ([key, value]) =>
+      value !==
+      tradeVariationReferenceControls[key as keyof typeof tradeVariationReferenceControls],
+  );
+  const profileChanged = request.run_profile_id !== "trade_cumulus_presentation_v1";
+  const impossible =
+    request.controls.inversion_base_m_agl + request.controls.inversion_thickness_m >= 3_000;
+  const differences = physical.map(([key, value]) => ({
+    path: `controls.${key}`,
+    label:
+      key === "surface_moisture_flux_g_kg_m_s"
+        ? "Surface moisture flux"
+        : key === "surface_sensible_heat_flux_k_m_s"
+          ? "Surface sensible-heat flux"
+          : key.replaceAll("_", " "),
+    before: tradeVariationReferenceControls[key as keyof typeof tradeVariationReferenceControls],
+    after: value,
+    units: null,
+    material: true,
+  }));
+  const cost = request.run_profile_id.includes("extended")
+    ? tradeVariationProfile("trade_cumulus_extended_v1", "Extended", 14_400, 120, 121, true)
+    : request.run_profile_id.includes("standard")
+      ? tradeVariationProfile("trade_cumulus_standard_v1", "Standard", 14_400, 120, 121)
+      : tradeVariationProfile("trade_cumulus_presentation_v1", "Presentation", 14_400, 60, 241);
+  return {
+    requested_controls: request.controls,
+    resolved_controls: request.controls,
+    canonical_reference_controls: tradeVariationReferenceControls,
+    parent_controls: tradeVariationReferenceControls,
+    differences: {
+      wind: differences.filter((item) => item.path.includes("shear")),
+      moisture: differences.filter((item) => item.path.includes("moisture")),
+      "stability/thermodynamics": differences.filter((item) => item.path.includes("inversion")),
+      "forcing/initiation": differences.filter(
+        (item) =>
+          !item.path.includes("moisture") &&
+          !item.path.includes("inversion") &&
+          !item.path.includes("shear"),
+      ),
+      "numerical realization": profileChanged
+        ? [
+            {
+              path: "run_profile_id",
+              label: "Run profile",
+              before: "Presentation",
+              after: request.run_profile_id.includes("standard") ? "Standard" : "Extended",
+              units: null,
+              material: true,
+            },
+          ]
+        : [],
+      "observation plan": [],
+    },
+    relationship_classification:
+      physical.length && profileChanged
+        ? "mixed_variation"
+        : physical.length > 1
+          ? "multi_factor_physical_variation"
+          : physical.length === 1
+            ? "controlled_physical_variation"
+            : profileChanged
+              ? "numerical_sensitivity"
+              : null,
+    warnings:
+      request.controls.surface_sensible_heat_flux_k_m_s < 0
+        ? ["Surface sensible heat flux is downward."]
+        : [],
+    blocking_errors: impossible ? ["The requested inversion does not fit the model top."] : [],
+    diagnostics: {
+      inversion_top_m_agl:
+        request.controls.inversion_base_m_agl + request.controls.inversion_thickness_m,
+      model_top_m: 3_000,
+      sub_inversion_total_water_g_kg: request.controls.sub_inversion_total_water_g_kg,
+      free_tropospheric_rh_percent: request.controls.free_tropospheric_rh_percent,
+      cloud_layer_shear_m_s: request.controls.cloud_layer_shear_m_s,
+      cloud_layer_shear_direction_deg: request.controls.cloud_layer_shear_direction_deg,
+      cloud_layer_mean_u_m_s: request.controls.cloud_layer_mean_u_m_s,
+      cloud_layer_mean_v_m_s: request.controls.cloud_layer_mean_v_m_s,
+      initial_saturated_level_count: 0,
+      minimum_theta_gradient_k_km: 0,
+      labels: ["Large-scale subsidence"],
+    },
+    sounding_profile: [
+      {
+        height_m: 0,
+        theta_l_k: 298.7,
+        total_water_g_kg: request.controls.sub_inversion_total_water_g_kg,
+        relative_humidity_percent: 70,
+        u_m_s: -9,
+        v_m_s: 0,
+      },
+      {
+        height_m: 3_000,
+        theta_l_k: 311,
+        total_water_g_kg: 3,
+        relative_humidity_percent: request.controls.free_tropospheric_rh_percent,
+        u_m_s: -5,
+        v_m_s: 0,
+      },
+    ],
+    forcing_profile: [
+      {
+        height_m: 0,
+        vertical_motion_m_s: request.controls.large_scale_vertical_motion_m_s,
+        temperature_tendency_k_day: request.controls.temperature_tendency_k_day,
+        total_water_tendency_g_kg_day: request.controls.total_water_tendency_g_kg_day,
+      },
+      {
+        height_m: 3_000,
+        vertical_motion_m_s: 0,
+        temperature_tendency_k_day: 0,
+        total_water_tendency_g_kg_day: 0,
+      },
+    ],
+    numerical_realization: cost.profile.numerical_realization,
+    observation_plan: cost.profile.observation_plan,
+    cost_estimate: cost,
+  };
+}
+
+async function mockTradeCumulusVariationPath(
+  page: Parameters<typeof mockCloudChamberApis>[0],
+  options: { failPackage?: boolean } = {},
+) {
+  await mockTradeCumulusWorld(page);
+  let completed = false;
+  const variation = {
+    ...worldBaselineSimulation,
+    simulation_id: "trade_cumulus_direct_moisture_abcd1234",
+    display_name: "Direct Moisture Target",
+    role: "variation",
+    result_id: "result-trade-direct-moisture",
+    run_id: "trade-direct-moisture-run",
+    parent_simulation_id: worldBaselineSimulation.simulation_id,
+    recipe_contract_version: "1",
+    relationship_classification: "controlled_physical_variation",
+    can_create_variation: true,
+    parent_eligibility_reason: null,
+    attempt_count: 1,
+    compare_suggestions: [
+      {
+        comparison_id: "trade_cumulus_direct_moisture_parent",
+        display_name: "Direct Moisture Target versus Canonical BOMEX Baseline",
+        target_simulation_id: worldBaselineSimulation.simulation_id,
+      },
+    ],
+    configuration_difference_from_reference: [
+      {
+        path: "scientific_design.controls.surface_moisture_flux_g_kg_m_s",
+        label: "Surface moisture flux",
+        category: "atmospheric",
+        left_value: 0.052,
+        right_value: 0.09,
+        units: "g/kg m/s",
+        material: true,
+      },
+    ],
+  };
+  await page.unroute("**/api/worlds/trade-cumulus");
+  await page.route("**/api/worlds/trade-cumulus", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...tradeCumulusWorld,
+        reference_simulation: { ...worldBaselineSimulation, can_create_variation: true },
+        simulations: [
+          { ...worldBaselineSimulation, can_create_variation: true },
+          { ...worldMoreMoistureSimulation, can_create_variation: true },
+          ...(completed ? [variation] : []),
+        ],
+      }),
+    }),
+  );
+  await page.unroute("**/api/worlds/trade-cumulus/compare**");
+  await page.route("**/api/worlds/trade-cumulus/compare**", (route) => {
+    const search = new URL(route.request().url()).searchParams;
+    const leftId = search.get("left_simulation_id") ?? worldBaselineSimulation.simulation_id;
+    const rightId = search.get("right_simulation_id") ?? variation.simulation_id;
+    const descriptors = [
+      compareTradeSimulation(worldBaselineSimulation, comparisonStory.baseline),
+      {
+        ...compareTradeSimulation(worldBaselineSimulation, comparisonStory.baseline),
+        simulation_id: variation.simulation_id,
+        display_name: variation.display_name,
+        role: "variation",
+        run_id: variation.run_id,
+        result_id: variation.result_id,
+        parent_simulation_id: worldBaselineSimulation.simulation_id,
+        lineage_state: "valid",
+      },
+    ];
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...tradeCumulusCompareDescriptor,
+        simulations: descriptors,
+        default_left_simulation_id: worldBaselineSimulation.simulation_id,
+        default_right_simulation_id: variation.simulation_id,
+        selected_left_simulation_id: leftId,
+        selected_right_simulation_id: rightId,
+        material_differences: variation.configuration_difference_from_reference,
+        compatibility: {
+          ...tradeCumulusCompareDescriptor.compatibility,
+          relationship:
+            "Direct Moisture Target is a controlled physical variation of Canonical BOMEX Baseline.",
+          controlled_pair_message:
+            "One material physical control changed while numerical and observation layers remain matched.",
+        },
+      }),
+    });
+  });
+  await page.route("**/api/worlds/trade-cumulus/variation-template**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        tradeVariationTemplate(
+          new URL(route.request().url()).searchParams.get("parent_simulation_id") ===
+            variation.simulation_id
+            ? variation
+            : worldBaselineSimulation,
+        ),
+      ),
+    }),
+  );
+  await page.route("**/api/worlds/trade-cumulus/variations/preview", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(tradeVariationPreview(route.request().postDataJSON())),
+    }),
+  );
+  await page.route("**/api/worlds/trade-cumulus/variations", (route) =>
+    route.fulfill({
+      status: options.failPackage ? 400 : 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        options.failPackage
+          ? { detail: "Variation package preflight failed." }
+          : {
+              simulation_id: variation.simulation_id,
+              run_id: variation.run_id,
+              manifest_path: "/mock/trade-direct-moisture/run_manifest.json",
+              package_dir: "/mock/trade-direct-moisture",
+              launch_review_snapshot_id: "trade-launch-review",
+              warnings: [],
+            },
+      ),
+    }),
+  );
+  await page.unroute("**/api/runs/queue");
+  await page.route("**/api/runs/queue", (route) => {
+    if (route.request().method() === "POST") completed = true;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        entries: [],
+        active_run_id: null,
+        queued_count: 0,
+        updated_at: "2026-07-28T18:00:00Z",
+      }),
+    });
+  });
+  await page.unroute("**/api/lifecycle");
+  await page.route("**/api/lifecycle", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        schema_version: "1",
+        generated_at: "2026-07-28T18:00:00Z",
+        records: completed
+          ? [
+              {
+                record_id: `simulation:trade_cumulus:${variation.simulation_id}`,
+                record_kind: "simulation",
+                owner_id: "trade_cumulus",
+                owner_label: "Trade Cumulus",
+                simulation_id: variation.simulation_id,
+                experiment_id: null,
+                world_id: "trade_cumulus",
+                recipe_id: "canonical_bomex_trade_cumulus",
+                recipe_version: "1",
+                parent_simulation_id: worldBaselineSimulation.simulation_id,
+                reference_simulation_id: worldBaselineSimulation.simulation_id,
+                display_name: variation.display_name,
+                question: "How does a direct moisture target change the cloud field?",
+                role: "variation",
+                case_id: "trade_cumulus_recipe_variation_v1",
+                differences: variation.configuration_difference_from_reference,
+                attempts: [
+                  {
+                    attempt_id: variation.run_id,
+                    run_id: variation.run_id,
+                    relationship: "initial",
+                    accepted_backing: true,
+                    manifest_path: "/mock/trade-direct-moisture/run_manifest.json",
+                    lifecycle_state: "completed",
+                    queue_state: null,
+                    product_state: "completed_cm1_result",
+                    validation_status: "valid",
+                    result_id: variation.result_id,
+                    output_artifact_count: 121,
+                    size_bytes: 2 * 1024 ** 3,
+                    retained_state: "retained",
+                    created_at: "2026-07-28T17:00:00Z",
+                    started_at: "2026-07-28T17:01:00Z",
+                    finished_at: "2026-07-28T17:25:00Z",
+                    updated_at: "2026-07-28T17:25:00Z",
+                    message: null,
+                    failure_reason: null,
+                  },
+                ],
+                facts: {
+                  scientific_work: "present",
+                  package: "present",
+                  attempt: "present",
+                  queue: "not_applicable",
+                  process: "passed",
+                  expected_output: "present",
+                  technical_integrity: "passed",
+                  ingest: "present",
+                  world_inspectability: "passed",
+                  simulation_availability: "present",
+                  parent_eligibility: "eligible",
+                  retained_assets: "present",
+                },
+                trust_state: "trusted",
+                caveats: [],
+                tags: ["controlled physical variation"],
+                notes: null,
+                lifecycle_label: "Available",
+                lifecycle_detail: "The Simulation is inspectable in Trade Cumulus.",
+                activity_group: "recently_completed",
+                in_activity: true,
+                created_at: "2026-07-28T17:00:00Z",
+                updated_at: "2026-07-28T17:25:00Z",
+                size_bytes: 2 * 1024 ** 3,
+                dependencies: [],
+                actions: [
+                  {
+                    kind: "explore",
+                    label: "Explore",
+                    world_id: "trade_cumulus",
+                    simulation_id: variation.simulation_id,
+                    result_id: variation.result_id,
+                  },
+                ],
+              },
+            ]
+          : [],
+        warnings: [],
+      }),
+    }),
+  );
+}
+
 test.describe("mocked smoke: Build, Results, Explore path", () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -2294,5 +2759,90 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
     expect(focusedHeatmapBox?.height ?? 0).toBeGreaterThan(280);
     await page.getByRole("button", { name: "Restore slice viewer" }).click();
     await expect(notebook).toBeAttached();
+  });
+
+  test("Trade Cumulus direct-value variation reaches Activity, Explore, Compare, and reuse", async ({
+    page,
+  }) => {
+    await mockTradeCumulusVariationPath(page);
+    await gotoApp(page);
+    await page.getByRole("button", { name: "Enter Trade Cumulus" }).click();
+    await page
+      .getByRole("navigation", { name: "Trade Cumulus sections" })
+      .getByRole("button", { name: "Create Variation", exact: true })
+      .click();
+
+    await expect(page.getByRole("heading", { name: "Atmosphere and forcing" })).toBeVisible();
+    await expect(page.getByLabel("Moisture flux exact value")).toHaveValue("0.052");
+    await expect(page.getByText("0 material changes")).toBeVisible();
+
+    await page.getByLabel("Moisture flux exact value").fill("0.09");
+    await page.getByLabel("Sensible heat flux exact value").fill("0.012");
+    await expect(page.getByText("2 material changes")).toBeVisible();
+    await expect(page.getByText("Multi-factor physical variation")).toBeVisible();
+
+    await page.getByRole("radio", { name: /Standard/ }).check();
+    await expect(page.getByText("Mixed physical and numerical variation")).toBeVisible();
+    await page.getByLabel("Inversion base exact value").fill("2800");
+    await expect(page.getByRole("alert")).toContainText(
+      "requested inversion does not fit the model top",
+    );
+    await expect(page.getByRole("button", { name: "Package variation" })).toBeDisabled();
+
+    await page.getByRole("button", { name: "Restore parent" }).click();
+    await page.getByRole("radio", { name: /Extended/ }).check();
+    await expect(page.getByText("This profile is uncharacterized.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Package variation" })).toBeDisabled();
+
+    await page.getByRole("button", { name: "Restore parent" }).click();
+    await page.getByLabel("Variation name").fill("Direct Moisture Target");
+    await page.getByLabel("Moisture flux exact value").fill("0.09");
+    await expect(page.getByText("Controlled physical variation")).toBeVisible();
+    await page.getByRole("button", { name: "Package variation" }).click();
+    await expect(
+      page.getByText("Direct Moisture Target is packaged. It has not been queued."),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Queue CM1" }).click();
+
+    await expect(page.getByRole("heading", { name: "Current work" })).toBeVisible();
+    await expect(page.locator("article", { hasText: "Direct Moisture Target" })).toBeVisible();
+    await page.getByRole("button", { name: "Simulations" }).click();
+    const descendant = page.locator("article", { hasText: "Direct Moisture Target" });
+    await expect(descendant.getByRole("button", { name: "Explore" })).toBeEnabled();
+    await expect(descendant.getByRole("button", { name: "Compare" })).toBeEnabled();
+    await expect(descendant.getByRole("button", { name: "Create variation" })).toBeEnabled();
+
+    await descendant.getByRole("button", { name: "Compare" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Review the two Simulations before loading frames" }),
+    ).toBeVisible();
+    await expect(page.getByText("Controlled pair")).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Surface moisture flux" })).toBeVisible();
+    await page.getByRole("button", { name: "Back to Trade Cumulus" }).click();
+
+    await page.getByRole("button", { name: "Simulations" }).click();
+    await page
+      .locator("article", { hasText: "Direct Moisture Target" })
+      .getByRole("button", { name: "Create variation" })
+      .click();
+    await expect(page.getByLabel("Parent Simulation")).toHaveValue(
+      "trade_cumulus_direct_moisture_abcd1234",
+    );
+  });
+
+  test("Trade Cumulus keeps a package failure inside Create Variation", async ({ page }) => {
+    await mockTradeCumulusVariationPath(page, { failPackage: true });
+    await gotoApp(page);
+    await page.getByRole("button", { name: "Enter Trade Cumulus" }).click();
+    await page
+      .getByRole("navigation", { name: "Trade Cumulus sections" })
+      .getByRole("button", { name: "Create Variation", exact: true })
+      .click();
+    await page.getByLabel("Variation name").fill("Rejected direct target");
+    await page.getByLabel("Moisture flux exact value").fill("0.09");
+    await page.getByRole("button", { name: "Package variation" }).click();
+
+    await expect(page.getByRole("alert")).toHaveText("Variation package preflight failed.");
+    await expect(page.getByRole("heading", { name: "Atmosphere and forcing" })).toBeVisible();
   });
 });

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { LifecycleWorkspace, type LifecycleRecord } from "./LifecycleWorkspace";
 import { SavedComparisonsCollection } from "./SavedComparisons";
+import { TradeCumulusVariationEditor } from "./TradeCumulusVariationEditor";
 
 export type ConfigurationDifference = {
   path: string;
@@ -23,6 +24,7 @@ export type SimulationRecord = {
   result_id: string;
   run_id: string;
   source_recipe_id: string | null;
+  recipe_contract_version?: string | null;
   parent_simulation_id: string | null;
   reference_simulation_id: string | null;
   technical_state: "available" | "missing" | "conflict";
@@ -36,6 +38,15 @@ export type SimulationRecord = {
   }>;
   configuration_difference_from_reference: ConfigurationDifference[] | null;
   lineage_state: "known" | "valid" | "unlineaged" | "invalid";
+  relationship_classification?: string | null;
+  run_profile_id?: string | null;
+  scientific_design?: Record<string, unknown> | null;
+  numerical_realization?: Record<string, unknown> | null;
+  observation_plan?: Record<string, unknown> | null;
+  configuration?: Record<string, unknown> | null;
+  can_create_variation?: boolean;
+  parent_eligibility_reason?: string | null;
+  attempt_count?: number;
   created_at: string | null;
   completed_at: string | null;
 };
@@ -83,6 +94,7 @@ export type TradeCumulusWorldSection =
   | "comparisons"
   | "saved_comparisons"
   | "activity"
+  | "create"
   | "history";
 
 export function TradeCumulusWorld({
@@ -109,6 +121,7 @@ export function TradeCumulusWorld({
   const [world, setWorld] = useState<TradeCumulusWorldDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [parentSimulationId, setParentSimulationId] = useState<string | null>(null);
 
   const loadWorld = useCallback(async () => {
     setLoading(true);
@@ -118,7 +131,9 @@ export function TradeCumulusWorld({
       if (!response.ok) {
         throw new Error(await responseMessage(response, "Trade Cumulus is unavailable."));
       }
-      setWorld(validateWorldDetail(await response.json()));
+      const payload = validateWorldDetail(await response.json());
+      setWorld(payload);
+      setParentSimulationId((current) => current ?? payload.reference_simulation.simulation_id);
     } catch (caught) {
       setWorld(null);
       setError(caught instanceof Error ? caught.message : "Trade Cumulus is unavailable.");
@@ -138,6 +153,12 @@ export function TradeCumulusWorld({
   function changeSection(target: TradeCumulusWorldSection) {
     if (controlledSection === undefined) setInternalSection(target);
     onSectionChange?.(target);
+  }
+
+  function openVariation(parentId: string | null) {
+    if (!parentId) return;
+    setParentSimulationId(parentId);
+    changeSection("create");
   }
 
   if (loading) {
@@ -188,6 +209,7 @@ export function TradeCumulusWorld({
             "comparisons",
             "saved_comparisons",
             "activity",
+            "create",
             "history",
           ] as TradeCumulusWorldSection[]
         ).map((item) => (
@@ -208,6 +230,7 @@ export function TradeCumulusWorld({
           onExploreSimulation={onExploreSimulation}
           onOpenFeaturedComparison={onOpenFeaturedComparison}
           onOpenActivity={() => changeSection("activity")}
+          onCreateVariation={() => openVariation(world.reference_simulation.simulation_id)}
         />
       )}
       {section === "simulations" && (
@@ -215,6 +238,7 @@ export function TradeCumulusWorld({
           world={world}
           onExploreSimulation={onExploreSimulation}
           onOpenFeaturedComparison={onOpenFeaturedComparison}
+          onCreateVariation={openVariation}
         />
       )}
       {section === "saved_views" && <SavedViewsSection />}
@@ -240,7 +264,21 @@ export function TradeCumulusWorld({
               const simulation = simulationForLifecycleRecord(world, record);
               if (simulation) onOpenFeaturedComparison(simulation);
             }}
-            onOpenRunControls={() => changeSection("activity")}
+            onOpenRunControls={(record) =>
+              openVariation(record.parent_simulation_id ?? world.reference_simulation.simulation_id)
+            }
+          />
+        </section>
+      )}
+      {section === "create" && parentSimulationId && (
+        <section className="world-section" aria-label="Create variation">
+          <TradeCumulusVariationEditor
+            world={world}
+            initialParentSimulationId={parentSimulationId}
+            onCreated={async () => {
+              await loadWorld();
+              changeSection("activity");
+            }}
           />
         </section>
       )}
@@ -265,11 +303,13 @@ function Overview({
   onExploreSimulation,
   onOpenFeaturedComparison,
   onOpenActivity,
+  onCreateVariation,
 }: {
   world: TradeCumulusWorldDetail;
   onExploreSimulation: (simulation: SimulationRecord) => void;
   onOpenFeaturedComparison: (simulation?: SimulationRecord) => void;
   onOpenActivity: () => void;
+  onCreateVariation: () => void;
 }) {
   const moreMoisture = world.simulations.find(
     (simulation) =>
@@ -310,6 +350,19 @@ function Overview({
         )}
       </div>
 
+      <section className="world-create-variation-callout">
+        <div>
+          <p className="eyebrow">Experiment</p>
+          <h3>Design a related atmosphere</h3>
+          <p>
+            Change physical targets, inspect the generated profile, and package a new Simulation.
+          </p>
+        </div>
+        <button type="button" onClick={onCreateVariation}>
+          Create Variation
+        </button>
+      </section>
+
       <section className="world-lab-summary" aria-label="Trade Cumulus Activity status">
         <div>
           <p className="eyebrow">Activity</p>
@@ -328,10 +381,12 @@ function SimulationsSection({
   world,
   onExploreSimulation,
   onOpenFeaturedComparison,
+  onCreateVariation,
 }: {
   world: TradeCumulusWorldDetail;
   onExploreSimulation: (simulation: SimulationRecord) => void;
   onOpenFeaturedComparison: (simulation?: SimulationRecord) => void;
+  onCreateVariation: (simulationId: string | null) => void;
 }) {
   return (
     <section className="world-section" aria-labelledby="world-simulations-title">
@@ -353,6 +408,7 @@ function SimulationsSection({
             comparisonAvailable={world.featured_comparison.open_available}
             onExplore={onExploreSimulation}
             onCompare={() => onOpenFeaturedComparison(simulation)}
+            onCreateVariation={() => onCreateVariation(simulation.simulation_id)}
           />
         ))}
       </div>
@@ -365,11 +421,13 @@ function SimulationCard({
   comparisonAvailable,
   onExplore,
   onCompare,
+  onCreateVariation,
 }: {
   simulation: SimulationRecord;
   comparisonAvailable: boolean;
   onExplore: (simulation: SimulationRecord) => void;
   onCompare: () => void;
+  onCreateVariation?: () => void;
 }) {
   const differences = simulation.configuration_difference_from_reference ?? [];
   const materialDifferences = differences.filter((difference) => difference.material);
@@ -423,6 +481,25 @@ function SimulationCard({
             <dt>Runtime integrity</dt>
             <dd>{trustLabel(simulation.technical_trust_state)}</dd>
           </div>
+          {simulation.source_recipe_id && (
+            <div>
+              <dt>Recipe</dt>
+              <dd>
+                {simulation.source_recipe_id.replaceAll("_", " ")}
+                {simulation.recipe_contract_version
+                  ? ` · contract ${simulation.recipe_contract_version}`
+                  : ""}
+              </dd>
+            </div>
+          )}
+          <div>
+            <dt>Parent eligibility</dt>
+            <dd>
+              {simulation.can_create_variation
+                ? "Eligible"
+                : (simulation.parent_eligibility_reason ?? "Not eligible")}
+            </dd>
+          </div>
         </dl>
       </details>
       <div className="simulation-actions">
@@ -436,6 +513,11 @@ function SimulationCard({
         {comparisonAvailable && simulation.compare_suggestions.length > 0 && (
           <button type="button" className="secondary-button" onClick={onCompare}>
             Compare
+          </button>
+        )}
+        {simulation.can_create_variation && onCreateVariation && (
+          <button type="button" className="secondary-button" onClick={onCreateVariation}>
+            Create variation
           </button>
         )}
       </div>
@@ -552,6 +634,8 @@ function isSimulation(value: unknown): value is SimulationRecord {
     ["available", "missing", "conflict"].includes(String(value.technical_state)) &&
     typeof value.technical_state_message === "string" &&
     typeof value.explore_available === "boolean" &&
+    (value.can_create_variation === undefined || typeof value.can_create_variation === "boolean") &&
+    (value.attempt_count === undefined || typeof value.attempt_count === "number") &&
     Array.isArray(value.compare_suggestions) &&
     (value.configuration_difference_from_reference === null ||
       (Array.isArray(value.configuration_difference_from_reference) &&
@@ -629,6 +713,7 @@ function sectionLabel(section: TradeCumulusWorldSection): string {
     comparisons: "Comparisons",
     saved_comparisons: "Saved Comparisons",
     activity: "Activity",
+    create: "Create Variation",
     history: "History",
   }[section];
 }

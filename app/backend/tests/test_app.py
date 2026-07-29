@@ -44,9 +44,39 @@ from cloud_chamber.trade_cumulus_comparison_story import (
     TradeCumulusComparisonStoryConflict,
     TradeCumulusComparisonStoryNotFound,
 )
+from cloud_chamber.trade_cumulus_recipes import (
+    TradeCumulusControls,
+)
+from cloud_chamber.trade_cumulus_variations import TradeCumulusVariationError
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BASELINE_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/baseline-shallow-cumulus.json"
+
+
+def test_trade_cumulus_package_reports_preflight_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cloud_chamber.app.create_trade_cumulus_variation",
+        lambda _settings, _request: (_ for _ in ()).throw(
+            TradeCumulusVariationError("Variation package preflight failed.")
+        ),
+    )
+    monkeypatch.setattr("cloud_chamber.app.load_settings", lambda: SimpleNamespace())
+
+    response = TestClient(app).post(
+        "/api/worlds/trade-cumulus/variations",
+        json={
+            "parent_simulation_id": "trade_cumulus_canonical_bomex",
+            "simulation_name": "Direct-value experiment",
+            "user_question": "How does the requested forcing change the cloud field?",
+            "run_profile_id": "trade_cumulus_standard_v1",
+            "controls": TradeCumulusControls().model_dump(mode="json"),
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Variation package preflight failed."}
 
 
 def test_mountain_waves_package_reports_clean_worktree_guard(

@@ -6,7 +6,7 @@ import json
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -1078,7 +1078,7 @@ def _variation_source(
     owner = _string(configuration.get("cloud_world_id"))
     simulation_id = _string(configuration.get("simulation_id"))
     display_name = _string(configuration.get("simulation_display_name"))
-    if not _is_current_mountain_waves_variation(
+    if not _is_current_world_variation(
         run,
         owner=owner,
         simulation_id=simulation_id,
@@ -1105,7 +1105,7 @@ def _variation_source(
     caveats = [*run.run_caveats, *(result.caveats if result is not None else [])]
     differences = _configuration_differences(configuration.get("configuration_difference"))
     return WorldLifecycleSource(
-        owner_id="mountain_waves",
+        owner_id=cast(WorldOwnerId, owner),
         simulation_id=simulation_id,
         display_name=display_name,
         role="variation",
@@ -1135,7 +1135,7 @@ def _variation_source(
     )
 
 
-def _is_current_mountain_waves_variation(
+def _is_current_world_variation(
     run: RunStorageEntry,
     *,
     owner: str | None,
@@ -1143,15 +1143,28 @@ def _is_current_mountain_waves_variation(
     display_name: str | None,
 ) -> bool:
     configuration = run.run_configuration or {}
+    if owner == "mountain_waves":
+        world_payload_valid = isinstance(configuration.get("mountain_waves_configuration"), dict)
+        case_valid = run.scenario_id in {VARIATION_CASE_ID, LEGACY_VARIATION_CASE_ID}
+        reference_valid = _string(configuration.get("reference_simulation_id")) in {
+            DRY_SIMULATION_ID,
+            MOIST_SIMULATION_ID,
+        }
+    elif owner == "trade_cumulus":
+        world_payload_valid = isinstance(configuration.get("trade_cumulus_configuration"), dict)
+        case_valid = run.scenario_id == "trade_cumulus_recipe_variation_v1"
+        reference_valid = (
+            _string(configuration.get("reference_simulation_id")) == REFERENCE_SIMULATION_ID
+        )
+    else:
+        return False
     return (
-        owner == "mountain_waves"
-        and run.scenario_id in {VARIATION_CASE_ID, LEGACY_VARIATION_CASE_ID}
+        case_valid
         and bool(simulation_id)
         and bool(display_name)
         and bool(_string(configuration.get("parent_simulation_id")))
-        and _string(configuration.get("reference_simulation_id"))
-        in {DRY_SIMULATION_ID, MOIST_SIMULATION_ID}
-        and isinstance(configuration.get("mountain_waves_configuration"), dict)
+        and reference_valid
+        and world_payload_valid
         and isinstance(configuration.get("configuration_difference"), dict)
         and bool(configuration.get("generated_input_sha256"))
         and isinstance(configuration.get("generated_input_sha256"), dict)

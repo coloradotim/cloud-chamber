@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 from cloud_chamber.run_manifest import RunManifest
 from cloud_chamber.settings import CloudChamberSettings
@@ -27,6 +28,14 @@ from cloud_chamber.surface_forcing import (
     CM1_SOURCE_CUSTOMIZATION_FILENAME,
     DIFFERENTIAL_SURFACE_FORCING_MODE,
     SURFACE_FORCING_PATCH_FILENAME,
+)
+from cloud_chamber.trade_cumulus_forcing import (
+    TRADE_CUMULUS_FORCING_CUSTOMIZATION_KIND,
+    TRADE_CUMULUS_FORCING_MARKER,
+    TRADE_CUMULUS_FORCING_TARGET,
+    TradeCumulusForcingError,
+    load_forcing_customization,
+    render_trade_cumulus_forcing_source,
 )
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
@@ -121,6 +130,20 @@ def prepare_cm1_source_customization(
             "hodograph_profile": customization["wind_profile"],
             "no_silent_hodograph_fallback": True,
         }
+    elif customization_kind == TRADE_CUMULUS_FORCING_CUSTOMIZATION_KIND:
+        customization = load_forcing_customization(customization_path)
+        target_relative_path = TRADE_CUMULUS_FORCING_TARGET
+        forcing = cast(dict[str, Any], customization["forcing"])
+
+        def patch_source(source: str) -> str:
+            return render_trade_cumulus_forcing_source(source, forcing)
+
+        expected_original_sha256 = str(customization["original_source_sha256"])
+        expected_patched_sha256 = str(customization["patched_source_sha256"])
+        status_details = {
+            "forcing": customization["forcing"],
+            "no_silent_forcing_fallback": True,
+        }
     else:
         raise CM1SourceCustomizationError(
             f"Unsupported CM1 source customization kind: {customization_kind}"
@@ -159,7 +182,7 @@ def prepare_cm1_source_customization(
             )
         try:
             patched_source = patch_source(original_source)
-        except StraightLineHodographError as exc:
+        except (StraightLineHodographError, TradeCumulusForcingError) as exc:
             raise CM1SourceCustomizationError(str(exc)) from exc
         patched_source_sha256 = _text_sha256(patched_source)
         if expected_patched_sha256 is not None and patched_source_sha256 != expected_patched_sha256:
@@ -348,6 +371,7 @@ def _fail_if_source_already_customized(cm1_root: Path) -> None:
     targets = (
         (SFCPHYS_TARGET, SFCPHYS_MARKER),
         (STRAIGHT_LINE_HODOGRAPH_TARGET, STRAIGHT_LINE_HODOGRAPH_MARKER),
+        (TRADE_CUMULUS_FORCING_TARGET, TRADE_CUMULUS_FORCING_MARKER),
     )
     for relative_path, marker in targets:
         path = cm1_root / relative_path

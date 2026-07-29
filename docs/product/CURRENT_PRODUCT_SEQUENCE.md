@@ -234,7 +234,8 @@ The approved sequence is:
 #394 — shared Activity and History — complete
 #436 — retained-asset inventory and prelaunch disk budget — complete
 #447 — shared variation envelope and Mountain Waves migration — complete
-#448 — queued after #447
+#448 — Trade Cumulus direct-value Recipe implementation — active; manual
+       review and bounded characterization authorization remain
 #449 — queued after #448
 ```
 
@@ -245,8 +246,11 @@ inventory, World run-cost profiles, immutable launch-review snapshots, and
 immediate prelaunch disk gate. Issue #447 adds the versioned shared variation
 envelope and migrates Mountain Waves to exact Dry Ridge Mechanics and Boulder
 Moist Wave Recipe payloads with separate preview, package, queue, availability,
-and parent-eligibility states. Issues #448 and #449 remain next. Their current
-bodies and latest explicit PM comments control exact scope when activated.
+and parent-eligibility states. Issue #448 is the active Trade Cumulus
+direct-value Recipe implementation. Its manual review and separately authorized
+bounded characterization gate remain before completion. Issue #449 remains
+queued after it. Their current bodies and latest explicit PM comments control
+exact scope when activated.
 
 Do not copy current Trade Cumulus or Mountain Waves controls into another World
 without its approved contract. The user may change several supported settings
