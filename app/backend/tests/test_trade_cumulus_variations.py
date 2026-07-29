@@ -7,7 +7,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from cloud_chamber.bomex_case import CM1Provenance
+from cloud_chamber.bomex_case import (
+    CM1_EXECUTABLE_SHA256,
+    CM1_SOURCE_MANIFEST_SHA256,
+    CM1Provenance,
+)
 from cloud_chamber.cloud_worlds import (
     PRESENTATION_BASELINE_RESULT_ID,
     PRESENTATION_BASELINE_RUN_ID,
@@ -250,6 +254,43 @@ def test_completed_retries_promote_one_backing_and_support_descendant_creation(
     assert child.controls.surface_moisture_flux_g_kg_m_s == 0.09
 
 
+def test_cross_parent_attempt_collision_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_parent(settings)
+    _patch_package_environment(tmp_path, monkeypatch)
+    request = _request(controls=TradeCumulusControls(surface_moisture_flux_g_kg_m_s=0.09))
+    first = create_trade_cumulus_variation(settings, request)
+    second = create_trade_cumulus_variation(settings, request)
+    second_path = Path(second.manifest_path)
+    second_manifest = load_run_manifest(second_path)
+    second_envelope = VariationEnvelope.model_validate(
+        second_manifest.run_configuration["variation_envelope"]
+    ).model_copy(update={"parent_simulation_id": "trade_cumulus_more_moisture"})
+    second_manifest.run_configuration["variation_envelope"] = second_envelope.model_dump(
+        mode="json"
+    )
+    second_manifest.run_configuration["parent_simulation_id"] = "trade_cumulus_more_moisture"
+    write_run_manifest(second_path, second_manifest)
+    _complete_package(first.manifest_path)
+    _complete_package(second.manifest_path)
+    monkeypatch.setattr(
+        "cloud_chamber.cloud_worlds.validate_trade_cumulus_variation_outputs",
+        lambda _manifest, _metadata: {"passed": True},
+    )
+
+    world = trade_cumulus_world_detail(settings)
+
+    assert all(record.simulation_id != first.simulation_id for record in world.simulations)
+    conflict = next(
+        record for record in world.lab_history if record.run_id in {first.run_id, second.run_id}
+    )
+    assert conflict.technical_state == "conflict"
+    assert "canonical intended Simulation contract" in conflict.technical_state_message
+
+
 def _request(*, controls: TradeCumulusControls) -> TradeCumulusVariationRequest:
     return TradeCumulusVariationRequest(
         parent_simulation_id=REFERENCE_SIMULATION_ID,
@@ -370,11 +411,11 @@ def _patch_package_environment(
         source_tree_path=str(source_root),
         run_directory_path=str(tmp_path / "cm1-run"),
         executable_path=str(tmp_path / "cm1.exe"),
-        executable_sha256="a" * 64,
+        executable_sha256=CM1_EXECUTABLE_SHA256,
         readme_namelist_path=str(reference_namelist),
         readme_namelist_sha256="b" * 64,
         source_manifest_method="test",
-        source_manifest_sha256="c" * 64,
+        source_manifest_sha256=CM1_SOURCE_MANIFEST_SHA256,
         critical_source_sha256={"src/base.F": "d" * 64},
         bundled_bomex_namelist_path=str(reference_namelist),
         bundled_bomex_namelist_sha256="e" * 64,

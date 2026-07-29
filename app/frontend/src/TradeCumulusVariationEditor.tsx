@@ -25,6 +25,22 @@ type NumericalRealization = {
   spacing: string;
   timestep_strategy: string;
   physics_source: string;
+  exact_domain: {
+    nx: number;
+    ny: number;
+    nz: number;
+    dx_m: number;
+    dy_m: number;
+    dz_m: number;
+    x_extent_m: number;
+    y_extent_m: number;
+    model_top_m: number;
+    x_min_m: number;
+    x_max_m: number;
+    y_min_m: number;
+    y_max_m: number;
+    timestep_seconds: number;
+  } | null;
 };
 
 type ObservationPlan = {
@@ -47,6 +63,7 @@ type RunCostProfile = {
   estimate_basis: "measured" | "scaled_from_measured" | "uncharacterized";
   confidence: string;
   scientific_limitations: string[];
+  required_post_run_reserve_bytes: number;
 };
 
 type RunCostEstimate = {
@@ -120,6 +137,7 @@ type VariationPreview = {
     cloud_layer_mean_v_m_s: number;
     initial_saturated_level_count: number;
     minimum_theta_gradient_k_km: number;
+    surface_heat_to_moisture_ratio_k_per_g_kg: number | null;
     labels: string[];
   };
   sounding_profile: ProfileLevel[];
@@ -127,6 +145,7 @@ type VariationPreview = {
   numerical_realization: NumericalRealization;
   observation_plan: ObservationPlan;
   cost_estimate: RunCostEstimate;
+  source_customization_required: boolean;
 };
 
 type VariationPackage = {
@@ -782,6 +801,9 @@ export function TradeCumulusVariationEditor({
                   <small>
                     {preview?.numerical_realization.spacing ??
                       selectedProfile.profile.numerical_realization.spacing}
+                    {" · "}
+                    {preview?.numerical_realization.timestep_strategy ??
+                      selectedProfile.profile.numerical_realization.timestep_strategy}
                   </small>
                 </div>
                 <div>
@@ -881,7 +903,7 @@ export function TradeCumulusVariationEditor({
 
               <DifferenceReview preview={preview} />
 
-              <CostReview estimate={preview.cost_estimate} />
+              <CostReview preview={preview} />
 
               {!packaged ? (
                 <button
@@ -1227,19 +1249,72 @@ function DifferenceReview({ preview }: { preview: VariationPreview }) {
   );
 }
 
-function CostReview({ estimate }: { estimate: RunCostEstimate }) {
+function CostReview({ preview }: { preview: VariationPreview }) {
+  const estimate = preview.cost_estimate;
+  const profile = estimate.profile;
+  const domain = preview.numerical_realization.exact_domain;
+  const observation = preview.observation_plan;
   return (
-    <section className="variation-budget">
+    <section className="variation-budget" aria-label="Launch facts">
+      <h4>Launch facts</h4>
       <dl>
         <div>
           <dt>Retained storage</dt>
-          <dd>{storageRange(estimate.profile)}</dd>
+          <dd>{storageRange(profile)}</dd>
+        </div>
+        <div>
+          <dt>Current free</dt>
+          <dd>{formatBytes(estimate.current_free_space_bytes)}</dd>
+        </div>
+        <div>
+          <dt>Required reserve</dt>
+          <dd>{formatBytes(profile.required_post_run_reserve_bytes)}</dd>
+        </div>
+        <div>
+          <dt>Total required</dt>
+          <dd>{formatBytes(estimate.required_free_space_bytes)}</dd>
         </div>
         <div>
           <dt>Free after high estimate</dt>
           <dd>{formatBytes(estimate.projected_free_space_bytes)}</dd>
         </div>
+        <div>
+          <dt>Domain and grid</dt>
+          <dd>{domain ? exactDomain(domain) : preview.numerical_realization.grid}</dd>
+        </div>
+        <div>
+          <dt>Timestep</dt>
+          <dd>{preview.numerical_realization.timestep_strategy}</dd>
+        </div>
+        <div>
+          <dt>Saved output</dt>
+          <dd>
+            Every {formatCadence(observation.output_cadence_seconds)} ·{" "}
+            {observation.expected_history_count ?? "Generated"} frames
+          </dd>
+        </div>
+        <div>
+          <dt>Surface exchange</dt>
+          <dd>{surfaceExchangeBalance(preview)}</dd>
+        </div>
       </dl>
+      <div className="variation-retained-fields">
+        <strong>Retained fields</strong>
+        <span>{observation.retained_field_inventory.join(", ")}</span>
+      </div>
+      <div className="variation-evidence-basis">
+        <strong>Evidence</strong>
+        <span>{profile.confidence}</span>
+        {profile.scientific_limitations.map((limitation) => (
+          <span key={limitation}>{limitation}</span>
+        ))}
+      </div>
+      {preview.source_customization_required && (
+        <p className="variation-source-build-note">
+          This forcing change stages an isolated CM1 source build. A second disk gate runs after the
+          build and immediately before CM1 starts.
+        </p>
+      )}
       <p className={estimate.disposition === "passes" ? "" : "blocked"}>
         {estimate.disposition_reason}
       </p>
@@ -1310,6 +1385,24 @@ function storageRange(profile: RunCostProfile): string {
   return `${formatBytes(profile.expected_size_min_bytes)}–${formatBytes(
     profile.expected_size_max_bytes,
   )}`;
+}
+
+function exactDomain(domain: NonNullable<NumericalRealization["exact_domain"]>): string {
+  return `${domain.nx} × ${domain.ny} × ${domain.nz} · ${formatDistance(
+    domain.x_extent_m,
+  )} × ${formatDistance(domain.y_extent_m)} × ${formatDistance(domain.model_top_m)}`;
+}
+
+function formatCadence(seconds: number | null): string {
+  if (seconds === null) return "generated cadence";
+  return seconds >= 60 && seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds} s`;
+}
+
+function surfaceExchangeBalance(preview: VariationPreview): string {
+  const ratio = preview.diagnostics.surface_heat_to_moisture_ratio_k_per_g_kg;
+  return ratio === null
+    ? "Moisture flux is zero; ratio undefined"
+    : `${formatSigned(ratio, 3)} K per g/kg`;
 }
 
 function formatDuration(seconds: number | null): string {

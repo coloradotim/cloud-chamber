@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,14 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from cloud_chamber.bomex_case import (
+    CM1_EXECUTABLE_SHA256,
+    CM1_SOURCE_MANIFEST_SHA256,
+    CRITICAL_SOURCE_HASHES,
+)
+from cloud_chamber.cm1_source_customization import (
+    CUSTOM_EXECUTABLE_FILENAME,
+)
 from cloud_chamber.result_ingest import ResultMetadata
 from cloud_chamber.run_manifest import (
     AppMetadata,
@@ -23,6 +32,11 @@ from cloud_chamber.run_manifest import (
     ScenarioReference,
     UserMetadata,
     ValidationStatus,
+)
+from cloud_chamber.trade_cumulus_forcing import (
+    TRADE_CUMULUS_FORCING_CUSTOMIZATION_KIND,
+    TRADE_CUMULUS_FORCING_SCHEMA_VERSION,
+    TRADE_CUMULUS_FORCING_TARGET,
 )
 from cloud_chamber.trade_cumulus_output_validation import (
     TradeCumulusOutputValidationError,
@@ -77,7 +91,16 @@ def test_valid_output_is_cached_and_cloud_free_response_is_available(
         ("missing_w", "Required native field w is absent"),
         ("wrong_ql_units", "unsupported units"),
         ("nonfinite_w", "contains nonfinite values"),
-        ("wrong_time", "reviewed output cadence"),
+        ("wrong_grid", "reviewed grid"),
+        ("wrong_spacing", "reviewed spacing"),
+        ("wrong_extent", "reviewed domain bounds"),
+        ("wrong_top", "reviewed model top"),
+        ("wrong_start", "exact reviewed timeline"),
+        ("wrong_time", "exact reviewed timeline"),
+        ("wrong_end", "exact reviewed timeline"),
+        ("escaped_output", "escapes the accepted attempt directory"),
+        ("wrong_surface_flux", "does not match the reviewed target"),
+        ("wrong_provenance", "approved source manifest"),
     ],
 )
 def test_invalid_native_output_fails_closed(
@@ -99,10 +122,58 @@ def test_generated_input_tampering_fails_before_output_promotion(tmp_path: Path)
         validate_trade_cumulus_variation_outputs(manifest, metadata)
 
 
+def test_forcing_modified_output_binds_package_build_executable_and_readback(
+    tmp_path: Path,
+) -> None:
+    manifest, metadata = _artifacts(tmp_path, forcing_customization=True)
+
+    report = validate_trade_cumulus_variation_outputs(manifest, metadata)
+
+    provenance = report["attempt_provenance"]
+    assert provenance["customization_kind"] == TRADE_CUMULUS_FORCING_CUSTOMIZATION_KIND
+    assert provenance["executable_kind"] == "isolated_forcing_customization"
+    assert provenance["forcing_readback"] == {
+        "vertical_motion_m_s": 0.01,
+        "temperature_tendency_k_day": 3.0,
+        "total_water_tendency_g_kg_day": -4.0,
+    }
+
+
+@pytest.mark.parametrize(
+    ("corruption", "message"),
+    [
+        ("wrong_applied_forcing", "does not match the reviewed forcing targets"),
+        ("wrong_execution_command", "did not use the applied custom executable"),
+        ("tampered_custom_executable", "hash does not match"),
+    ],
+)
+def test_forcing_modified_output_fails_closed_on_unbound_execution(
+    tmp_path: Path,
+    corruption: str,
+    message: str,
+) -> None:
+    manifest, metadata = _artifacts(tmp_path, forcing_customization=True)
+    status = dict(manifest.cm1_source_customization_status or {})
+    if corruption == "wrong_applied_forcing":
+        status["forcing"] = {
+            **dict(status["forcing"]),
+            "temperature_tendency_k_day": 2.0,
+        }
+        manifest.cm1_source_customization_status = status
+    elif corruption == "wrong_execution_command":
+        manifest.execution.command = ["/approved/canonical/cm1.exe"]
+    else:
+        Path(str(status["custom_executable"])).write_bytes(b"tampered executable")
+
+    with pytest.raises(TradeCumulusOutputValidationError, match=message):
+        validate_trade_cumulus_variation_outputs(manifest, metadata)
+
+
 def _artifacts(
     tmp_path: Path,
     *,
     corruption: str | None = None,
+    forcing_customization: bool = False,
 ) -> tuple[RunManifest, ResultMetadata]:
     run_dir = tmp_path / "runs" / "trade-output-validation"
     run_dir.mkdir(parents=True)
@@ -112,28 +183,122 @@ def _artifacts(
     namelist.write_text("isnd = 7,\n")
     sounding.write_text("1015.0 298.7 17.0\n0.0 298.7 17.0 -8.75 0.0\n")
     checklist.write_text("{}\n")
+    controls = default_controls()
+    customization_path: Path | None = None
+    customization_status: dict[str, Any] | None = None
+    execution_command: list[str] = []
+    if forcing_customization:
+        controls = controls.model_copy(
+            update={
+                "large_scale_vertical_motion_m_s": 0.01,
+                "temperature_tendency_k_day": 3.0,
+                "total_water_tendency_g_kg_day": -4.0,
+            }
+        )
+        forcing = {
+            "vertical_motion_m_s": 0.01,
+            "temperature_tendency_k_day": 3.0,
+            "total_water_tendency_g_kg_day": -4.0,
+        }
+        customization_path = run_dir / "trade_cumulus_forcing_customization.json"
+        customization_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": TRADE_CUMULUS_FORCING_SCHEMA_VERSION,
+                    "customization_kind": TRADE_CUMULUS_FORCING_CUSTOMIZATION_KIND,
+                    "target": str(TRADE_CUMULUS_FORCING_TARGET),
+                    "original_source_sha256": CRITICAL_SOURCE_HASHES[
+                        str(TRADE_CUMULUS_FORCING_TARGET)
+                    ],
+                    "patched_source_sha256": "d" * 64,
+                    "forcing": forcing,
+                }
+            )
+        )
+        build_root = tmp_path / "cm1_source_builds" / "fixture-build"
+        build_root.mkdir(parents=True)
+        executable = run_dir / CUSTOM_EXECUTABLE_FILENAME
+        executable.write_bytes(b"custom executable")
+        executable_sha256 = hashlib.sha256(executable.read_bytes()).hexdigest()
+        execution_command = [str(executable)]
+        customization_status = {
+            "schema_version": "cm1_source_customization_status_v1",
+            "customization_kind": TRADE_CUMULUS_FORCING_CUSTOMIZATION_KIND,
+            "run_id": "trade-output-validation",
+            "customization_manifest": str(customization_path),
+            "original_target_sha256": CRITICAL_SOURCE_HASHES[str(TRADE_CUMULUS_FORCING_TARGET)],
+            "patched_target_sha256": "d" * 64,
+            "patched_files": [str(TRADE_CUMULUS_FORCING_TARGET)],
+            "source_restored_after_build": "not_modified_isolated_build_tree",
+            "build_command": ["make"],
+            "build_root": str(build_root),
+            "custom_executable": str(executable),
+            "custom_executable_sha256": executable_sha256,
+            "forcing": forcing,
+            "no_silent_forcing_fallback": True,
+        }
+    generated_paths = [namelist, sounding, checklist]
+    if customization_path is not None:
+        generated_paths.append(customization_path)
     generated_hashes = {
-        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in (namelist, sounding, checklist)
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in generated_paths
     }
 
     paths: list[Path] = []
-    for index, time_seconds in enumerate((0.0, 60.0, 120.0), start=1):
-        path = run_dir / f"cm1out_{index:06d}.nc"
+    times = [0.0, 60.0, 120.0]
+    if corruption == "wrong_start":
+        times[0] = 1.0
+    elif corruption == "wrong_time":
+        times[1] = 61.0
+    elif corruption == "wrong_end":
+        times[2] = 121.0
+    for index, time_seconds in enumerate(times, start=1):
+        path = (
+            tmp_path / f"escaped_cm1out_{index:06d}.nc"
+            if corruption == "escaped_output" and index == 2
+            else run_dir / f"cm1out_{index:06d}.nc"
+        )
         _write_history(
             path,
-            time_seconds=(90.0 if corruption == "wrong_time" and index == 2 else time_seconds),
+            time_seconds=time_seconds,
             missing_w=corruption == "missing_w" and index == 2,
             wrong_ql_units=corruption == "wrong_ql_units" and index == 2,
             nonfinite_w=corruption == "nonfinite_w" and index == 2,
+            wrong_grid=corruption == "wrong_grid" and index == 2,
+            wrong_spacing=corruption == "wrong_spacing" and index == 2,
+            wrong_extent=corruption == "wrong_extent" and index == 2,
+            wrong_top=corruption == "wrong_top" and index == 2,
+            wrong_surface_flux=corruption == "wrong_surface_flux" and index == 2,
         )
         paths.append(path)
 
     scientific = {
-        "controls": default_controls().model_dump(mode="json"),
+        "controls": controls.model_dump(mode="json"),
         "fixed_assumptions": {"physics": "nonprecipitating"},
     }
-    numerical = {"grid": "fixture"}
+    numerical = {
+        "domain": "200 m × 200 m × 200 m",
+        "grid": "2 × 2 × 2",
+        "spacing": "100 × 100 × 100 m",
+        "timestep_strategy": "target 1 s",
+        "physics_source": "test fixture",
+        "exact_domain": {
+            "nx": 2,
+            "ny": 2,
+            "nz": 2,
+            "dx_m": 100.0,
+            "dy_m": 100.0,
+            "dz_m": 100.0,
+            "x_extent_m": 200.0,
+            "y_extent_m": 200.0,
+            "model_top_m": 200.0,
+            "x_min_m": -100.0,
+            "x_max_m": 100.0,
+            "y_min_m": -100.0,
+            "y_max_m": 100.0,
+            "timestep_seconds": 1.0,
+        },
+    }
     identity = canonical_payload_sha256(
         {"scientific_design": scientific, "numerical_realization": numerical}
     )
@@ -158,6 +323,7 @@ def _artifacts(
                     "qv",
                     "th",
                     "prs",
+                    "rho",
                     "u",
                     "v",
                     "w",
@@ -171,7 +337,7 @@ def _artifacts(
                 ],
             }
         ),
-        world_payload={"controls": default_controls().model_dump(mode="json")},
+        world_payload={"controls": controls.model_dump(mode="json")},
         differences=[],
         relationship_classification="replicate_realization",
         run_profile_id="fixture",
@@ -202,9 +368,14 @@ def _artifacts(
             "variation_envelope": envelope.model_dump(mode="json"),
             "generated_input_sha256": generated_hashes,
             "cm1_provenance": {
-                "source_manifest_sha256": "a" * 64,
-                "executable_sha256": "b" * 64,
+                "source_manifest_sha256": (
+                    "0" * 64 if corruption == "wrong_provenance" else CM1_SOURCE_MANIFEST_SHA256
+                ),
+                "executable_sha256": CM1_EXECUTABLE_SHA256,
             },
+            "cm1_source_customization_kind": (
+                TRADE_CUMULUS_FORCING_CUSTOMIZATION_KIND if forcing_customization else None
+            ),
         },
         physical_question="Can retained output support Explore?",
         expected_diagnostics=[],
@@ -213,6 +384,9 @@ def _artifacts(
             manifest_path=str(manifest_path),
             namelist_input=str(namelist),
             input_sounding=str(sounding),
+            cm1_source_customization=(
+                str(customization_path) if customization_path is not None else None
+            ),
             runtime_file_checklist=[str(checklist)],
         ),
         runtime_paths=RuntimePaths(runtime_home=str(tmp_path)),
@@ -220,13 +394,19 @@ def _artifacts(
         lifecycle_state=LifecycleState.COMPLETED,
         validation_status=ValidationStatus.NEEDS_REVIEW,
         provenance=ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
-        execution=ExecutionMetadata(started_at=now, finished_at=now, exit_code=0),
+        execution=ExecutionMetadata(
+            command=execution_command,
+            started_at=now,
+            finished_at=now,
+            exit_code=0,
+        ),
         outputs=OutputMetadata(netcdf_paths=[str(path) for path in paths]),
         required_output_fields=[
             "ql",
             "qv",
             "th",
             "prs",
+            "rho",
             "u",
             "v",
             "w",
@@ -241,6 +421,7 @@ def _artifacts(
         created_at=now,
         updated_at=now,
         user=UserMetadata(name="Output validation fixture"),
+        cm1_source_customization_status=customization_status,
     )
     metadata = ResultMetadata(
         result_id="result-trade-output-validation",
@@ -272,8 +453,14 @@ def _write_history(
     missing_w: bool,
     wrong_ql_units: bool,
     nonfinite_w: bool,
+    wrong_grid: bool,
+    wrong_spacing: bool,
+    wrong_extent: bool,
+    wrong_top: bool,
+    wrong_surface_flux: bool,
 ) -> None:
-    shape = (1, 2, 2, 2)
+    x_count = 3 if wrong_grid else 2
+    shape = (1, 2, 2, x_count)
     scalar = np.ones(shape, dtype=np.float32)
     cloud = np.zeros(shape, dtype=np.float32)
     vertical = scalar.copy()
@@ -284,15 +471,26 @@ def _write_history(
         "qv": (("time", "zh", "yh", "xh"), scalar * 0.01),
         "th": (("time", "zh", "yh", "xh"), scalar * 300),
         "prs": (("time", "zh", "yh", "xh"), scalar * 90_000),
+        "rho": (("time", "zh", "yh", "xh"), scalar * 1.2),
         "u": (("time", "zh", "yh", "xh"), scalar * -7),
         "v": (("time", "zh", "yh", "xh"), scalar * 1),
         "tke": (("time", "zh", "yh", "xh"), scalar),
         "kmh": (("time", "zh", "yh", "xh"), scalar),
         "khh": (("time", "zh", "yh", "xh"), scalar),
-        "cwp": (("time", "yh", "xh"), np.ones((1, 2, 2), dtype=np.float32)),
-        "hfx": (("time", "yh", "xh"), np.ones((1, 2, 2), dtype=np.float32)),
-        "qfx": (("time", "yh", "xh"), np.ones((1, 2, 2), dtype=np.float32)),
-        "rain": (("time", "yh", "xh"), np.zeros((1, 2, 2), dtype=np.float32)),
+        "cwp": (("time", "yh", "xh"), np.ones((1, 2, x_count), dtype=np.float32)),
+        "hfx": (
+            ("time", "yh", "xh"),
+            np.full(
+                (1, 2, x_count),
+                1.2 * 1_004.0 * (0.009 if wrong_surface_flux else 0.008),
+                dtype=np.float32,
+            ),
+        ),
+        "qfx": (
+            ("time", "yh", "xh"),
+            np.full((1, 2, x_count), 1.2 * 0.052 / 1_000.0, dtype=np.float32),
+        ),
+        "rain": (("time", "yh", "xh"), np.zeros((1, 2, x_count), dtype=np.float32)),
     }
     if not missing_w:
         data_vars["w"] = (("time", "zh", "yh", "xh"), vertical)
@@ -300,9 +498,25 @@ def _write_history(
         data_vars,
         coords={
             "time": ("time", [time_seconds], {"units": "seconds"}),
-            "zh": ("zh", [0.1, 0.2], {"units": "km"}),
-            "yh": ("yh", [-0.1, 0.1], {"units": "km"}),
-            "xh": ("xh", [-0.1, 0.1], {"units": "km"}),
+            "zh": (
+                "zh",
+                [0.1, 0.2] if wrong_top else [0.05, 0.15],
+                {"units": "km"},
+            ),
+            "yh": ("yh", [-0.05, 0.05], {"units": "km"}),
+            "xh": (
+                "xh",
+                (
+                    [-0.1, 0.0, 0.1]
+                    if wrong_grid
+                    else [-0.06, 0.06]
+                    if wrong_spacing
+                    else [0.05, 0.15]
+                    if wrong_extent
+                    else [-0.05, 0.05]
+                ),
+                {"units": "km"},
+            ),
         },
     )
     for field in ("ql", "qv"):
@@ -310,6 +524,9 @@ def _write_history(
     dataset["ql"].attrs["units"] = "g kg-1" if wrong_ql_units else "kg kg-1"
     dataset["th"].attrs["units"] = "K"
     dataset["prs"].attrs["units"] = "Pa"
+    dataset["rho"].attrs["units"] = "kg m-3"
+    dataset["hfx"].attrs["units"] = "W m-2"
+    dataset["qfx"].attrs["units"] = "kg m-2 s-1"
     for field in ("u", "v"):
         dataset[field].attrs["units"] = "m s-1"
     if "w" in dataset:

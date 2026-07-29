@@ -25,6 +25,11 @@ from cloud_chamber.generated_input_identity import (
     verify_generated_input_identity,
 )
 from cloud_chamber.pre_run_validation import report_blocks_execution
+from cloud_chamber.run_cost import (
+    ImmediatePrelaunchCheck,
+    LaunchBudgetError,
+    preflight_manifest_launch_budget,
+)
 from cloud_chamber.run_manifest import (
     ExecutionMetadata,
     LifecycleState,
@@ -76,6 +81,7 @@ class RunStatus:
     stdout_log: Path
     stderr_log: Path
     exit_code: int | None
+    launch_budget_preflight_check: ImmediatePrelaunchCheck | None = None
 
 
 @dataclass
@@ -208,6 +214,19 @@ class LocalRunManager:
             if source_customization is not None
             else None
         )
+        snapshot_value = manifest.run_configuration.get("launch_review_snapshot_id")
+        snapshot_id = snapshot_value if isinstance(snapshot_value, str) else None
+        try:
+            launch_budget_preflight_check = preflight_manifest_launch_budget(
+                self._settings,
+                manifest=manifest,
+                snapshot_id=snapshot_id,
+            )
+        except LaunchBudgetError as exc:
+            raise LocalRunManagerError(
+                "Final disk gate failed after source staging and before CM1 process creation: "
+                + str(exc)
+            ) from exc
         command = [str(executable)]
         log_dir = run_dir / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -262,7 +281,11 @@ class LocalRunManager:
                         "CM1 started, but neither process cleanup nor durable Running-state "
                         f"tracking succeeded: {tracking_exc}"
                     ) from exc
-                return _status_from_manifest(running, manifest_path)
+                return _status_from_manifest(
+                    running,
+                    manifest_path,
+                    launch_budget_preflight_check=launch_budget_preflight_check,
+                )
             self._close_active()
             try:
                 write_run_manifest(manifest_path, manifest)
@@ -275,7 +298,11 @@ class LocalRunManager:
                 "CM1 started, but durable Running-state tracking failed; the process was "
                 "terminated and the package remains retryable."
             ) from exc
-        return _status_from_manifest(running, manifest_path)
+        return _status_from_manifest(
+            running,
+            manifest_path,
+            launch_budget_preflight_check=launch_budget_preflight_check,
+        )
 
     def status(self, manifest_path: Path) -> RunStatus:
         self._refresh_active()
@@ -415,7 +442,12 @@ class LocalRunManager:
         )
 
 
-def _status_from_manifest(manifest: RunManifest, manifest_path: Path) -> RunStatus:
+def _status_from_manifest(
+    manifest: RunManifest,
+    manifest_path: Path,
+    *,
+    launch_budget_preflight_check: ImmediatePrelaunchCheck | None = None,
+) -> RunStatus:
     stdout_log = Path(manifest.execution.stdout_log or "")
     stderr_log = Path(manifest.execution.stderr_log or "")
     return RunStatus(
@@ -426,6 +458,7 @@ def _status_from_manifest(manifest: RunManifest, manifest_path: Path) -> RunStat
         stdout_log=stdout_log,
         stderr_log=stderr_log,
         exit_code=manifest.execution.exit_code,
+        launch_budget_preflight_check=launch_budget_preflight_check,
     )
 
 

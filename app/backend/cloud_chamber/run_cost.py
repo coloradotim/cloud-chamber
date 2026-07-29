@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import shutil
 from datetime import UTC, datetime
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from cloud_chamber.run_manifest import RunManifest
 from cloud_chamber.settings import CloudChamberSettings
@@ -29,6 +30,7 @@ TRADE_CUMULUS_RETAINED_FIELDS = (
     "qv",
     "th",
     "prs",
+    "rho",
     "u",
     "v",
     "w",
@@ -95,6 +97,49 @@ class NumericalRealization(BaseModel):
     spacing: str
     timestep_strategy: str
     physics_source: str
+    exact_domain: ExactNumericalDomain | None = None
+
+
+class ExactNumericalDomain(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    nx: int = Field(gt=0)
+    ny: int = Field(gt=0)
+    nz: int = Field(gt=0)
+    dx_m: float = Field(gt=0)
+    dy_m: float = Field(gt=0)
+    dz_m: float = Field(gt=0)
+    x_extent_m: float = Field(gt=0)
+    y_extent_m: float = Field(gt=0)
+    model_top_m: float = Field(gt=0)
+    x_min_m: float
+    x_max_m: float
+    y_min_m: float
+    y_max_m: float
+    timestep_seconds: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_geometry(self) -> ExactNumericalDomain:
+        expected = {
+            "x_extent_m": self.nx * self.dx_m,
+            "y_extent_m": self.ny * self.dy_m,
+            "model_top_m": self.nz * self.dz_m,
+            "x_bounds": self.x_max_m - self.x_min_m,
+            "y_bounds": self.y_max_m - self.y_min_m,
+        }
+        actual = {
+            "x_extent_m": self.x_extent_m,
+            "y_extent_m": self.y_extent_m,
+            "model_top_m": self.model_top_m,
+            "x_bounds": self.x_extent_m,
+            "y_bounds": self.y_extent_m,
+        }
+        if any(
+            not math.isclose(actual[key], value, rel_tol=0.0, abs_tol=1.0e-6)
+            for key, value in expected.items()
+        ):
+            raise ValueError("Exact numerical domain geometry is internally inconsistent.")
+        return self
 
 
 class ObservationPlan(BaseModel):
@@ -659,6 +704,7 @@ def profiles() -> list[RunCostProfile]:
             basis="scaled_from_measured",
             confidence="Scaled from measured six-hour lower-resolution runs.",
             limitation="Early response; not a full steady-period assessment.",
+            exact_domain=_exact_domain(64, 64, 75, 100.0, 100.0, 40.0, 3.0),
         ),
         _profile(
             world_id="trade_cumulus",
@@ -677,6 +723,7 @@ def profiles() -> list[RunCostProfile]:
             size=(int(1.6 * GIB), int(2.2 * GIB)),
             basis="scaled_from_measured",
             confidence="Scaled from measured lower-resolution runs.",
+            exact_domain=_exact_domain(64, 64, 75, 100.0, 100.0, 40.0, 3.0),
         ),
         _profile(
             world_id="trade_cumulus",
@@ -695,6 +742,7 @@ def profiles() -> list[RunCostProfile]:
             size=(int(2.5 * GIB), int(3.2 * GIB)),
             basis="measured",
             confidence="Measured near the Baseline and More Moisture reference runs.",
+            exact_domain=_exact_domain(64, 64, 75, 100.0, 100.0, 40.0, 3.0),
         ),
         _profile(
             world_id="trade_cumulus",
@@ -713,6 +761,15 @@ def profiles() -> list[RunCostProfile]:
             size=(int(9.08 * GIB), int(9.34 * GIB)),
             basis="measured",
             confidence="Measured retained presentation runs.",
+            exact_domain=_exact_domain(
+                96,
+                96,
+                100,
+                66.66666667,
+                66.66666667,
+                30.0,
+                2.0,
+            ),
         ),
         _profile(
             world_id="trade_cumulus",
@@ -732,6 +789,7 @@ def profiles() -> list[RunCostProfile]:
             basis="uncharacterized",
             confidence="Requires bounded characterization before launch.",
             limitation="Not an ordinary default.",
+            exact_domain=_exact_domain(128, 128, 75, 100.0, 100.0, 40.0, 3.0),
         ),
         _profile(
             world_id="mountain_waves",
@@ -975,6 +1033,7 @@ def _profile(
     basis: EstimateBasis,
     confidence: str,
     limitation: str | None = None,
+    exact_domain: ExactNumericalDomain | None = None,
 ) -> RunCostProfile:
     return RunCostProfile(
         world_id=world_id,
@@ -990,6 +1049,7 @@ def _profile(
             spacing=spacing,
             timestep_strategy=timestep,
             physics_source="Approved World Recipe",
+            exact_domain=exact_domain,
         ),
         observation_plan=ObservationPlan(
             duration_seconds=duration,
@@ -1008,6 +1068,35 @@ def _profile(
             "compression may change actual cost."
         ],
         scientific_limitations=[limitation] if limitation else [],
+    )
+
+
+def _exact_domain(
+    nx: int,
+    ny: int,
+    nz: int,
+    dx_m: float,
+    dy_m: float,
+    dz_m: float,
+    timestep_seconds: float,
+) -> ExactNumericalDomain:
+    x_extent_m = nx * dx_m
+    y_extent_m = ny * dy_m
+    return ExactNumericalDomain(
+        nx=nx,
+        ny=ny,
+        nz=nz,
+        dx_m=dx_m,
+        dy_m=dy_m,
+        dz_m=dz_m,
+        x_extent_m=x_extent_m,
+        y_extent_m=y_extent_m,
+        model_top_m=nz * dz_m,
+        x_min_m=-0.5 * x_extent_m,
+        x_max_m=0.5 * x_extent_m,
+        y_min_m=-0.5 * y_extent_m,
+        y_max_m=0.5 * y_extent_m,
+        timestep_seconds=timestep_seconds,
     )
 
 

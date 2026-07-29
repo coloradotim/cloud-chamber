@@ -217,6 +217,7 @@ class LocalRunQueueManager:
                 snapshot_id=snapshot_id,
             )
             status = self._run_manager.launch(Path(entry.manifest_path))
+            preflight_check = status.launch_budget_preflight_check or preflight_check
         except (LaunchBudgetError, LocalRunManagerError, OSError, RunManifestError) as exc:
             now = _now()
             entry.state = "launch_failed"

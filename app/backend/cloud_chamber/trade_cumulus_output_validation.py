@@ -15,8 +15,14 @@ from cloud_chamber.generated_input_identity import (
     verify_generated_input_identity,
 )
 from cloud_chamber.result_ingest import ResultMetadata
+from cloud_chamber.run_cost import ExactNumericalDomain
 from cloud_chamber.run_manifest import LifecycleState, RunManifest
-from cloud_chamber.variation_envelope import VariationEnvelope
+from cloud_chamber.trade_cumulus_attempt_provenance import (
+    TradeCumulusAttemptProvenanceError,
+    validate_trade_cumulus_attempt_provenance,
+)
+from cloud_chamber.trade_cumulus_recipes import TradeCumulusControls, normalize_controls
+from cloud_chamber.variation_envelope import VariationEnvelope, canonical_payload_sha256
 
 
 class TradeCumulusOutputValidationError(ValueError):
@@ -31,6 +37,9 @@ _REQUIRED_UNITS = {
     "qv": ("kg kg-1", "kg/kg", "kg kg^-1"),
     "th": ("k",),
     "prs": ("pa",),
+    "rho": ("kg m-3", "kg/m3", "kg/m^3", "kg m^-3"),
+    "hfx": ("w m-2", "w/m2", "w/m^2", "w m^-2"),
+    "qfx": ("kg m-2 s-1", "kg/m2/s", "kg/m^2/s", "kg m^-2 s^-1"),
     "u": ("m s-1", "m/s", "m s^-1"),
     "v": ("m s-1", "m/s", "m s^-1"),
     "w": ("m s-1", "m/s", "m s^-1"),
@@ -54,6 +63,7 @@ def validate_trade_cumulus_variation_outputs(
         metadata.updated_at.isoformat(),
         tuple(_path_fingerprint(path) for path in paths),
         tuple(_generated_input_fingerprints(manifest)),
+        canonical_payload_sha256(manifest.cm1_source_customization_status),
     )
     cached = _VALIDATION_CACHE.get(key)
     if cached is not None:
@@ -98,7 +108,14 @@ def _validate_uncached(
         ) from exc
 
     envelope = _variation_envelope(manifest)
+    numerical = _exact_numerical_domain(envelope)
+    controls = _retained_controls(envelope)
+    try:
+        provenance_report = validate_trade_cumulus_attempt_provenance(manifest)
+    except TradeCumulusAttemptProvenanceError as exc:
+        raise TradeCumulusOutputValidationError(str(exc)) from exc
     observation = envelope.observation_plan.payload
+    expected_duration = observation.get("duration_seconds")
     expected_count = observation.get("expected_history_count")
     expected_cadence = observation.get("output_cadence_seconds")
     expected_fields = observation.get("retained_field_inventory")
@@ -109,6 +126,23 @@ def _validate_uncached(
     if not isinstance(expected_cadence, int | float) or expected_cadence <= 0:
         raise TradeCumulusOutputValidationError(
             "The retained envelope lacks an exact output cadence."
+        )
+    if not isinstance(expected_duration, int | float) or expected_duration < 0:
+        raise TradeCumulusOutputValidationError(
+            "The retained envelope lacks an exact modeled duration."
+        )
+    expected_times = [float(index) * float(expected_cadence) for index in range(expected_count)]
+    if (
+        not math.isclose(
+            expected_times[-1],
+            float(expected_duration),
+            rel_tol=0.0,
+            abs_tol=_TIME_TOLERANCE_SECONDS,
+        )
+        or len(expected_times) != expected_count
+    ):
+        raise TradeCumulusOutputValidationError(
+            "The reviewed duration, cadence, and history count are inconsistent."
         )
     if not isinstance(expected_fields, list | tuple) or not all(
         isinstance(field, str) for field in expected_fields
@@ -133,7 +167,14 @@ def _validate_uncached(
     times: list[float] = []
     scalar_dimensions: tuple[str, str, str] | None = None
     resolved_fields: dict[str, str] = {}
+    run_dir = Path(manifest.generated_inputs.run_directory).expanduser().resolve()
+    surface_readbacks: list[dict[str, float]] = []
     for path in paths:
+        resolved_path = path.resolve()
+        if not resolved_path.is_relative_to(run_dir):
+            raise TradeCumulusOutputValidationError(
+                f"Required native history escapes the accepted attempt directory: {path.name}."
+            )
         if not path.is_file():
             raise TradeCumulusOutputValidationError(
                 f"Required native history is unavailable: {path.name}."
@@ -159,7 +200,8 @@ def _validate_uncached(
                 raise TradeCumulusOutputValidationError(
                     "Native histories do not share one scalar-grid dimension order."
                 )
-            _validate_coordinates(dataset, frame_dimensions, path)
+            _validate_coordinates(dataset, frame_dimensions, path, numerical)
+            surface_readbacks.append(_validate_surface_flux_readback(dataset, path, controls))
         finally:
             dataset.close()
 
@@ -173,15 +215,15 @@ def _validate_uncached(
         raise TradeCumulusOutputValidationError(
             "Modeled times must be unique and strictly increasing."
         )
-    for left, right in zip(times, times[1:], strict=False):
+    for actual, expected in zip(times, expected_times, strict=True):
         if not math.isclose(
-            right - left,
-            float(expected_cadence),
+            actual,
+            expected,
             rel_tol=0.0,
             abs_tol=_TIME_TOLERANCE_SECONDS,
         ):
             raise TradeCumulusOutputValidationError(
-                "Modeled times do not reproduce the reviewed output cadence."
+                "Modeled times do not reproduce the exact reviewed timeline."
             )
 
     return {
@@ -195,6 +237,9 @@ def _validate_uncached(
         "scalar_dimensions": list(scalar_dimensions or ()),
         "generated_input_hash_count": len(verified_inputs),
         "cloud_response_required": False,
+        "numerical_realization": numerical.model_dump(mode="json"),
+        "surface_flux_readback": surface_readbacks[-1],
+        "attempt_provenance": provenance_report,
     }
 
 
@@ -296,7 +341,31 @@ def _validate_coordinates(
     dataset: xr.Dataset,
     dimensions: tuple[str, str, str],
     path: Path,
+    numerical: ExactNumericalDomain,
 ) -> None:
+    expected = {
+        dimensions[0]: (
+            numerical.nz,
+            numerical.dz_m,
+            numerical.model_top_m,
+            0.0,
+            numerical.model_top_m,
+        ),
+        dimensions[1]: (
+            numerical.ny,
+            numerical.dy_m,
+            numerical.y_extent_m,
+            numerical.y_min_m,
+            numerical.y_max_m,
+        ),
+        dimensions[2]: (
+            numerical.nx,
+            numerical.dx_m,
+            numerical.x_extent_m,
+            numerical.x_min_m,
+            numerical.x_max_m,
+        ),
+    }
     for dimension in dimensions:
         if dimension not in dataset.coords:
             raise TradeCumulusOutputValidationError(
@@ -316,6 +385,138 @@ def _validate_coordinates(
             raise TradeCumulusOutputValidationError(
                 f"Native coordinate {dimension} in {path.name} lacks length units."
             )
+        values_m = values * 1_000.0 if units.startswith("km") else values
+        (
+            expected_count,
+            expected_spacing_m,
+            expected_extent_m,
+            expected_lower_edge_m,
+            expected_upper_edge_m,
+        ) = expected[dimension]
+        if values_m.size != expected_count:
+            raise TradeCumulusOutputValidationError(
+                f"Native coordinate {dimension} in {path.name} does not match the reviewed grid."
+            )
+        if values_m.size > 1 and not np.allclose(
+            np.diff(values_m),
+            expected_spacing_m,
+            rtol=0.0,
+            atol=max(1.0e-4, expected_spacing_m * 1.0e-5),
+        ):
+            raise TradeCumulusOutputValidationError(
+                f"Native coordinate {dimension} in {path.name} does not match reviewed spacing."
+            )
+        actual_extent_m = (
+            expected_spacing_m
+            if values_m.size == 1
+            else float(values_m[-1] - values_m[0] + expected_spacing_m)
+        )
+        if not math.isclose(
+            actual_extent_m,
+            expected_extent_m,
+            rel_tol=0.0,
+            abs_tol=max(1.0e-3, expected_spacing_m * 1.0e-4),
+        ):
+            raise TradeCumulusOutputValidationError(
+                f"Native coordinate {dimension} in {path.name} does not match reviewed extent."
+            )
+        lower_edge_m = float(values_m[0] - 0.5 * expected_spacing_m)
+        upper_edge_m = float(values_m[-1] + 0.5 * expected_spacing_m)
+        if not math.isclose(
+            lower_edge_m,
+            expected_lower_edge_m,
+            rel_tol=0.0,
+            abs_tol=max(1.0e-3, expected_spacing_m * 1.0e-4),
+        ) or not math.isclose(
+            upper_edge_m,
+            expected_upper_edge_m,
+            rel_tol=0.0,
+            abs_tol=max(1.0e-3, expected_spacing_m * 1.0e-4),
+        ):
+            label = (
+                "the reviewed model top" if dimension == dimensions[0] else "reviewed domain bounds"
+            )
+            raise TradeCumulusOutputValidationError(
+                f"Native coordinate {dimension} in {path.name} does not match {label}."
+            )
+
+
+def _exact_numerical_domain(envelope: VariationEnvelope) -> ExactNumericalDomain:
+    try:
+        return ExactNumericalDomain.model_validate(
+            envelope.numerical_realization.payload.get("exact_domain")
+        )
+    except ValueError as exc:
+        raise TradeCumulusOutputValidationError(
+            "The retained envelope lacks an exact numerical realization."
+        ) from exc
+
+
+def _retained_controls(envelope: VariationEnvelope) -> TradeCumulusControls:
+    try:
+        return normalize_controls(
+            TradeCumulusControls.model_validate(envelope.world_payload.get("controls"))
+        )
+    except ValueError as exc:
+        raise TradeCumulusOutputValidationError(
+            "The retained envelope lacks valid absolute Trade Cumulus controls."
+        ) from exc
+
+
+def _validate_surface_flux_readback(
+    dataset: xr.Dataset,
+    path: Path,
+    controls: TradeCumulusControls,
+) -> dict[str, float]:
+    for field in ("rho", "hfx", "qfx"):
+        name = _field_name(dataset, field)
+        data = _without_time(dataset[name])
+        _validate_units(name, data, path, _REQUIRED_UNITS[field])
+    rho = _without_time(dataset[_field_name(dataset, "rho")])
+    z_dimension = next(
+        (dimension for dimension in rho.dims if str(dimension).lower().startswith("z")),
+        None,
+    )
+    if z_dimension is None:
+        raise TradeCumulusOutputValidationError(
+            f"Density in {path.name} lacks a native vertical dimension."
+        )
+    surface_density = np.asarray(rho.isel({z_dimension: 0}).values, dtype=float)
+    hfx = np.asarray(_without_time(dataset[_field_name(dataset, "hfx")]).values, dtype=float)
+    qfx = np.asarray(_without_time(dataset[_field_name(dataset, "qfx")]).values, dtype=float)
+    if (
+        surface_density.shape != hfx.shape
+        or surface_density.shape != qfx.shape
+        or not np.all(np.isfinite(surface_density))
+        or np.any(surface_density <= 0.0)
+    ):
+        raise TradeCumulusOutputValidationError(
+            f"Surface-flux diagnostics in {path.name} do not share a valid native grid."
+        )
+    implied_heat = hfx / (surface_density * 1_004.0)
+    implied_moisture = qfx / surface_density * 1_000.0
+    if not np.allclose(
+        implied_heat,
+        controls.surface_sensible_heat_flux_k_m_s,
+        rtol=0.02,
+        atol=1.0e-7,
+    ):
+        raise TradeCumulusOutputValidationError(
+            f"Retained sensible-heat flux in {path.name} does not match the reviewed target."
+        )
+    if not np.allclose(
+        implied_moisture,
+        controls.surface_moisture_flux_g_kg_m_s,
+        rtol=0.02,
+        atol=1.0e-6,
+    ):
+        raise TradeCumulusOutputValidationError(
+            f"Retained moisture flux in {path.name} does not match the reviewed target."
+        )
+    return {
+        "surface_sensible_heat_flux_k_m_s": float(np.mean(implied_heat)),
+        "surface_moisture_flux_g_kg_m_s": float(np.mean(implied_moisture)),
+    }
 
 
 def _validate_units(
@@ -365,4 +566,10 @@ def _generated_input_fingerprints(
         manifest.generated_inputs.input_sounding,
         manifest.generated_inputs.cm1_source_customization,
     ]
-    return [_path_fingerprint(Path(value).expanduser()) for value in values if value]
+    fingerprints = [_path_fingerprint(Path(value).expanduser()) for value in values if value]
+    status = manifest.cm1_source_customization_status
+    if isinstance(status, dict):
+        executable = status.get("custom_executable")
+        if isinstance(executable, str) and executable:
+            fingerprints.append(_path_fingerprint(Path(executable).expanduser()))
+    return fingerprints

@@ -815,32 +815,71 @@
 
 .variation-budget {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
   border-top: 1px solid var(--color-border);
   padding-top: 0.6rem;
 }
 
-.variation-budget > div {
-  display: grid;
-  gap: 0.1rem;
+.variation-budget h4 {
+  font-size: 0.7rem;
 }
 
+.variation-budget dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.variation-budget dl > div {
+  display: grid;
+  gap: 0.1rem;
+  border-top: 1px solid var(--color-border);
+  padding: 0.35rem 0;
+}
+
+.variation-budget dl > div:nth-child(odd) {
+  padding-right: 0.5rem;
+}
+
+.variation-budget dt,
 .variation-budget span,
 .variation-budget p {
   color: var(--color-text-muted);
   font-size: 0.6rem;
 }
 
+.variation-budget dd,
 .variation-budget strong {
   font-size: 0.7rem;
 }
 
+.variation-budget dd {
+  margin: 0;
+  font-weight: 750;
+}
+
+.variation-retained-fields,
+.variation-evidence-basis {
+  display: grid;
+  gap: 0.18rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.45rem;
+}
+
+.variation-retained-fields span {
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .variation-budget p {
-  grid-column: 1 / -1;
   border-left: 3px solid var(--color-success);
   padding: 0.35rem 0.45rem;
   background: var(--color-success-soft);
+}
+
+.variation-budget p.variation-source-build-note {
+  border-left-color: var(--color-warning);
+  background: var(--color-warning-soft);
 }
 
 .variation-budget p.blocked {

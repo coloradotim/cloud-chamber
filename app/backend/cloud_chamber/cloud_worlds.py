@@ -31,6 +31,10 @@ from cloud_chamber.run_manifest import (
 from cloud_chamber.saved_comparisons import SavedComparisonError, saved_comparison_count
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.supercells_world import SupercellsWorldSummary, supercells_world_detail
+from cloud_chamber.trade_cumulus_attempt_provenance import (
+    TradeCumulusAttemptProvenanceError,
+    validate_trade_cumulus_attempt_provenance,
+)
 from cloud_chamber.trade_cumulus_comparison_story import (
     CASE_ID,
     COMPARISON_GROUP_ID,
@@ -57,6 +61,7 @@ from cloud_chamber.variation_envelope import (
     VariationAttempt,
     VariationEnvelope,
     VariationValidationDecision,
+    canonical_payload_sha256,
 )
 
 WORLD_ID: Literal["trade_cumulus"] = "trade_cumulus"
@@ -859,7 +864,7 @@ def _select_variation_backing(
     envelopes: dict[str, VariationEnvelope] = {}
     attempts_by_run: dict[str, VariationAttempt] = {}
     accepted_claims: set[str] = set()
-    identities: set[tuple[str, str]] = set()
+    intended_contracts: set[str] = set()
     conflicts: list[str] = []
 
     for index, candidate in enumerate(ordered):
@@ -888,11 +893,8 @@ def _select_variation_backing(
             conflicts.append(f"Attempt {run_id} is missing its shared variation envelope.")
         if envelope is not None:
             envelopes[run_id] = envelope
-            identities.add(
-                (
-                    envelope.scientific_design.sha256,
-                    envelope.numerical_realization.sha256,
-                )
+            intended_contracts.add(
+                canonical_payload_sha256(_intended_simulation_contract(envelope))
             )
             if candidate.simulation_id != envelope.simulation_id:
                 conflicts.append(f"Attempt {run_id} disagrees with its envelope Simulation ID.")
@@ -923,10 +925,10 @@ def _select_variation_backing(
         conflicts.append(
             "Legacy results grouped under one Simulation ID have no accepted-backing contract."
         )
-    if len(identities) > 1:
+    if len(intended_contracts) > 1:
         conflicts.append(
-            "Attempts grouped under one Simulation ID have different scientific or "
-            "numerical identities."
+            "Attempts grouped under one Simulation ID disagree on the canonical intended "
+            "Simulation contract."
         )
     missing_claims = sorted(accepted_claims - set(by_run))
     if missing_claims:
@@ -1117,13 +1119,34 @@ def _evaluate_variation_parent_eligibility(
         return False, "The retained Simulation lacks valid absolute Recipe controls."
     if controls != normalized:
         return False, "The retained Simulation contains unresolved inactive controls."
-    provenance = manifest.run_configuration.get("cm1_provenance")
-    if not isinstance(provenance, Mapping) or not all(
-        isinstance(provenance.get(key), str) and provenance.get(key)
-        for key in ("source_manifest_sha256", "executable_sha256")
-    ):
-        return False, "Pinned CM1 source and executable identity are unavailable."
+    try:
+        validate_trade_cumulus_attempt_provenance(manifest)
+    except TradeCumulusAttemptProvenanceError as exc:
+        return False, str(exc)
     return True, "Accepted output remains reconstructible inside Recipe contract version 1."
+
+
+def _intended_simulation_contract(envelope: VariationEnvelope) -> dict[str, Any]:
+    """Return every immutable fact that all attempts under one Simulation ID must share."""
+    return {
+        "schema_version": envelope.schema_version,
+        "world_id": envelope.world_id,
+        "recipe_id": envelope.recipe_id,
+        "recipe_contract_version": envelope.recipe_contract_version,
+        "simulation_id": envelope.simulation_id,
+        "parent_simulation_id": envelope.parent_simulation_id,
+        "reference_simulation_id": envelope.reference_simulation_id,
+        "display_name": envelope.display_name,
+        "question": envelope.question,
+        "scientific_design": envelope.scientific_design.model_dump(mode="json"),
+        "numerical_realization": envelope.numerical_realization.model_dump(mode="json"),
+        "observation_plan": envelope.observation_plan.model_dump(mode="json"),
+        "world_payload": envelope.world_payload,
+        "differences": [difference.model_dump(mode="json") for difference in envelope.differences],
+        "relationship_classification": envelope.relationship_classification,
+        "run_profile_id": envelope.run_profile_id,
+        "run_profile_contract": envelope.run_profile_contract,
+    }
 
 
 def _envelope_configuration_differences(

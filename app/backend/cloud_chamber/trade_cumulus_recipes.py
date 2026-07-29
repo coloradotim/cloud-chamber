@@ -83,6 +83,7 @@ class TradeCumulusDiagnostics(BaseModel):
     cloud_layer_mean_v_m_s: float
     initial_saturated_level_count: int
     minimum_theta_gradient_k_km: float
+    surface_heat_to_moisture_ratio_k_per_g_kg: float | None
     labels: list[str]
 
 
@@ -191,6 +192,16 @@ def resolve_trade_cumulus_recipe(
             cloud_layer_mean_v_m_s=achieved["cloud_layer_mean_v_m_s"],
             initial_saturated_level_count=saturated_count,
             minimum_theta_gradient_k_km=minimum_gradient,
+            surface_heat_to_moisture_ratio_k_per_g_kg=(
+                effective.surface_sensible_heat_flux_k_m_s
+                / effective.surface_moisture_flux_g_kg_m_s
+                if not math.isclose(
+                    effective.surface_moisture_flux_g_kg_m_s,
+                    0.0,
+                    abs_tol=1.0e-12,
+                )
+                else None
+            ),
             labels=labels,
         ),
     )
@@ -454,6 +465,8 @@ def _profile_heights(model_top_m: float, inversion_base_m: float) -> list[float]
 
 
 def _model_top(profile: RunCostProfile) -> float:
+    if profile.numerical_realization.exact_domain is not None:
+        return profile.numerical_realization.exact_domain.model_top_m
     grid = profile.numerical_realization.grid.replace(" ", "").split("×")
     spacing = profile.numerical_realization.spacing.replace("about", "").strip().split("×")
     try:

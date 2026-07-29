@@ -138,6 +138,18 @@ describe("TradeCumulusVariationEditor", () => {
     expect(within(review).getByText("Child")).toBeInTheDocument();
     expect(within(review).getByText("Δ")).toBeInTheDocument();
     expect(within(review).getByText("+0.038")).toBeInTheDocument();
+    const launchFacts = within(review).getByLabelText("Launch facts");
+    expect(within(launchFacts).getByText("Current free")).toBeInTheDocument();
+    expect(within(launchFacts).getByText("Required reserve")).toBeInTheDocument();
+    expect(within(launchFacts).getByText("Total required")).toBeInTheDocument();
+    expect(
+      within(launchFacts).getByText("96 × 96 × 100 · 6.40 km × 6.40 km × 3.00 km"),
+    ).toBeInTheDocument();
+    expect(within(launchFacts).getByText("target 2 s")).toBeInTheDocument();
+    expect(within(launchFacts).getByText("Every 1 min · 241 frames")).toBeInTheDocument();
+    expect(within(launchFacts).getByText("+0.089 K per g/kg")).toBeInTheDocument();
+    expect(within(launchFacts).getByText(/rho, u, v, w/)).toBeInTheDocument();
+    expect(within(launchFacts).getByText("Existing evidence")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Variation name"), {
       target: { value: "Direct moisture target" },
@@ -183,6 +195,9 @@ describe("TradeCumulusVariationEditor", () => {
     expect(screen.getByLabelText("Temperature tendency exact value")).toHaveValue(0);
     expect(screen.getByLabelText("Total-water tendency exact value")).toHaveValue(0);
     expect(await screen.findByText("3 material changes")).toBeInTheDocument();
+    expect(
+      screen.getByText(/A second disk gate runs after the build and immediately before CM1 starts/),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Restore reference forcing" }));
     expect(screen.getByLabelText("Peak vertical motion exact value")).toHaveValue(-0.0065);
@@ -273,6 +288,14 @@ function cost(
   histories: number,
   blocked = false,
 ) {
+  const isPresentation = profileId === "presentation";
+  const isExtended = profileId === "extended";
+  const nx = isExtended ? 128 : isPresentation ? 96 : 64;
+  const ny = nx;
+  const nz = isPresentation ? 100 : 75;
+  const dx = isPresentation ? 6_400 / 96 : 100;
+  const dy = dx;
+  const dz = isPresentation ? 30 : 40;
   return {
     profile: {
       profile_id: profileId,
@@ -282,14 +305,30 @@ function cost(
         domain: "6.4 km × 6.4 km × 3 km",
         grid: "64 × 64 × 75",
         spacing: "100 × 100 × 40 m",
-        timestep_strategy: "target 3 s",
+        timestep_strategy: isPresentation ? "target 2 s" : "target 3 s",
         physics_source: "Canonical BOMEX",
+        exact_domain: {
+          nx,
+          ny,
+          nz,
+          dx_m: dx,
+          dy_m: dy,
+          dz_m: dz,
+          x_extent_m: nx * dx,
+          y_extent_m: ny * dy,
+          model_top_m: nz * dz,
+          x_min_m: (-nx * dx) / 2,
+          x_max_m: (nx * dx) / 2,
+          y_min_m: (-ny * dy) / 2,
+          y_max_m: (ny * dy) / 2,
+          timestep_seconds: isPresentation ? 2 : 3,
+        },
       },
       observation_plan: {
         duration_seconds: duration,
         output_cadence_seconds: cadence,
         expected_history_count: histories,
-        retained_field_inventory: ["ql", "qv", "th", "prs", "u", "v", "w"],
+        retained_field_inventory: ["ql", "qv", "th", "prs", "rho", "u", "v", "w", "hfx", "qfx"],
       },
       expected_runtime_min_seconds: blocked ? null : 600,
       expected_runtime_max_seconds: blocked ? null : 1_200,
@@ -297,7 +336,8 @@ function cost(
       expected_size_max_bytes: blocked ? null : 2 * 1024 ** 3,
       estimate_basis: blocked ? "uncharacterized" : "scaled_from_measured",
       confidence: blocked ? "Requires characterization" : "Existing evidence",
-      scientific_limitations: [],
+      scientific_limitations: ["Cloud response is an outcome, not an availability gate."],
+      required_post_run_reserve_bytes: 2 * 1024 ** 3,
     },
     current_free_space_bytes: 100 * 1024 ** 3,
     projected_free_space_bytes: blocked ? null : 98 * 1024 ** 3,
@@ -375,6 +415,11 @@ function preview(body: {
       cloud_layer_mean_v_m_s: body.controls.cloud_layer_mean_v_m_s,
       initial_saturated_level_count: 0,
       minimum_theta_gradient_k_km: 0,
+      surface_heat_to_moisture_ratio_k_per_g_kg:
+        body.controls.surface_moisture_flux_g_kg_m_s === 0
+          ? null
+          : body.controls.surface_sensible_heat_flux_k_m_s /
+            body.controls.surface_moisture_flux_g_kg_m_s,
       labels: ["Large-scale subsidence"],
     },
     sounding_profile: profile(),
@@ -388,16 +433,40 @@ function preview(body: {
       domain: "6.4 km × 6.4 km × 3 km",
       grid: "64 × 64 × 75",
       spacing: "100 × 100 × 40 m",
-      timestep_strategy: "target 3 s",
+      timestep_strategy: "target 2 s",
       physics_source: "Canonical BOMEX",
+      exact_domain: {
+        nx: 96,
+        ny: 96,
+        nz: 100,
+        dx_m: 6_400 / 96,
+        dy_m: 6_400 / 96,
+        dz_m: 30,
+        x_extent_m: 6_400,
+        y_extent_m: 6_400,
+        model_top_m: 3_000,
+        x_min_m: -3_200,
+        x_max_m: 3_200,
+        y_min_m: -3_200,
+        y_max_m: 3_200,
+        timestep_seconds: 2,
+      },
     },
     observation_plan: {
       duration_seconds: 14_400,
       output_cadence_seconds: 60,
       expected_history_count: 241,
-      retained_field_inventory: ["ql", "qv", "th", "prs", "u", "v", "w"],
+      retained_field_inventory: ["ql", "qv", "th", "prs", "rho", "u", "v", "w", "hfx", "qfx"],
     },
     cost_estimate: cost(body.run_profile_id, "Presentation", 14_400, 60, 241),
+    source_customization_required: [
+      "large_scale_vertical_motion_m_s",
+      "temperature_tendency_k_day",
+      "total_water_tendency_g_kg_day",
+    ].some(
+      (key) =>
+        body.controls[key as keyof typeof body.controls] !== parent[key as keyof typeof parent],
+    ),
   };
 }
 

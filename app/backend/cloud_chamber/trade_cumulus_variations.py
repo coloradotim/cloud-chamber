@@ -145,6 +145,7 @@ class TradeCumulusVariationPreview(BaseModel):
     numerical_realization: dict[str, Any]
     observation_plan: dict[str, Any]
     cost_estimate: RunCostEstimate
+    source_customization_required: bool
 
 
 class TradeCumulusVariationPackage(BaseModel):
@@ -208,6 +209,7 @@ def preview_trade_cumulus_variation(
         ),
         observation_plan=resolved.observation_plan.model_dump(mode="json"),
         cost_estimate=estimate_profile(settings, resolved.resolved_cost_profile),
+        source_customization_required=_forcing_changed(normalize_controls(request.controls)),
     )
 
 
@@ -983,15 +985,15 @@ def _forcing_changed(controls: TradeCumulusControls) -> bool:
 
 
 def _domain_record(profile_id: str) -> dict[str, float]:
-    profile = _PROFILE_REALIZATIONS[profile_id]
+    exact = profile_by_id(profile_id).numerical_realization.exact_domain
+    if exact is None:
+        raise TradeCumulusVariationError(
+            "Trade Cumulus run profile lacks an exact numerical realization."
+        )
     return {
-        "nx": float(profile["nx"]),
-        "ny": float(profile["ny"]),
-        "nz": float(profile["nz"]),
-        "dx_m": float(profile["dx"]),
-        "dy_m": float(profile["dy"]),
-        "dz_m": float(profile["dz"]),
-        "model_top_m": float(profile["nz"]) * float(profile["dz"]),
+        key: float(value)
+        for key, value in exact.model_dump(mode="json").items()
+        if key != "timestep_seconds"
     }
 
 
