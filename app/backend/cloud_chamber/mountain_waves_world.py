@@ -16,6 +16,17 @@ from cloud_chamber.generated_input_identity import (
     verify_generated_input_identity,
 )
 from cloud_chamber.local_run_manager import reconcile_completed_run_manifest
+from cloud_chamber.mountain_wave_case import (
+    CM1_EXECUTABLE_SHA256,
+    CM1_MOUNTAIN_WAVE_NAMELIST_SHA256,
+    CM1_README_NAMELIST_SHA256,
+    CM1_README_TERRAIN_SHA256,
+    CM1_RELEASE,
+    CM1_SOURCE_MANIFEST_SHA256,
+    CM1_SOURCE_TAG,
+    CM1_TAG_COMMIT,
+    CRITICAL_SOURCE_HASHES,
+)
 from cloud_chamber.mountain_wave_terrain_visualization import (
     MOUNTAIN_WAVES_EXPLORE_REQUIRED_COORDINATES,
     MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS,
@@ -560,6 +571,7 @@ def _select_variation_backing(
     by_run = {manifest.run_id: (manifest, path) for manifest, path in ordered}
     attempts_by_run: dict[str, VariationAttempt] = {}
     accepted_claims: set[str] = set()
+    identities: set[tuple[str, str]] = set()
     conflict_reasons: list[str] = []
     for index, (manifest, _manifest_path) in enumerate(ordered):
         payload = manifest.run_configuration.get("variation_envelope")
@@ -576,6 +588,17 @@ def _select_variation_backing(
                 f"Attempt {manifest.run_id} is missing its shared variation envelope."
             )
         if envelope is not None:
+            identities.add(
+                (
+                    envelope.scientific_design.sha256,
+                    envelope.numerical_realization.sha256,
+                )
+            )
+            configured_simulation_id = manifest.run_configuration.get("simulation_id")
+            if configured_simulation_id != envelope.simulation_id:
+                conflict_reasons.append(
+                    f"Attempt {manifest.run_id} disagrees with its envelope Simulation ID."
+                )
             for attempt in envelope.attempts:
                 if attempt.accepted_backing:
                     accepted_claims.add(attempt.run_id)
@@ -598,6 +621,11 @@ def _select_variation_backing(
                 package_identity_sha256=manifest.run_id,
             )
         attempts_by_run[manifest.run_id] = current
+    if len(identities) > 1:
+        conflict_reasons.append(
+            "Attempts grouped under one Simulation ID have different full scientific or "
+            "numerical identities."
+        )
     missing_claims = sorted(accepted_claims - set(by_run))
     if missing_claims:
         conflict_reasons.append(
@@ -1110,14 +1138,17 @@ def _variation_envelope(configuration: dict[str, Any]) -> dict[str, Any] | None:
     payload = configuration.get("variation_envelope")
     if not isinstance(payload, dict):
         return None
+    try:
+        envelope = VariationEnvelope.model_validate(payload)
+    except ValueError:
+        return None
     if (
-        payload.get("schema_version") != "cloud_world_variation_v1"
-        or payload.get("world_id") != WORLD_ID
-        or payload.get("recipe_id") not in {"dry_ridge_mechanics", "boulder_moist_wave"}
-        or payload.get("recipe_contract_version") != "1"
+        envelope.world_id != WORLD_ID
+        or envelope.recipe_id not in {"dry_ridge_mechanics", "boulder_moist_wave"}
+        or envelope.recipe_contract_version != "1"
     ):
         return None
-    return payload
+    return envelope.model_dump(mode="json")
 
 
 def _grouped_envelope_differences(
@@ -1265,6 +1296,22 @@ def _evaluate_variation_parent_eligibility(
         verify_generated_input_identity(manifest)
     except (OSError, ValueError, GeneratedInputIdentityError):
         return False, "Generated source assets no longer match the retained package identity."
+    provenance = manifest.run_configuration.get("cm1_provenance")
+    expected_provenance = {
+        "release": CM1_RELEASE,
+        "official_tag_commit": CM1_TAG_COMMIT,
+        "official_source_tag": CM1_SOURCE_TAG,
+        "executable_sha256": CM1_EXECUTABLE_SHA256,
+        "source_manifest_sha256": CM1_SOURCE_MANIFEST_SHA256,
+        "readme_namelist_sha256": CM1_README_NAMELIST_SHA256,
+        "readme_terrain_sha256": CM1_README_TERRAIN_SHA256,
+        "mountain_wave_namelist_sha256": CM1_MOUNTAIN_WAVE_NAMELIST_SHA256,
+        "critical_source_sha256": CRITICAL_SOURCE_HASHES,
+    }
+    if not isinstance(provenance, dict) or any(
+        provenance.get(key) != value for key, value in expected_provenance.items()
+    ):
+        return False, "Retained CM1 source or executable provenance is outside the pinned contract."
     diagnostics = world_payload.get("diagnostics") if isinstance(world_payload, dict) else None
     observation = envelope.get("observation_plan")
     observation_payload = observation.get("payload") if isinstance(observation, dict) else None

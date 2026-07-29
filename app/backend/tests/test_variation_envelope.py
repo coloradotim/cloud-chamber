@@ -2,7 +2,9 @@ import pytest
 
 from cloud_chamber.variation_envelope import (
     DifferenceCategory,
+    ImmutableVariationLayer,
     VariationDifference,
+    VariationEnvelope,
     canonical_payload_sha256,
     classify_relationship,
     grouped_differences,
@@ -61,3 +63,58 @@ def test_shared_envelope_hashes_canonical_payloads_and_groups_exact_differences(
 def test_relationship_rejects_an_unchanged_specification() -> None:
     with pytest.raises(ValueError, match="requires a physical or numerical difference"):
         classify_relationship([])
+
+
+def test_immutable_layer_rejects_payload_hash_mismatch() -> None:
+    with pytest.raises(ValueError, match="does not match"):
+        ImmutableVariationLayer(payload={"wind": 12}, sha256="0" * 64)
+
+
+def test_envelope_rejects_control_and_simulation_identity_mismatch() -> None:
+    scientific = {
+        "controls": {
+            "recipe_id": "boulder_moist_wave",
+            "boulder_moist": {"low_level_wind_m_s": 20.0},
+        }
+    }
+    numerical = {"grid": "220 × 1 × 125"}
+    identity = canonical_payload_sha256(
+        {
+            "scientific_design": scientific,
+            "numerical_realization": numerical,
+        }
+    )
+    payload = {
+        "world_id": "mountain_waves",
+        "recipe_id": "boulder_moist_wave",
+        "recipe_contract_version": "1",
+        "simulation_id": f"mountain_waves_test_{identity[:8]}",
+        "parent_simulation_id": "parent",
+        "reference_simulation_id": "reference",
+        "display_name": "Test",
+        "scientific_design": immutable_layer(scientific),
+        "numerical_realization": immutable_layer(numerical),
+        "observation_plan": immutable_layer({"cadence": 200}),
+        "world_payload": {"controls": scientific["controls"]},
+        "differences": [difference("wind")],
+        "relationship_classification": "controlled_physical_variation",
+        "run_profile_id": "quick",
+        "run_profile_contract": {},
+        "cost_estimate": {},
+    }
+
+    VariationEnvelope.model_validate(payload)
+
+    mismatched_controls = {
+        **payload,
+        "world_payload": {"controls": {"recipe_id": "different"}},
+    }
+    with pytest.raises(ValueError, match="World controls"):
+        VariationEnvelope.model_validate(mismatched_controls)
+
+    mismatched_id = {
+        **payload,
+        "simulation_id": "mountain_waves_test_deadbeef",
+    }
+    with pytest.raises(ValueError, match="Simulation ID hash suffix"):
+        VariationEnvelope.model_validate(mismatched_id)

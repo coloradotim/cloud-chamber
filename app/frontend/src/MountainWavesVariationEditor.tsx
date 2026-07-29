@@ -21,7 +21,6 @@ type BoulderMoistControls = {
   ridge_height_m: number;
   ridge_half_width_m: number;
   low_level_wind_m_s: number;
-  wind_offset_m_s: number;
   shear_through_10km_m_s: number;
   lower_layer_rh_percent: number;
   midlevel_rh_percent: number;
@@ -96,6 +95,7 @@ type VariationTemplate = {
 type VariationPreview = {
   recipe_id: RecipeId;
   recipe_name: string;
+  resolved_controls: Record<string, number | boolean>;
   differences: Record<string, MountainWavesDifference[]>;
   relationship_classification: string | null;
   warnings: string[];
@@ -621,6 +621,16 @@ export function MountainWavesVariationEditor({
                     <dt>Wrap margin</dt>
                     <dd>{formatDuration(preview.diagnostics.periodic_wrap_time_seconds)}</dd>
                   </div>
+                  {preview.recipe_id === "boulder_moist_wave" &&
+                    preview.resolved_controls.dry_air_counterpart !== true && (
+                      <div>
+                        <dt>Resolved layer RH</dt>
+                        <dd>
+                          {formatRh(preview.resolved_controls.lower_layer_rh_percent)} /{" "}
+                          {formatRh(preview.resolved_controls.midlevel_rh_percent)}
+                        </dd>
+                      </div>
+                    )}
                 </dl>
               </section>
 
@@ -893,16 +903,6 @@ function BoulderControls({
             units="m/s"
             disabled={disabled}
             onChange={(value) => update("low_level_wind_m_s", value)}
-          />
-          <RangeField
-            label="Additional profile offset"
-            value={controls.wind_offset_m_s}
-            min={-20}
-            max={20}
-            step={1}
-            units="m/s"
-            disabled={disabled}
-            onChange={(value) => update("wind_offset_m_s", value)}
           />
           <RangeField
             label="0–10 km shear"
@@ -1295,6 +1295,10 @@ function formatDuration(value: number | null) {
 
 function formatDistance(value: number) {
   return value >= 1000 ? `${(value / 1000).toFixed(1)} km` : `${Math.round(value)} m`;
+}
+
+function formatRh(value: number | boolean | undefined) {
+  return typeof value === "number" ? `${value.toFixed(2)}%` : "Unavailable";
 }
 
 function formatControlValue(value: number, step: number) {

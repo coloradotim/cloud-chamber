@@ -6,6 +6,7 @@ import math
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from scipy.optimize import least_squares  # type: ignore[import-untyped]
 
 from cloud_chamber.run_cost import (
     MIB,
@@ -19,6 +20,7 @@ DRY_RECIPE_ID: Literal["dry_ridge_mechanics"] = "dry_ridge_mechanics"
 BOULDER_RECIPE_ID: Literal["boulder_moist_wave"] = "boulder_moist_wave"
 RECIPE_CONTRACT_VERSION: Literal["1"] = "1"
 RUN_COST_RECIPE_VERSION = "approved_variation_contract_v1"
+RH_LAYER_MEAN_TOLERANCE_PERCENT = 0.05
 
 RecipeId = Literal["dry_ridge_mechanics", "boulder_moist_wave"]
 
@@ -55,7 +57,6 @@ class BoulderMoistControls(BaseModel):
     ridge_height_m: float = Field(default=2_000.0, ge=500.0, le=3_500.0)
     ridge_half_width_m: float = Field(default=10_000.0, ge=5_000.0, le=30_000.0)
     low_level_wind_m_s: float = Field(default=14.1, ge=0.0, le=50.0)
-    wind_offset_m_s: float = Field(default=0.0, ge=-20.0, le=20.0)
     shear_through_10km_m_s: float = Field(default=23.8, ge=-30.0, le=50.0)
     lower_layer_rh_percent: float = Field(default=66.0, ge=0.0, le=100.0)
     midlevel_rh_percent: float = Field(default=34.5, ge=0.0, le=100.0)
@@ -113,6 +114,7 @@ class ResolvedMountainWavesRecipe(BaseModel):
     recipe_id: RecipeId
     recipe_name: str
     controls: dict[str, Any]
+    achieved_controls: dict[str, Any]
     terrain: dict[str, float]
     sounding: list[RecipeSoundingLevel]
     numerical_realization: NumericalRealization
@@ -310,13 +312,18 @@ def _resolve_dry(
         timestep_strategy=f"target {timestep_s:g} s",
         physics_source="Dry Ridge Mechanics analytic generator v1",
     )
+    evidence = _cost_evidence_realization(profile.profile_id)
     resolved_profile = _resolve_cost_profile(
         profile,
         numerical=numerical,
         observation=observation,
-        nominal_cells=200 * 200,
+        evidence_numerical=evidence[0],
+        evidence_observation=evidence[1],
+        nominal_cells=evidence[2] or 200 * 200,
         actual_cells=nx * nz,
-        nominal_histories=73 if role == "Presentation" else 37 if role == "Standard" else 13,
+        nominal_histories=(
+            evidence[3] or (73 if role == "Presentation" else 37 if role == "Standard" else 13)
+        ),
     )
     differences = _control_differences(
         controls.model_dump(mode="json"),
@@ -327,6 +334,7 @@ def _resolve_dry(
         recipe_id=DRY_RECIPE_ID,
         recipe_name=recipe_name(DRY_RECIPE_ID),
         controls=controls.model_dump(mode="json"),
+        achieved_controls=controls.model_dump(mode="json"),
         terrain={
             "height_m": controls.ridge_height_m,
             "half_width_m": controls.ridge_half_width_m,
@@ -388,7 +396,49 @@ def _resolve_boulder(
     duration_s = 4_000 if profile.role == "Quick" else 7_200
     cadence_s = 200 if profile.role == "Quick" else 30 if profile.role == "Presentation" else 120
 
-    sounding = _boulder_sounding(reference_sounding, controls, recipe_reference)
+    (
+        sounding,
+        achieved_lower_rh,
+        achieved_midlevel_rh,
+        lower_rh_target,
+        midlevel_rh_target,
+    ) = _boulder_sounding(
+        reference_sounding,
+        controls,
+        recipe_reference,
+    )
+    (
+        _reference_sounding,
+        parent_lower_rh,
+        parent_midlevel_rh,
+        _parent_lower_target,
+        _parent_midlevel_target,
+    ) = _boulder_sounding(
+        reference_sounding,
+        difference_reference,
+        recipe_reference,
+    )
+    del _reference_sounding, _parent_lower_target, _parent_midlevel_target
+    if not controls.dry_air_counterpart and not _boulder_thermodynamics_unchanged(
+        controls, recipe_reference
+    ):
+        target_checks = (
+            ("0–4 km", lower_rh_target, achieved_lower_rh),
+            ("4–10 km", midlevel_rh_target, achieved_midlevel_rh),
+        )
+        for label, target, achieved in target_checks:
+            if not math.isclose(
+                achieved,
+                target,
+                rel_tol=0.0,
+                abs_tol=RH_LAYER_MEAN_TOLERANCE_PERCENT,
+            ):
+                errors.append(
+                    f"The requested {label} mean RH of {target:.2f}% is not attainable "
+                    f"inside the authored smooth-transition envelope; the resolved mean is "
+                    f"{achieved:.2f}% (tolerance "
+                    f"{RH_LAYER_MEAN_TOLERANCE_PERCENT:.2f} percentage points)."
+                )
     if any(not _finite_level(level) for level in sounding):
         errors.append("The transformed Boulder atmosphere contains nonfinite values.")
     if any(level.qv_g_kg < 0.0 for level in sounding):
@@ -458,11 +508,10 @@ def _resolve_boulder(
         inherited_wind_structure = all(
             math.isclose(actual, reference, rel_tol=0.0, abs_tol=1.0e-12)
             for actual, reference in (
-                (controls.low_level_wind_m_s, recipe_reference.low_level_wind_m_s),
-                (controls.wind_offset_m_s, recipe_reference.wind_offset_m_s),
+                (controls.low_level_wind_m_s, difference_reference.low_level_wind_m_s),
                 (
                     controls.shear_through_10km_m_s,
-                    recipe_reference.shear_through_10km_m_s,
+                    difference_reference.shear_through_10km_m_s,
                 ),
             )
         )
@@ -511,23 +560,35 @@ def _resolve_boulder(
     nominal_histories = (
         241 if profile.role == "Presentation" else 21 if profile.role == "Quick" else 61
     )
+    evidence = _cost_evidence_realization(profile.profile_id)
     resolved_profile = _resolve_cost_profile(
         profile,
         numerical=numerical,
         observation=observation,
-        nominal_cells=nominal_nx * nominal_nz,
+        evidence_numerical=evidence[0],
+        evidence_observation=evidence[1],
+        nominal_cells=evidence[2] or nominal_nx * nominal_nz,
         actual_cells=nx * nz,
-        nominal_histories=nominal_histories,
+        nominal_histories=evidence[3] or nominal_histories,
     )
+    achieved_controls = controls.model_dump(mode="json")
+    achieved_reference = difference_reference.model_dump(mode="json")
+    if not controls.dry_air_counterpart:
+        achieved_controls["lower_layer_rh_percent"] = round(achieved_lower_rh, 6)
+        achieved_controls["midlevel_rh_percent"] = round(achieved_midlevel_rh, 6)
+    if not difference_reference.dry_air_counterpart:
+        achieved_reference["lower_layer_rh_percent"] = round(parent_lower_rh, 6)
+        achieved_reference["midlevel_rh_percent"] = round(parent_midlevel_rh, 6)
     differences = _control_differences(
-        controls.model_dump(mode="json"),
-        difference_reference.model_dump(mode="json"),
+        achieved_controls,
+        achieved_reference,
         _BOULDER_DIFFERENCE_METADATA,
     )
     return ResolvedMountainWavesRecipe(
         recipe_id=BOULDER_RECIPE_ID,
         recipe_name=recipe_name(BOULDER_RECIPE_ID),
         controls=controls.model_dump(mode="json"),
+        achieved_controls=achieved_controls,
         terrain={
             "height_m": controls.ridge_height_m,
             "half_width_m": controls.ridge_half_width_m,
@@ -617,7 +678,7 @@ def _boulder_sounding(
     reference: list[RecipeSoundingLevel],
     controls: BoulderMoistControls,
     reference_controls: BoulderMoistControls,
-) -> list[RecipeSoundingLevel]:
+) -> tuple[list[RecipeSoundingLevel], float, float, float, float]:
     source_low_mean = _layer_mean([level.u_m_s for level in reference if level.height_m < 4_000.0])
     source_shear = _interpolated_wind(reference, 10_000.0) - _interpolated_wind(reference, 0.0)
     target_low_mean = (
@@ -648,10 +709,16 @@ def _boulder_sounding(
         )
         theta.append(theta[-1] + (upper.theta_k - lower.theta_k) * factor)
     reference_rh = [
-        _relative_humidity(
-            level.pressure_pa,
-            level.theta_k * (level.pressure_pa / 100_000.0) ** (287.04 / 1004.0),
-            level.qv_g_kg,
+        min(
+            100.0,
+            max(
+                0.0,
+                _relative_humidity(
+                    level.pressure_pa,
+                    level.theta_k * (level.pressure_pa / 100_000.0) ** (287.04 / 1004.0),
+                    level.qv_g_kg,
+                ),
+            ),
         )
         for level in reference
     ]
@@ -675,18 +742,9 @@ def _boulder_sounding(
         lower_target=lower_target,
         midlevel_target=midlevel_target,
     )
-    thermodynamics_unchanged = (
-        all(
-            math.isclose(value, reference_value, rel_tol=0.0, abs_tol=1.0e-12)
-            for value, reference_value in (
-                (controls.lower_stability_factor, reference_controls.lower_stability_factor),
-                (controls.midlevel_stability_factor, reference_controls.midlevel_stability_factor),
-                (controls.upper_stability_factor, reference_controls.upper_stability_factor),
-                (controls.lower_layer_rh_percent, reference_controls.lower_layer_rh_percent),
-                (controls.midlevel_rh_percent, reference_controls.midlevel_rh_percent),
-            )
-        )
-        and not controls.dry_air_counterpart
+    thermodynamics_unchanged = _boulder_thermodynamics_unchanged(
+        controls,
+        reference_controls,
     )
     if thermodynamics_unchanged:
         pressures = [level.pressure_pa for level in reference]
@@ -705,7 +763,6 @@ def _boulder_sounding(
             source.u_m_s
             + profile_translation
             + shear_adjustment * _wind_height_fraction(source.height_m)
-            + controls.wind_offset_m_s
         )
         final_theta = theta[index]
         output.append(
@@ -717,7 +774,42 @@ def _boulder_sounding(
                 u_m_s=wind,
             )
         )
-    return output
+    final_rh = [
+        _relative_humidity(
+            level.pressure_pa,
+            level.theta_k * (level.pressure_pa / 100_000.0) ** (287.04 / 1004.0),
+            level.qv_g_kg,
+        )
+        for level in output
+    ]
+    achieved_lower_rh = _layer_mean([final_rh[index] for index in lower_indexes])
+    achieved_midlevel_rh = _layer_mean([final_rh[index] for index in midlevel_indexes])
+    return (
+        output,
+        achieved_lower_rh,
+        achieved_midlevel_rh,
+        lower_target,
+        midlevel_target,
+    )
+
+
+def _boulder_thermodynamics_unchanged(
+    controls: BoulderMoistControls,
+    reference_controls: BoulderMoistControls,
+) -> bool:
+    return (
+        all(
+            math.isclose(value, reference_value, rel_tol=0.0, abs_tol=1.0e-12)
+            for value, reference_value in (
+                (controls.lower_stability_factor, reference_controls.lower_stability_factor),
+                (controls.midlevel_stability_factor, reference_controls.midlevel_stability_factor),
+                (controls.upper_stability_factor, reference_controls.upper_stability_factor),
+                (controls.lower_layer_rh_percent, reference_controls.lower_layer_rh_percent),
+                (controls.midlevel_rh_percent, reference_controls.midlevel_rh_percent),
+            )
+        )
+        and not controls.dry_air_counterpart
+    )
 
 
 def _wind_height_fraction(height_m: float) -> float:
@@ -780,47 +872,50 @@ def _rh_profile_for_layer_targets(
             for reference, layer_weights in zip(reference_values, weights, strict=True)
         ]
 
-    def solve_delta(
-        indexes: list[int],
-        target: float,
-        *,
-        lower_delta: float,
-        midlevel_delta: float,
-        solve_lower: bool,
-    ) -> float:
-        low = -2_000.0
-        high = 2_000.0
-        for _ in range(64):
-            candidate = 0.5 * (low + high)
-            values = profile(
-                candidate if solve_lower else lower_delta,
-                midlevel_delta if solve_lower else candidate,
-            )
-            mean = _layer_mean([values[index] for index in indexes])
-            if mean < target:
-                low = candidate
-            else:
-                high = candidate
-        return 0.5 * (low + high)
+    if not lower_indexes or not midlevel_indexes:
+        raise ValueError("RH target layers must each contain at least one sounding level.")
 
-    lower_delta = 0.0
-    midlevel_delta = 0.0
-    for _ in range(12):
-        lower_delta = solve_delta(
-            lower_indexes,
-            lower_target,
-            lower_delta=lower_delta,
-            midlevel_delta=midlevel_delta,
-            solve_lower=True,
+    def residual(deltas: list[float]) -> list[float]:
+        values = profile(float(deltas[0]), float(deltas[1]))
+        return [
+            _layer_mean([values[index] for index in lower_indexes]) - lower_target,
+            _layer_mean([values[index] for index in midlevel_indexes]) - midlevel_target,
+        ]
+
+    reference_lower_mean = _layer_mean([reference_values[index] for index in lower_indexes])
+    reference_midlevel_mean = _layer_mean([reference_values[index] for index in midlevel_indexes])
+    direct_start = (
+        lower_target - reference_lower_mean,
+        midlevel_target - reference_midlevel_mean,
+    )
+    starts = (
+        (0.0, 0.0),
+        direct_start,
+        (direct_start[0] * 2.0, direct_start[1] * 2.0),
+        (-100.0, -100.0),
+        (-100.0, 100.0),
+        (100.0, -100.0),
+        (100.0, 100.0),
+    )
+    best_values = profile(*direct_start)
+    best_error = sum(value * value for value in residual(list(direct_start)))
+    for start in starts:
+        result = least_squares(
+            residual,
+            x0=start,
+            bounds=((-2_000.0, -2_000.0), (2_000.0, 2_000.0)),
+            ftol=1.0e-12,
+            xtol=1.0e-12,
+            gtol=1.0e-12,
+            max_nfev=1_000,
         )
-        midlevel_delta = solve_delta(
-            midlevel_indexes,
-            midlevel_target,
-            lower_delta=lower_delta,
-            midlevel_delta=midlevel_delta,
-            solve_lower=False,
-        )
-    return profile(lower_delta, midlevel_delta)
+        values = profile(float(result.x[0]), float(result.x[1]))
+        errors = residual([float(result.x[0]), float(result.x[1])])
+        error = sum(value * value for value in errors)
+        if error < best_error:
+            best_values = values
+            best_error = error
+    return best_values
 
 
 def _hydrostatic_moist_profile(
@@ -923,7 +1018,6 @@ _BOULDER_DIFFERENCE_METADATA = {
     "ridge_height_m": ("terrain", "Ridge height", "m"),
     "ridge_half_width_m": ("terrain", "Ridge half-width", "m"),
     "low_level_wind_m_s": ("wind", "0–4 km mean wind", "m/s"),
-    "wind_offset_m_s": ("wind", "Wind-profile offset", "m/s"),
     "shear_through_10km_m_s": ("wind", "0–10 km shear", "m/s"),
     "lower_layer_rh_percent": ("moisture", "0–4 km mean RH", "%"),
     "midlevel_rh_percent": ("moisture", "4–10 km mean RH", "%"),
@@ -951,15 +1045,16 @@ def _resolve_cost_profile(
     *,
     numerical: NumericalRealization,
     observation: ObservationPlan,
+    evidence_numerical: NumericalRealization | None,
+    evidence_observation: ObservationPlan | None,
     nominal_cells: int,
     actual_cells: int,
     nominal_histories: int,
 ) -> RunCostProfile:
-    ratio = max(
-        1.0,
-        (actual_cells / max(nominal_cells, 1))
-        * ((observation.expected_history_count or nominal_histories) / max(nominal_histories, 1)),
+    raw_ratio = (actual_cells / max(nominal_cells, 1)) * (
+        (observation.expected_history_count or nominal_histories) / max(nominal_histories, 1)
     )
+    ratio = max(raw_ratio, 0.05)
     low = profile.expected_size_min_bytes
     high = profile.expected_size_max_bytes
     runtime_low = profile.expected_runtime_min_seconds
@@ -975,16 +1070,27 @@ def _resolve_cost_profile(
     reasons = list(profile.cost_change_reasons)
     estimate_basis = profile.estimate_basis
     confidence = profile.confidence
-    if ratio > 1.001:
-        reasons.append(
-            f"Resolved domain and output inventory are {ratio:.2f}x the nominal retained-cell plan."
+    evidence_matches = (
+        evidence_numerical is not None
+        and evidence_observation is not None
+        and numerical == evidence_numerical
+        and observation == evidence_observation
+    )
+    if not math.isclose(ratio, 1.0, rel_tol=0.0, abs_tol=0.001):
+        comparison_basis = (
+            "measured retained-cell realization"
+            if evidence_numerical is not None and evidence_observation is not None
+            else "nominal retained-cell plan"
         )
-        if estimate_basis == "measured":
-            estimate_basis = "scaled_from_measured"
-            confidence = (
-                "Scaled from the measured reference realization because the generated "
-                "domain, vertical grid, or output inventory differs."
-            )
+        reasons.append(
+            f"Resolved domain and output inventory are {ratio:.2f}x the {comparison_basis}."
+        )
+    if estimate_basis == "measured" and not evidence_matches:
+        estimate_basis = "scaled_from_measured"
+        confidence = (
+            "Scaled from the measured reference realization because the generated numerical "
+            "realization or observation plan differs."
+        )
     return profile.model_copy(
         update={
             "numerical_realization": numerical,
@@ -998,6 +1104,121 @@ def _resolve_cost_profile(
             "cost_change_reasons": reasons,
         }
     )
+
+
+def _cost_evidence_realization(
+    profile_id: str,
+) -> tuple[NumericalRealization | None, ObservationPlan | None, int, int]:
+    evidence: dict[
+        str,
+        tuple[NumericalRealization, ObservationPlan, int, int],
+    ] = {
+        "mountain_waves_dry_quick_v1": (
+            NumericalRealization(
+                domain="20.0 km × 20.0 km; native 2-D x-z",
+                grid="100 × 1 × 100",
+                spacing="200 × 200 m",
+                timestep_strategy="target 2 s",
+                physics_source="CM1 r21.1 source-defined dry mountain-wave case",
+            ),
+            ObservationPlan(
+                duration_seconds=2_160,
+                output_cadence_seconds=216,
+                expected_history_count=11,
+                retained_field_inventory=(
+                    "zs",
+                    "zhval",
+                    "th",
+                    "prs",
+                    "uinterp",
+                    "winterp",
+                    "w",
+                ),
+            ),
+            100 * 100,
+            11,
+        ),
+        "mountain_waves_dry_presentation_v1": (
+            NumericalRealization(
+                domain="20.0 km × 20.0 km; native 2-D x-z",
+                grid="200 × 1 × 200",
+                spacing="100 × 100 m",
+                timestep_strategy="target 1 s",
+                physics_source="CM1 r21.1 source-defined dry mountain-wave case",
+            ),
+            ObservationPlan(
+                duration_seconds=2_160,
+                output_cadence_seconds=30,
+                expected_history_count=73,
+                retained_field_inventory=(
+                    "zs",
+                    "zhval",
+                    "th",
+                    "prs",
+                    "uinterp",
+                    "winterp",
+                    "w",
+                ),
+            ),
+            200 * 200,
+            73,
+        ),
+        "mountain_waves_boulder_quick_v1": (
+            NumericalRealization(
+                domain="220.0 km × 25.0 km; native 2-D x-z",
+                grid="220 × 1 × 125",
+                spacing="1000 × 200 m",
+                timestep_strategy="target 2 s",
+                physics_source="Boulder Moist Wave source-backed generator v1",
+            ),
+            ObservationPlan(
+                duration_seconds=4_000,
+                output_cadence_seconds=200,
+                expected_history_count=21,
+                retained_field_inventory=(
+                    "zs",
+                    "zhval",
+                    "th",
+                    "prs",
+                    "qv",
+                    "ql",
+                    "uinterp",
+                    "winterp",
+                    "w",
+                ),
+            ),
+            220 * 125,
+            21,
+        ),
+        "mountain_waves_boulder_presentation_v1": (
+            NumericalRealization(
+                domain="220.0 km × 25.0 km; native 2-D x-z",
+                grid="440 × 1 × 250",
+                spacing="500 × 100 m",
+                timestep_strategy="target 1 s",
+                physics_source="Boulder Moist Wave source-backed generator v1",
+            ),
+            ObservationPlan(
+                duration_seconds=7_200,
+                output_cadence_seconds=30,
+                expected_history_count=241,
+                retained_field_inventory=(
+                    "zs",
+                    "zhval",
+                    "th",
+                    "prs",
+                    "qv",
+                    "ql",
+                    "uinterp",
+                    "winterp",
+                    "w",
+                ),
+            ),
+            440 * 250,
+            241,
+        ),
+    }
+    return evidence.get(profile_id, (None, None, 0, 0))
 
 
 def _terrain_profile(

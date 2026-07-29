@@ -859,7 +859,6 @@ Ridge center remains a generated-domain placement decision, not an ordinary Cont
 | Control | Exact transform | Supported envelope |
 | --- | --- | --- |
 | **0–4 km mean wind** | Translate the complete Recipe-reference cross-ridge wind profile to the selected low-level mean while retaining its resolved smaller-scale structure | `0–50 m/s` |
-| **Additional wind-profile offset** | Add a constant cross-ridge wind to every level after the low-level-mean and shear transforms | `−20 to +20 m/s` |
 | **0–10 km shear** | Adjust the complete profile so the resolved wind change from 0 to 10 km equals the selected value | `−30 to +50 m/s` |
 
 Critical levels, direction reversals, layer shear, and maximum wind are shown before launch. Critical levels are allowed because they are central to mountain-wave behavior; unsupported grid/domain combinations are blocked.

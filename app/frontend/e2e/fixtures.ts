@@ -2568,7 +2568,6 @@ const mountainWavesBoulderControls = {
     ridge_height_m: 2000,
     ridge_half_width_m: 10000,
     low_level_wind_m_s: 14.1,
-    wind_offset_m_s: 0,
     shear_through_10km_m_s: 23.8,
     lower_layer_rh_percent: 66,
     midlevel_rh_percent: 34.5,
@@ -3064,6 +3063,9 @@ export async function mockMountainWavesProductPath(
     return json(route, {
       recipe_id: request.recipe_id,
       recipe_name: dry ? "Dry Ridge Mechanics" : "Boulder Moist Wave",
+      resolved_controls: dry
+        ? request.controls.dry_ridge
+        : request.controls.boulder_moist,
       differences: {
         terrain: changed
           ? [

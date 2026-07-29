@@ -981,7 +981,6 @@ def _mountain_difference_label(path: str) -> str:
         "scientific_design.controls.ridge_height_m": "Ridge height",
         "scientific_design.controls.ridge_half_width_m": "Ridge half-width",
         "scientific_design.controls.low_level_wind_m_s": "0–4 km mean wind",
-        "scientific_design.controls.wind_offset_m_s": "Wind-profile offset",
         "scientific_design.controls.shear_through_10km_m_s": "0–10 km shear",
         "scientific_design.controls.lower_layer_rh_percent": "0–4 km mean RH",
         "scientific_design.controls.midlevel_rh_percent": "4–10 km mean RH",
@@ -997,7 +996,7 @@ def _mountain_difference_label(path: str) -> str:
 
 
 def _mountain_difference_units(path: str) -> str | None:
-    if path.endswith(("_wind_m_s", "wind_offset_m_s", "shear_through_10km_m_s")):
+    if path.endswith(("_wind_m_s", "shear_through_10km_m_s")):
         return "m/s"
     if path.endswith("_rh_percent"):
         return "%"

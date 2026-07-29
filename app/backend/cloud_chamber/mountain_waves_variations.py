@@ -140,6 +140,7 @@ class MountainWavesVariationPreview(BaseModel):
 
     recipe_id: RecipeId
     recipe_name: str
+    resolved_controls: dict[str, Any]
     differences: dict[str, list[dict[str, Any]]]
     relationship_classification: str | None
     warnings: list[str]
@@ -201,6 +202,7 @@ def preview_mountain_waves_variation(
     return MountainWavesVariationPreview(
         recipe_id=request.recipe_id,
         recipe_name=resolved.recipe_name,
+        resolved_controls=resolved.achieved_controls,
         differences=grouped_differences(differences),
         relationship_classification=relationship,
         warnings=_dedupe(resolved.warnings),
@@ -228,9 +230,12 @@ def create_mountain_waves_variation(
         raise MountainWavesVariationError(" ".join(_dedupe(errors)))
     implementation_commit = verified_clean_git_commit()
     provenance = collect_cm1_provenance(settings)
-    effective_controls = normalize_recipe_controls(
-        request.controls,
-        recipe_reference=context.reference_controls,
+    resolved_controls = MountainWavesRecipeControls.model_validate(
+        {
+            "recipe_id": request.recipe_id,
+            "dry_ridge": resolved.controls if request.recipe_id == DRY_RECIPE_ID else None,
+            "boulder_moist": resolved.controls if request.recipe_id == BOULDER_RECIPE_ID else None,
+        }
     )
 
     scientific_design: dict[str, Any] = {
@@ -238,7 +243,8 @@ def create_mountain_waves_variation(
         "recipe_id": request.recipe_id,
         "recipe_contract_version": RECIPE_CONTRACT_VERSION,
         "reference_simulation_id": context.template.reference_simulation_id,
-        "controls": effective_controls.payload(),
+        "controls": resolved_controls.model_dump(mode="json"),
+        "achieved_controls": resolved.achieved_controls,
         "fixed_assumptions": {
             "native_geometry": "two-dimensional x-z with singleton y",
             "terrain_shape": "authored bell ridge",
@@ -323,7 +329,8 @@ def create_mountain_waves_variation(
             numerical_realization=immutable_layer(numerical_payload),
             observation_plan=immutable_layer(observation_payload),
             world_payload={
-                "controls": effective_controls.model_dump(mode="json"),
+                "controls": resolved_controls.model_dump(mode="json"),
+                "achieved_controls": resolved.achieved_controls,
                 "terrain": resolved.terrain,
                 "sounding_generator": (
                     "dry_ridge_analytic_v1"
@@ -415,7 +422,7 @@ def create_mountain_waves_variation(
             scenario=ScenarioReference(
                 id=VARIATION_CASE_ID, schema_version=VARIATION_SCHEMA_VERSION
             ),
-            controls=_manifest_controls(effective_controls.payload()),
+            controls=_manifest_controls(resolved.controls),
             run_configuration=run_configuration,
             physical_question=(
                 _optional_text(request.user_question)

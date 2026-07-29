@@ -11,7 +11,6 @@ const moistControls = {
     ridge_height_m: 2_000,
     ridge_half_width_m: 10_000,
     low_level_wind_m_s: 14.1,
-    wind_offset_m_s: 0,
     shear_through_10km_m_s: 23.8,
     lower_layer_rh_percent: 66,
     midlevel_rh_percent: 34.5,
@@ -390,6 +389,25 @@ function preview(
   return {
     recipe_id: recipeId,
     recipe_name: recipeId === "dry_ridge_mechanics" ? "Dry Ridge Mechanics" : "Boulder Moist Wave",
+    resolved_controls:
+      recipeId === "dry_ridge_mechanics"
+        ? {
+            ridge_height_m: ridgeHeight,
+            ridge_half_width_m: 1_000,
+            cross_ridge_wind_m_s: 10,
+            dry_stability_n_s: 0.01,
+            wind_shear_through_10km_m_s: 0,
+            layered_stability: false,
+          }
+        : {
+            ridge_height_m: ridgeHeight,
+            ridge_half_width_m: 10_000,
+            low_level_wind_m_s: 14.1,
+            shear_through_10km_m_s: 23.8,
+            lower_layer_rh_percent: 66,
+            midlevel_rh_percent: 34.5,
+            dry_air_counterpart: false,
+          },
     differences: {
       terrain: terrainDifferences,
       wind: [],

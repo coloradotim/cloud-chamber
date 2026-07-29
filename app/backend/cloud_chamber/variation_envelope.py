@@ -6,7 +6,7 @@ import hashlib
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 VARIATION_ENVELOPE_SCHEMA_VERSION: Literal["cloud_world_variation_v1"] = "cloud_world_variation_v1"
 
@@ -65,6 +65,15 @@ class ImmutableVariationLayer(BaseModel):
     payload: dict[str, Any]
     sha256: str
 
+    @model_validator(mode="after")
+    def validate_payload_hash(self) -> ImmutableVariationLayer:
+        expected = canonical_payload_sha256(self.payload)
+        if self.sha256 != expected:
+            raise ValueError(
+                "Immutable variation-layer SHA-256 does not match its canonical payload."
+            )
+        return self
+
 
 class VariationAttempt(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -122,6 +131,27 @@ class VariationEnvelope(BaseModel):
     availability_state: AvailabilityState = "intended"
     parent_eligible: bool = False
     parent_eligibility_reason: str = "Parent eligibility is evaluated after output validation."
+
+    @model_validator(mode="after")
+    def validate_immutable_identity(self) -> VariationEnvelope:
+        scientific_controls = self.scientific_design.payload.get("controls")
+        world_controls = self.world_payload.get("controls")
+        if scientific_controls != world_controls:
+            raise ValueError(
+                "World controls do not match the immutable scientific-design controls."
+            )
+        identity = canonical_payload_sha256(
+            {
+                "scientific_design": self.scientific_design.payload,
+                "numerical_realization": self.numerical_realization.payload,
+            }
+        )
+        if not self.simulation_id.endswith(f"_{identity[:8]}"):
+            raise ValueError(
+                "Simulation ID hash suffix does not match the immutable scientific and "
+                "numerical identity."
+            )
+        return self
 
 
 def canonical_payload_sha256(payload: object) -> str:

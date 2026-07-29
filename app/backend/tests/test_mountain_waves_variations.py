@@ -120,6 +120,23 @@ def test_dry_preview_uses_recipe_controls_and_generated_timing(tmp_path: Path) -
     assert preview.relative_humidity_profile[0]["value"] == 0
     assert preview.theta_profile[0]["value"] == pytest.approx(288)
 
+    quick = preview_mountain_waves_variation(
+        settings,
+        _request(
+            parent=DRY_SIMULATION_ID,
+            recipe_id=DRY_RECIPE_ID,
+            profile_id="mountain_waves_dry_quick_v1",
+            controls=MountainWavesRecipeControls(
+                recipe_id=DRY_RECIPE_ID,
+                dry_ridge=controls,
+            ),
+        ),
+    )
+    assert quick.cost_estimate.profile.estimate_basis == "scaled_from_measured"
+    assert "generated numerical realization or observation plan differs" in (
+        quick.cost_estimate.profile.confidence
+    )
+
 
 def test_dry_slope_and_uncharacterized_profile_block_without_sanitizing_science(
     tmp_path: Path,
@@ -183,6 +200,47 @@ def test_boulder_preview_applies_absolute_reference_transforms(tmp_path: Path) -
     assert _profile_layer_mean(first.relative_humidity_profile, 4_000.0, 10_000.0) == pytest.approx(
         50.0, abs=0.02
     )
+    assert first.resolved_controls["lower_layer_rh_percent"] == pytest.approx(80.0, abs=0.02)
+    assert first.resolved_controls["midlevel_rh_percent"] == pytest.approx(50.0, abs=0.02)
+
+
+def test_boulder_infeasible_rh_layer_targets_fail_closed_with_achieved_means(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_parent(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID, moist=True)
+    monkeypatch.setattr(
+        "cloud_chamber.mountain_waves_recipes._rh_profile_for_layer_targets",
+        lambda reference_values, heights_m, **_targets: [0.0 for _ in heights_m],
+    )
+
+    preview = preview_mountain_waves_variation(
+        settings,
+        _request(
+            parent=MOIST_SIMULATION_ID,
+            recipe_id=BOULDER_RECIPE_ID,
+            profile_id="mountain_waves_boulder_quick_v1",
+            controls=MountainWavesRecipeControls(
+                recipe_id=BOULDER_RECIPE_ID,
+                boulder_moist=BoulderMoistControls(
+                    ridge_half_width_m=11_000,
+                    lower_layer_rh_percent=80.0,
+                    midlevel_rh_percent=50.0,
+                ),
+            ),
+        ),
+    )
+
+    assert any("is not attainable" in error for error in preview.blocking_errors)
+    assert preview.resolved_controls["lower_layer_rh_percent"] == pytest.approx(
+        _profile_layer_mean(preview.relative_humidity_profile, 0.0, 4_000.0),
+        abs=0.001,
+    )
+    assert preview.resolved_controls["midlevel_rh_percent"] == pytest.approx(
+        _profile_layer_mean(preview.relative_humidity_profile, 4_000.0, 10_000.0),
+        abs=0.001,
+    )
 
 
 @pytest.mark.parametrize(
@@ -190,8 +248,6 @@ def test_boulder_preview_applies_absolute_reference_transforms(tmp_path: Path) -
     [
         ("low_level_wind_m_s", -0.1),
         ("low_level_wind_m_s", 50.1),
-        ("wind_offset_m_s", -20.1),
-        ("wind_offset_m_s", 20.1),
         ("shear_through_10km_m_s", -30.1),
         ("shear_through_10km_m_s", 50.1),
         ("lower_layer_rh_percent", -0.1),
@@ -281,7 +337,6 @@ def test_boulder_vertical_domain_and_critical_level_fail_closed(
                 recipe_id=BOULDER_RECIPE_ID,
                 boulder_moist=BoulderMoistControls(
                     low_level_wind_m_s=0.0,
-                    wind_offset_m_s=-20.0,
                     shear_through_10km_m_s=50.0,
                 ),
             ),
@@ -333,6 +388,73 @@ def test_boulder_inherited_critical_structure_warns_without_blocking(
         "retained Boulder source atmosphere contains a critical level" in warning
         for warning in preview.warnings
     )
+
+
+def test_descendant_uses_parent_wind_to_classify_inherited_critical_structure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_parent(
+        settings,
+        run_id=MOIST_RUN_ID,
+        case_id=MOIST_CASE_ID,
+        moist=True,
+        upper_wind_m_s=-5.0,
+    )
+    parent_request = _request(
+        parent=MOIST_SIMULATION_ID,
+        recipe_id=BOULDER_RECIPE_ID,
+        profile_id="mountain_waves_boulder_quick_v1",
+        controls=MountainWavesRecipeControls(
+            recipe_id=BOULDER_RECIPE_ID,
+            boulder_moist=BoulderMoistControls(
+                ridge_half_width_m=11_000.0,
+                low_level_wind_m_s=15.0,
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.mountain_waves_variations.verified_clean_git_commit",
+        lambda: "implementation-commit",
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.mountain_waves_variations.collect_cm1_provenance",
+        lambda _settings: SimpleNamespace(report_record=lambda: {"release": "21.1"}),
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.run_cost.shutil.disk_usage",
+        lambda _path: SimpleNamespace(free=100 * 1024**3),
+    )
+    parent = create_mountain_waves_variation(settings, parent_request)
+    monkeypatch.setattr(
+        "cloud_chamber.mountain_waves_variations._parent_eligibility",
+        lambda *_args: (True, None),
+    )
+    parent_controls = parent_request.controls.boulder_moist
+    assert parent_controls is not None
+    child_controls = parent_controls.model_copy(
+        update={
+            "lower_stability_factor": 0.5,
+            "midlevel_stability_factor": 0.5,
+        }
+    )
+
+    child = preview_mountain_waves_variation(
+        settings,
+        parent_request.model_copy(
+            update={
+                "parent_simulation_id": parent.simulation_id,
+                "controls": MountainWavesRecipeControls(
+                    recipe_id=BOULDER_RECIPE_ID,
+                    boulder_moist=child_controls,
+                ),
+            }
+        ),
+    )
+
+    assert not any("critical level falls" in error for error in child.blocking_errors)
+    assert any("inherited wind structure" in warning for warning in child.warnings)
 
 
 def test_package_persists_stable_simulation_identity_separate_attempts_and_launch_binding(

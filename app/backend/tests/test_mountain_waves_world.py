@@ -10,6 +10,17 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from cloud_chamber.mountain_wave_case import (
+    CM1_EXECUTABLE_SHA256,
+    CM1_MOUNTAIN_WAVE_NAMELIST_SHA256,
+    CM1_README_NAMELIST_SHA256,
+    CM1_README_TERRAIN_SHA256,
+    CM1_RELEASE,
+    CM1_SOURCE_MANIFEST_SHA256,
+    CM1_SOURCE_TAG,
+    CM1_TAG_COMMIT,
+    CRITICAL_SOURCE_HASHES,
+)
 from cloud_chamber.mountain_wave_terrain_visualization import (
     validate_mountain_waves_native_outputs,
 )
@@ -22,6 +33,7 @@ from cloud_chamber.mountain_waves_world import (
     MOIST_RUN_ID,
     MOIST_SIMULATION_ID,
     _built_in_inspectability,
+    _evaluate_variation_parent_eligibility,
     mountain_waves_run_manifest,
     mountain_waves_world_detail,
 )
@@ -47,6 +59,7 @@ from cloud_chamber.variation_envelope import (
     VariationAttempt,
     VariationDifference,
     VariationEnvelope,
+    canonical_payload_sha256,
     immutable_layer,
 )
 
@@ -332,7 +345,7 @@ def test_attempts_with_one_simulation_identity_collapse_to_one_world_record(
     settings = _settings(tmp_path)
     _write_run(settings, run_id=DRY_RUN_ID, case_id=DRY_CASE_ID)
     _write_run(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID)
-    simulation_id = "mountain_waves_same_design"
+    simulation_id = _variation_simulation_id("mountain_waves_same_design")
     first_run = "mw-same-design-a"
     second_run = "mw-same-design-b"
     _write_run(
@@ -374,7 +387,7 @@ def test_conflicting_accepted_attempts_fail_closed(
     settings = _settings(tmp_path)
     _write_run(settings, run_id=DRY_RUN_ID, case_id=DRY_CASE_ID)
     _write_run(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID)
-    simulation_id = "mountain_waves_conflicted_design"
+    simulation_id = _variation_simulation_id("mountain_waves_conflicted_design")
     for suffix in ("a", "b"):
         run_id = f"mw-conflicted-design-{suffix}"
         _write_run(
@@ -397,6 +410,50 @@ def test_conflicting_accepted_attempts_fail_closed(
     assert all(item.simulation_id != simulation_id for item in world.simulations)
     with pytest.raises(ValueError, match="backing is conflicted"):
         mountain_waves_run_manifest(settings, simulation_id)
+
+
+def test_parent_eligibility_requires_pinned_source_and_executable_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    simulation_id = _variation_simulation_id("mountain_waves_parent_contract")
+    run_id = "mw-parent-contract"
+    configuration = _variation_configuration(
+        simulation_id=simulation_id,
+        run_id=run_id,
+        accepted_backing=True,
+    )
+    configuration["cm1_provenance"] = _pinned_cm1_provenance()
+    manifest_path = _write_run(
+        settings,
+        run_id=run_id,
+        case_id="mountain_waves_exploratory_variation_v1",
+        run_configuration=configuration,
+    )
+    manifest = load_run_manifest(manifest_path)
+    envelope = manifest.run_configuration["variation_envelope"]
+    monkeypatch.setattr(
+        "cloud_chamber.mountain_waves_world.verify_generated_input_identity",
+        lambda _manifest: {},
+    )
+
+    eligible, reason = _evaluate_variation_parent_eligibility(
+        manifest,
+        envelope,
+        accepted_backing=True,
+    )
+    assert eligible is True
+    assert "source-asset" in reason
+
+    manifest.run_configuration["cm1_provenance"]["executable_sha256"] = "0" * 64
+    eligible, reason = _evaluate_variation_parent_eligibility(
+        manifest,
+        envelope,
+        accepted_backing=True,
+    )
+    assert eligible is False
+    assert "source or executable provenance" in reason
 
 
 def _settings(tmp_path: Path) -> CloudChamberSettings:
@@ -586,7 +643,6 @@ def _variation_configuration(
                 "ridge_height_m": 2_000.0,
                 "ridge_half_width_m": 11_000.0,
                 "low_level_wind_m_s": 14.1,
-                "wind_offset_m_s": 0.0,
                 "shear_through_10km_m_s": 23.8,
                 "lower_layer_rh_percent": 66.0,
                 "midlevel_rh_percent": 34.5,
@@ -670,4 +726,48 @@ def _variation_configuration(
             "active_top_m": 20_000.0,
         },
         "terrain": configuration["terrain"],
+    }
+
+
+def _variation_simulation_id(prefix: str) -> str:
+    scientific_design = {
+        "world_id": "mountain_waves",
+        "recipe_id": "boulder_moist_wave",
+        "recipe_contract_version": "1",
+        "controls": {
+            "recipe_id": "boulder_moist_wave",
+            "boulder_moist": {
+                "ridge_height_m": 2_000.0,
+                "ridge_half_width_m": 11_000.0,
+                "low_level_wind_m_s": 14.1,
+                "shear_through_10km_m_s": 23.8,
+                "lower_layer_rh_percent": 66.0,
+                "midlevel_rh_percent": 34.5,
+                "dry_air_counterpart": False,
+                "lower_stability_factor": 1.0,
+                "midlevel_stability_factor": 1.0,
+                "upper_stability_factor": 1.0,
+            },
+        },
+    }
+    identity = canonical_payload_sha256(
+        {
+            "scientific_design": scientific_design,
+            "numerical_realization": {"grid": "fixture"},
+        }
+    )
+    return f"{prefix}_{identity[:8]}"
+
+
+def _pinned_cm1_provenance() -> dict[str, Any]:
+    return {
+        "release": CM1_RELEASE,
+        "official_tag_commit": CM1_TAG_COMMIT,
+        "official_source_tag": CM1_SOURCE_TAG,
+        "executable_sha256": CM1_EXECUTABLE_SHA256,
+        "source_manifest_sha256": CM1_SOURCE_MANIFEST_SHA256,
+        "readme_namelist_sha256": CM1_README_NAMELIST_SHA256,
+        "readme_terrain_sha256": CM1_README_TERRAIN_SHA256,
+        "mountain_wave_namelist_sha256": CM1_MOUNTAIN_WAVE_NAMELIST_SHA256,
+        "critical_source_sha256": CRITICAL_SOURCE_HASHES,
     }
