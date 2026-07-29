@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import { LifecycleWorkspace, type LifecycleRecord } from "./LifecycleWorkspace";
 import { SavedComparisonsCollection } from "./SavedComparisons";
+import { SupercellsVariationEditor } from "./SupercellsVariationEditor";
 
 export type SupercellSimulation = {
-  simulation_id: "supercells_quarter_circle_reference" | "supercells_straight_line_hodograph";
+  simulation_id: string;
   display_name: string;
   role: "reference" | "variation";
   world_id: "supercells";
@@ -21,6 +22,11 @@ export type SupercellSimulation = {
   history_cadence_seconds: number | null;
   default_explore_time_index: number;
   lineage_state: "known";
+  recipe_contract_version: string;
+  relationship_classification: string | null;
+  run_profile_id: string;
+  can_create_variation: boolean;
+  parent_eligibility_reason: string;
 };
 
 export type SupercellsWorldDetail = {
@@ -37,6 +43,7 @@ export type SupercellsWorldDetail = {
     compare: boolean;
     saved_views: false;
     saved_comparisons: true;
+    create_variation: boolean;
   };
   caveats: string[];
 };
@@ -46,7 +53,8 @@ type WorldSection =
   | "simulations"
   | "saved_comparisons"
   | "activity"
-  | "history";
+  | "history"
+  | "create";
 
 export function SupercellsWorld({
   onBackToWorlds,
@@ -63,6 +71,9 @@ export function SupercellsWorld({
   const [world, setWorld] = useState<SupercellsWorldDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [variationParentSimulationId, setVariationParentSimulationId] = useState<string | null>(
+    null,
+  );
 
   const loadWorld = useCallback(async () => {
     setLoading(true);
@@ -123,6 +134,13 @@ export function SupercellsWorld({
         ? inspectableSimulations
         : [world.reference_simulation]
       : world.simulations;
+  const defaultVariationParentSimulationId =
+    inspectableSimulations.find((simulation) => simulation.can_create_variation)?.simulation_id ??
+    world.reference_simulation.simulation_id;
+  const openVariation = (simulationId: string) => {
+    setVariationParentSimulationId(simulationId);
+    setSection("create");
+  };
   return (
     <section className="world-shell" aria-label="Supercells World">
       <WorldBreadcrumb onBackToWorlds={onBackToWorlds} />
@@ -141,13 +159,19 @@ export function SupercellsWorld({
             "saved_comparisons",
             "activity",
             "history",
+            ...(world.capabilities.create_variation ? (["create"] as WorldSection[]) : []),
           ] as WorldSection[]
         ).map((item) => (
           <button
             key={item}
             type="button"
             className={section === item ? "active-control" : ""}
-            onClick={() => setSection(item)}
+            onClick={() => {
+              if (item === "create") {
+                setVariationParentSimulationId(defaultVariationParentSimulationId);
+              }
+              setSection(item);
+            }}
           >
             {sectionLabel(item)}
           </button>
@@ -178,6 +202,19 @@ export function SupercellsWorld({
         </section>
       )}
 
+      {section === "create" && (
+        <SupercellsVariationEditor
+          world={world}
+          initialParentSimulationId={
+            variationParentSimulationId ?? defaultVariationParentSimulationId
+          }
+          onCreated={async () => {
+            await loadWorld();
+            setSection("activity");
+          }}
+        />
+      )}
+
       {(section === "overview" || section === "simulations") && (
         <section className="world-section" aria-labelledby={`supercells-${section}-title`}>
           <div className="world-section-heading">
@@ -201,6 +238,7 @@ export function SupercellsWorld({
                 simulation={simulation}
                 onExplore={onExploreSimulation}
                 onCompare={world.capabilities.compare ? onCompare : undefined}
+                onCreateVariation={openVariation}
               />
             ))}
           </div>
@@ -218,6 +256,7 @@ function sectionLabel(section: WorldSection): string {
     saved_comparisons: "Saved Comparisons",
     activity: "Activity",
     history: "History",
+    create: "Create Variation",
   }[section];
 }
 
@@ -242,10 +281,12 @@ function SupercellSimulationCard({
   simulation,
   onExplore,
   onCompare,
+  onCreateVariation,
 }: {
   simulation: SupercellSimulation;
   onExplore: (simulation: SupercellSimulation) => void;
   onCompare?: (simulation: SupercellSimulation) => void;
+  onCreateVariation: (simulationId: string) => void;
 }) {
   return (
     <article className="simulation-card supercell-simulation-card">
@@ -297,6 +338,15 @@ function SupercellSimulationCard({
             Compare
           </button>
         )}
+        {simulation.can_create_variation && (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => onCreateVariation(simulation.simulation_id)}
+          >
+            Create variation
+          </button>
+        )}
       </div>
     </article>
   );
@@ -338,16 +388,13 @@ function validateSupercellsWorld(payload: unknown): SupercellsWorldDetail {
   ) {
     throw new Error("Supercells reference Simulation identity is invalid.");
   }
-  const simulationIds = new Set([
-    "supercells_quarter_circle_reference",
-    "supercells_straight_line_hodograph",
-  ]);
   if (
     payload.simulations.some(
       (simulation) =>
         !isRecord(simulation) ||
-        !simulationIds.has(String(simulation.simulation_id)) ||
+        typeof simulation.simulation_id !== "string" ||
         typeof simulation.display_name !== "string" ||
+        typeof simulation.can_create_variation !== "boolean" ||
         (simulation.role !== "reference" && simulation.role !== "variation"),
     )
   ) {

@@ -24,6 +24,13 @@ from cloud_chamber.supercell_hodograph import (
     StraightLineHodographError,
     render_straight_line_hodograph_source,
 )
+from cloud_chamber.supercells_source_customization import (
+    SUPERCELLS_SOURCE_CUSTOMIZATION_KIND,
+    SUPERCELLS_SOURCE_CUSTOMIZATION_TARGET,
+    SupercellsSourceCustomizationError,
+    load_supercells_source_customization,
+    render_supercells_source,
+)
 from cloud_chamber.surface_forcing import (
     CM1_SOURCE_CUSTOMIZATION_FILENAME,
     DIFFERENTIAL_SURFACE_FORCING_MODE,
@@ -144,6 +151,22 @@ def prepare_cm1_source_customization(
             "forcing": customization["forcing"],
             "no_silent_forcing_fallback": True,
         }
+    elif customization_kind == SUPERCELLS_SOURCE_CUSTOMIZATION_KIND:
+        customization = load_supercells_source_customization(customization_path)
+        target_relative_path = SUPERCELLS_SOURCE_CUSTOMIZATION_TARGET
+        initiation = cast(dict[str, float], customization["initiation"])
+
+        def patch_source(source: str) -> str:
+            return render_supercells_source(source, initiation)
+
+        expected_original_sha256 = str(customization["original_source_sha256"])
+        expected_patched_sha256 = str(customization["patched_source_sha256"])
+        status_details = {
+            "initiation": initiation,
+            "wind_profile_sha256": customization["wind_profile_sha256"],
+            "thermodynamic_profile_sha256": customization["thermodynamic_profile_sha256"],
+            "no_silent_profile_or_thermal_fallback": True,
+        }
     else:
         raise CM1SourceCustomizationError(
             f"Unsupported CM1 source customization kind: {customization_kind}"
@@ -182,7 +205,11 @@ def prepare_cm1_source_customization(
             )
         try:
             patched_source = patch_source(original_source)
-        except (StraightLineHodographError, TradeCumulusForcingError) as exc:
+        except (
+            StraightLineHodographError,
+            SupercellsSourceCustomizationError,
+            TradeCumulusForcingError,
+        ) as exc:
             raise CM1SourceCustomizationError(str(exc)) from exc
         patched_source_sha256 = _text_sha256(patched_source)
         if expected_patched_sha256 is not None and patched_source_sha256 != expected_patched_sha256:

@@ -513,6 +513,7 @@ def test_supercells_compare_does_not_clone_the_only_simulation(
         model_start_seconds=0,
         model_end_seconds=10_800,
         history_cadence_seconds=120,
+        parent_eligibility_reason="Accepted presentation evidence.",
     )
     monkeypatch.setattr(
         "cloud_chamber.world_compare.supercells_world_detail",
@@ -551,6 +552,7 @@ def test_supercells_compare_uses_real_controlled_hodograph_pair(
         model_start_seconds=0,
         model_end_seconds=10_800,
         history_cadence_seconds=120,
+        parent_eligibility_reason="Accepted presentation evidence.",
     )
     straight = SupercellSimulationRecord(
         simulation_id="supercells_straight_line_hodograph",
@@ -566,6 +568,7 @@ def test_supercells_compare_uses_real_controlled_hodograph_pair(
         model_start_seconds=0,
         model_end_seconds=10_800,
         history_cadence_seconds=120,
+        parent_eligibility_reason="Accepted controlled variation evidence.",
     )
     monkeypatch.setattr(
         "cloud_chamber.world_compare.supercells_world_detail",

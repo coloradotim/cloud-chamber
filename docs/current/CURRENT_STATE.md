@@ -70,7 +70,7 @@ retained Experiments open directly in non-World Explore.
 | --- | --- | --- | --- |
 | **Trade Cumulus** | Canonical BOMEX Baseline and More Moisture retained Simulations | Overview, Simulations, Activity, History, featured and ordinary Compare, Saved Comparisons, direct-value Create Variation, Explore resume, and Saved Views | Standard and Extended profile characterization remains separately gated |
 | **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, Activity, History, ordinary Compare, Saved Comparisons, shared-contract Create Variation, Explore resume, and Saved Views | The first shared variation envelope remains the reference implementation |
-| **Supercells** | Quarter-Circle and Straight-Line Hodograph retained Simulations | Overview, Simulations, Activity, History, ordinary Compare, Saved Comparisons, Explore resume, and Saved Views | No create-variation workflow |
+| **Supercells** | Quarter-Circle and Straight-Line Hodograph retained Simulations | Overview, Simulations, Activity, History, ordinary Compare, Saved Comparisons, direct-value Create Variation, Explore resume, and Saved Views | New Standard, Half-Circle, and broad-envelope endpoint runtime characterization remains PM-gated |
 
 The World Overview and Simulations surfaces use stable content identities and
 explicit availability states. Missing, invalid, or conflicting retained
@@ -98,7 +98,7 @@ and attempt relationships with text search, practical filters, and sort.
 Technical identifiers, differences, caveats, dependencies, and attempt evidence
 remain available on demand.
 
-Current shared-envelope Mountain Waves and Trade Cumulus variations can be
+Current shared-envelope Mountain Waves, Trade Cumulus, and Supercells variations can be
 assigned to their World when their Recipe identity and current contract
 evidence are present.
 Availability is evaluated independently from parent eligibility. A World name
@@ -108,7 +108,7 @@ legacy or unassigned.
 
 ## Create Variation
 
-Mountain Waves and Trade Cumulus consume the shared variation envelope. The
+Mountain Waves, Trade Cumulus, and Supercells consume the shared variation envelope. The
 envelope records stable intended Simulation identity, parent and reference
 lineage, immutable scientific, numerical, and observation layers, categorized
 material differences, relationship classification, explicit run profile,
@@ -129,6 +129,16 @@ targets. Its preview shows complete generated atmosphere and forcing profiles,
 exact canonical/parent/child/delta review, all five explicit run profiles, and
 the package-bound storage gate. Unusual but coherent atmospheric states warn
 rather than fail. Packaging remains separate from queueing.
+
+The versioned Idealized Isolated Supercell Recipe exposes direct hodograph,
+layer-shear, mean-wind, CAPE, LCL, midlevel-humidity, CIN, and deterministic
+thermal targets in physical units. One backend contract generates the exact
+hodograph, hydrostatic thermodynamic profile, and thermal geometry used by
+preview and package generation. Quick, Standard, Presentation, and Extended
+profiles remain explicit. Broad but coherent environments and triggers warn
+rather than fail; only unsolved profiles, impossible geometry, unsupported
+source generation, or execution and storage safety block packaging or launch.
+New runtime characterization remains a separate PM authorization gate.
 
 The selected parent determines the Recipe. Controls resolve against the Recipe
 reference rather than compounding relative to a previous variation. Quick,

@@ -13,7 +13,14 @@ import numpy as np
 import xarray as xr
 from pydantic import BaseModel, Field
 
+from cloud_chamber.run_manifest import (
+    LifecycleState,
+    RunManifest,
+    RunManifestError,
+    load_run_manifest,
+)
 from cloud_chamber.settings import CloudChamberSettings
+from cloud_chamber.variation_envelope import VariationEnvelope
 
 PRESERVED_RUN_ID = "quarter-circle-supercell-official-20260722T142521Z"
 PRESERVED_CASE_ID = "cm1_r21_1_quarter_circle_supercell_official_v0"
@@ -23,10 +30,7 @@ PRESENTATION_RUN_ID = "quarter-circle-supercell-presentation-v1-20260723"
 PRESENTATION_CASE_ID = "cm1_r21_1_quarter_circle_supercell_presentation_v1"
 STRAIGHT_LINE_PRESENTATION_RUN_ID = "straight-line-supercell-presentation-v1-20260726"
 STRAIGHT_LINE_PRESENTATION_CASE_ID = "cm1_r21_1_straight_line_supercell_presentation_v1"
-SupercellSimulationId = Literal[
-    "supercells_quarter_circle_reference",
-    "supercells_straight_line_hodograph",
-]
+SupercellSimulationId = str
 QUARTER_CIRCLE_SIMULATION_ID: Literal["supercells_quarter_circle_reference"] = (
     "supercells_quarter_circle_reference"
 )
@@ -66,6 +70,36 @@ PRESENTATION_REQUIRED_FIELDS = {
     "uh",
     "cref",
 }
+NATIVE_COORDINATE_CONTRACT: dict[str, tuple[tuple[str, ...], str]] = {
+    "xh": (("xh",), "km"),
+    "yh": (("yh",), "km"),
+    "zh": (("zh",), "km"),
+}
+NATIVE_FIELD_CONTRACT: dict[str, tuple[tuple[str, ...], str]] = {
+    "th": (("time", "zh", "yh", "xh"), "K"),
+    "prs": (("time", "zh", "yh", "xh"), "Pa"),
+    "qv": (("time", "zh", "yh", "xh"), "kg/kg"),
+    "qc": (("time", "zh", "yh", "xh"), "kg/kg"),
+    "qr": (("time", "zh", "yh", "xh"), "kg/kg"),
+    "qi": (("time", "zh", "yh", "xh"), "kg/kg"),
+    "qs": (("time", "zh", "yh", "xh"), "kg/kg"),
+    "qg": (("time", "zh", "yh", "xh"), "kg/kg"),
+    "nci": (("time", "zh", "yh", "xh"), "#/kg"),
+    "ncs": (("time", "zh", "yh", "xh"), "#/kg"),
+    "ncr": (("time", "zh", "yh", "xh"), "#/kg"),
+    "ncg": (("time", "zh", "yh", "xh"), "#/kg"),
+    "dbz": (("time", "zh", "yh", "xh"), "dBZ"),
+    "uinterp": (("time", "zh", "yh", "xh"), "m/s"),
+    "vinterp": (("time", "zh", "yh", "xh"), "m/s"),
+    "winterp": (("time", "zh", "yh", "xh"), "m/s"),
+    "xvort": (("time", "zh", "yh", "xh"), "1/s"),
+    "yvort": (("time", "zh", "yh", "xh"), "1/s"),
+    "zvort": (("time", "zh", "yh", "xh"), "1/s"),
+    "rain": (("time", "yh", "xh"), "cm"),
+    "prate": (("time", "yh", "xh"), "kg/m2/s"),
+    "uh": (("time", "yh", "xh"), "m2/s2"),
+    "cref": (("time", "yh", "xh"), "dBZ"),
+}
 LensId = Literal["rotating_updraft", "cloud_precipitation", "low_level_interactions"]
 ViewportId = Literal["storm", "full"]
 FramePurpose = Literal["research", "product"]
@@ -89,7 +123,7 @@ class _RunContract:
     case_id: str
     simulation_id: str | None
     simulation_label: str
-    hodograph: Literal["quarter_circle", "straight_line"]
+    hodograph: Literal["quarter_circle", "straight_line", "generated"]
     expected_times_seconds: tuple[int, ...]
     history_filenames: tuple[str, ...]
     evidence_filename: str | None
@@ -366,11 +400,84 @@ def preserved_storm_examination_frame(
     )
 
 
-def _product_contract(simulation_id: str) -> _RunContract:
+def _product_contract(
+    settings: CloudChamberSettings,
+    simulation_id: str,
+) -> _RunContract:
     contract = PRODUCT_RUNS.get(simulation_id)
-    if contract is None:
-        raise StormExaminationError(f"Supercell Simulation is unavailable: {simulation_id}.")
-    return contract
+    if contract is not None:
+        return contract
+    run_root = settings.runtime_home.expanduser() / "runs"
+    candidates: list[tuple[Path, Any, VariationEnvelope]] = []
+    accepted_run_ids: set[str] = set()
+    for manifest_path in sorted(run_root.glob("*/run_manifest.json")):
+        try:
+            manifest = load_run_manifest(manifest_path)
+            payload = manifest.run_configuration.get("variation_envelope")
+            envelope = VariationEnvelope.model_validate(payload)
+        except (OSError, RunManifestError, ValueError):
+            continue
+        if (
+            manifest.lifecycle_state != LifecycleState.COMPLETED
+            or envelope.world_id != "supercells"
+            or envelope.simulation_id != simulation_id
+        ):
+            continue
+        candidates.append((manifest_path, manifest, envelope))
+        accepted_run_ids.update(
+            attempt.run_id for attempt in envelope.attempts if attempt.accepted_backing
+        )
+    matching_accepted = [
+        candidate for candidate in candidates if candidate[1].run_id in accepted_run_ids
+    ]
+    if len(matching_accepted) > 1:
+        raise StormExaminationError(
+            "The completed Supercells variation has conflicting accepted backing attempts."
+        )
+    if matching_accepted:
+        candidates = matching_accepted
+    elif len(candidates) > 1:
+        raise StormExaminationError(
+            "The completed Supercells variation has multiple unselected backing attempts."
+        )
+    if candidates:
+        _, manifest, envelope = candidates[0]
+        return _generated_run_contract(manifest, envelope)
+    raise StormExaminationError(f"Supercell Simulation is unavailable: {simulation_id}.")
+
+
+def _generated_run_contract(
+    manifest: RunManifest,
+    envelope: VariationEnvelope,
+) -> _RunContract:
+    duration = envelope.observation_plan.payload.get("duration_seconds")
+    cadence = envelope.observation_plan.payload.get("output_cadence_seconds")
+    history_count = envelope.observation_plan.payload.get("expected_history_count")
+    retained_fields = envelope.observation_plan.payload.get("retained_field_inventory")
+    if (
+        not isinstance(duration, int)
+        or not isinstance(cadence, int)
+        or not isinstance(history_count, int)
+        or cadence <= 0
+        or history_count != duration // cadence + 1
+        or not isinstance(retained_fields, list)
+        or set(retained_fields) != PRESENTATION_REQUIRED_FIELDS
+        or set(manifest.required_output_fields) != PRESENTATION_REQUIRED_FIELDS
+    ):
+        raise StormExaminationError(
+            "The completed Supercells variation has an invalid observation contract."
+        )
+    return _RunContract(
+        run_id=manifest.run_id,
+        case_id=manifest.scenario.id,
+        simulation_id=envelope.simulation_id,
+        simulation_label=envelope.display_name,
+        hodograph="generated",
+        expected_times_seconds=tuple(range(0, duration + cadence, cadence)),
+        history_filenames=tuple(f"cm1out_{index:06d}.nc" for index in range(1, history_count + 1)),
+        evidence_filename=None,
+        unavailable_label="completed Supercells variation output",
+    )
 
 
 def supercells_explore_frame(
@@ -400,7 +507,7 @@ def supercells_explore_frame(
         selected_y_index=selected_y_index,
         selected_z_index=selected_z_index,
         purpose="product",
-        product_contract=_product_contract(simulation_id),
+        product_contract=_product_contract(settings, simulation_id),
     )
 
 
@@ -409,9 +516,31 @@ def storm_examination_inventory(
     simulation_id: str = QUARTER_CIRCLE_SIMULATION_ID,
 ) -> tuple[tuple[Path, float], ...]:
     """Return the cached, identity-validated production history inventory."""
-    contract = _product_contract(simulation_id)
+    contract = _product_contract(settings, simulation_id)
     run_dir = settings.runtime_home.expanduser() / "runs" / contract.run_id
     return _validated_inventory(run_dir, contract)
+
+
+def storm_examination_variation_inventory(
+    settings: CloudChamberSettings,
+    manifest_path: Path,
+) -> tuple[tuple[Path, float], ...]:
+    """Validate one completed variation attempt before accepted-backing selection."""
+    try:
+        manifest = load_run_manifest(manifest_path)
+        envelope = VariationEnvelope.model_validate(
+            manifest.run_configuration.get("variation_envelope")
+        )
+    except (OSError, RunManifestError, ValueError) as exc:
+        raise StormExaminationError(
+            "The completed Supercells variation identity is invalid."
+        ) from exc
+    if manifest.lifecycle_state != LifecycleState.COMPLETED or envelope.world_id != "supercells":
+        raise StormExaminationError(
+            "Supercells variation inventory requires one completed variation attempt."
+        )
+    contract = _generated_run_contract(manifest, envelope)
+    return _validated_inventory(manifest_path.parent, contract)
 
 
 def _storm_frame(
@@ -692,7 +821,7 @@ def _run_fingerprint(
         raise StormExaminationError(f"The {contract.unavailable_label} is unavailable.") from exc
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=16)
 def _cached_inventory(
     run_dir_text: str,
     _fingerprint: tuple[tuple[str, int, int], ...],
@@ -710,6 +839,30 @@ def _cached_inventory(
         raise StormExaminationError("The selected Simulation is not an accepted completed run.")
     if case_manifest.get("case_id") != contract.case_id:
         raise StormExaminationError("The selected Simulation case identity does not match.")
+    if contract.hodograph == "generated":
+        try:
+            envelope = VariationEnvelope.model_validate(
+                manifest.get("run_configuration", {}).get("variation_envelope")
+            )
+        except ValueError as exc:
+            raise StormExaminationError(
+                "The completed Supercells variation envelope is invalid."
+            ) from exc
+        if (
+            manifest.get("scenario", {}).get("id") != contract.case_id
+            or manifest.get("execution", {}).get("exit_code") != 0
+            or manifest.get("run_configuration", {}).get("cloud_world_id") != "supercells"
+            or manifest.get("run_configuration", {}).get("simulation_id") != contract.simulation_id
+            or envelope.simulation_id != contract.simulation_id
+            or envelope.recipe_id != "idealized_isolated_supercell"
+            or envelope.recipe_contract_version != "1"
+            or case_manifest.get("run_id") != contract.run_id
+            or case_manifest.get("simulation_id") != contract.simulation_id
+            or case_manifest.get("recipe_id") != envelope.recipe_id
+        ):
+            raise StormExaminationError(
+                "The completed Supercells variation identity or completion evidence is invalid."
+            )
     evidence_inventory: dict[str, tuple[int, int]] | None = None
     if contract.evidence_filename is not None:
         evidence_inventory = _presentation_evidence_inventory(
@@ -745,6 +898,8 @@ def _cached_inventory(
         try:
             with xr.open_dataset(path, decode_times=False) as dataset:
                 actual_time = float(np.asarray(dataset["time"].values).reshape(-1)[0])
+                if contract.hodograph == "generated":
+                    _validate_generated_history_contract(dataset, float(expected_time))
         except (OSError, KeyError, ValueError) as exc:
             raise StormExaminationError("A required retained history is unreadable.") from exc
         if not np.isclose(actual_time, expected_time):
@@ -753,6 +908,67 @@ def _cached_inventory(
             )
         inventory.append((path, actual_time))
     return tuple(inventory)
+
+
+def _validate_generated_history_contract(
+    dataset: xr.Dataset,
+    expected_time: float,
+) -> None:
+    missing = sorted(
+        (set(NATIVE_COORDINATE_CONTRACT) | set(NATIVE_FIELD_CONTRACT) | {"time"}).difference(
+            dataset.variables
+        )
+    )
+    if missing:
+        raise StormExaminationError(
+            "The Supercells variation output is missing required native fields: "
+            + ", ".join(missing)
+        )
+    time = dataset["time"]
+    time_values = np.asarray(time.values, dtype=np.float64).reshape(-1)
+    if (
+        time.dims != ("time",)
+        or time_values.size != 1
+        or not np.all(np.isfinite(time_values))
+        or not np.isclose(float(time_values[0]), expected_time)
+    ):
+        raise StormExaminationError(
+            "The Supercells variation output timeline does not match its contract."
+        )
+    coordinate_sizes: dict[str, int] = {}
+    for name, (expected_dims, expected_units) in NATIVE_COORDINATE_CONTRACT.items():
+        item = dataset[name]
+        values = np.asarray(item.values, dtype=np.float64)
+        if (
+            item.dims != expected_dims
+            or item.attrs.get("units") != expected_units
+            or values.size < 2
+            or not np.all(np.isfinite(values))
+            or not np.all(np.diff(values) > 0)
+        ):
+            raise StormExaminationError(f"The Supercells variation {name} coordinate is invalid.")
+        coordinate_sizes[name] = values.size
+    expected_sizes = {
+        "time": 1,
+        "xh": coordinate_sizes["xh"],
+        "yh": coordinate_sizes["yh"],
+        "zh": coordinate_sizes["zh"],
+    }
+    for name, (expected_dims, expected_units) in NATIVE_FIELD_CONTRACT.items():
+        item = dataset[name]
+        if item.dims != expected_dims or item.attrs.get("units") != expected_units:
+            raise StormExaminationError(
+                f"The Supercells variation {name} dimensions or units are invalid."
+            )
+        if any(item.sizes[dimension] != expected_sizes[dimension] for dimension in expected_dims):
+            raise StormExaminationError(
+                f"The Supercells variation {name} native geometry is invalid."
+            )
+        values = np.asarray(item.values)
+        if not np.issubdtype(values.dtype, np.number) or not np.all(np.isfinite(values)):
+            raise StormExaminationError(
+                f"The Supercells variation {name} field contains non-finite values."
+            )
 
 
 def _presentation_evidence_inventory(

@@ -21,6 +21,7 @@ DifferenceCategory = Literal[
 ]
 RelationshipClassification = Literal[
     "controlled_physical_variation",
+    "controlled_initiation_sensitivity",
     "multi_factor_physical_variation",
     "numerical_sensitivity",
     "mixed_variation",
@@ -196,6 +197,8 @@ def classify_relationship(
     if numerical:
         return "numerical_sensitivity"
     if physical:
+        if all(_is_deterministic_initiation_difference(difference) for difference in physical):
+            return "controlled_initiation_sensitivity"
         return (
             "controlled_physical_variation"
             if len(physical) == 1
@@ -204,6 +207,12 @@ def classify_relationship(
     if observation:
         return "observation_only_attempt"
     raise ValueError("A variation requires a physical or numerical difference.")
+
+
+def _is_deterministic_initiation_difference(difference: VariationDifference) -> bool:
+    return difference.category == "forcing_initiation" and difference.path.startswith(
+        "controls.thermal_"
+    )
 
 
 def grouped_differences(

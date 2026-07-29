@@ -48,7 +48,7 @@ Keep product approval separate from software availability:
 | Fun With Soundings | A separate first-class atmospheric workbench | Accessible with five jobs, direct non-World Explore, and conservative World ownership |
 | Saved Views | Durable user-curated views | Implemented across all three accessible Worlds as named live examinations with bounded restoration status |
 | Compare | Related Simulations can be compared | Ordinary Compare and durable Saved Comparisons are implemented for real pairs across all three Worlds |
-| Variation | Create a related Simulation from a World Simulation | A shared versioned envelope is implemented with two typed Mountain Waves Recipes and one direct-value Trade Cumulus Recipe; Supercells does not yet provide a Recipe payload |
+| Variation | Create a related Simulation from a World Simulation | A shared versioned envelope is implemented with two typed Mountain Waves Recipes, one direct-value Trade Cumulus Recipe, and one direct-value Supercells Recipe; bounded runtime characterization remains gated where stated |
 | Activity and History | Owner-aware current work and durable scientific records | One shared lifecycle projection is implemented for current World work, Fun With Soundings, and legacy/unassigned Experiments |
 | Storage and launch budget | Understand retained scientific assets before creating more | Global read-only inventory, dependency visibility, typed World cost profiles, planning and exact-package-bound immutable snapshots, and a single-use immediate prelaunch disk gate are implemented |
 | Explore | World-specific science in a shared application vocabulary | Implemented separately for all three accessible Worlds |
@@ -102,10 +102,11 @@ completes the owner-aware Activity and History lifecycle foundation.
 Issue #436 completes the read-only retained-asset inventory and prelaunch disk
 budget foundation. Issue #447 adds the shared variation envelope and migrates
 Mountain Waves through the approved Dry Ridge Mechanics and Boulder Moist Wave
-Recipes. Issue #448 is the active direct-value Trade Cumulus Recipe
-implementation; manual review and separately authorized bounded
-characterization remain. Issue #449 follows it. Their current issue bodies and
-latest explicit PM comments control exact scope when activated.
+Recipes. Issue #448 completes the direct-value Trade Cumulus Recipe
+implementation. Issue #449 is the active direct-value Supercells Recipe
+implementation; separately authorized bounded runtime characterization remains
+before its final disposition. Its current issue body and latest explicit PM
+comments control exact scope.
 Issues #389, #390, and #391 were closed as superseded and are not current
 assignment authority.
 

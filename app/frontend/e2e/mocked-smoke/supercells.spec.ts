@@ -10,6 +10,8 @@ const simulation = {
   world_id: "supercells",
   run_id: "quarter-circle-supercell-official-20260722T142521Z",
   case_id: "cm1_r21_1_quarter_circle_supercell_official_v0",
+  parent_simulation_id: null,
+  reference_simulation_id: "supercells_quarter_circle_reference",
   technical_state: "available",
   technical_state_message: "Nine retained histories are available.",
   explore_available: true,
@@ -19,6 +21,11 @@ const simulation = {
   history_cadence_seconds: 900,
   default_explore_time_index: 5,
   lineage_state: "known",
+  recipe_contract_version: "1",
+  relationship_classification: null,
+  run_profile_id: "supercells_quick_v1",
+  can_create_variation: true,
+  parent_eligibility_reason: "Exact Recipe and retained-output evidence is reconstructible.",
 };
 
 const wScale = {
@@ -289,6 +296,8 @@ async function mockSupercellsProductPath(page: Page) {
         lab: false,
         compare: false,
         saved_views: false,
+        saved_comparisons: true,
+        create_variation: true,
       },
       caveats: ["This idealized benchmark is not a forecast."],
     }),

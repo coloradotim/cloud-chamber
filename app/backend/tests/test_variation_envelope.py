@@ -27,6 +27,19 @@ def difference(category: DifferenceCategory, path: str = "control") -> Variation
     [
         ([difference("terrain")], "controlled_physical_variation"),
         (
+            [
+                difference(
+                    "forcing_initiation",
+                    "controls.thermal_perturbation_amplitude_k",
+                )
+            ],
+            "controlled_initiation_sensitivity",
+        ),
+        (
+            [difference("forcing_initiation", "controls.surface_moisture_flux_g_kg_m_s")],
+            "controlled_physical_variation",
+        ),
+        (
             [difference("terrain"), difference("wind")],
             "multi_factor_physical_variation",
         ),
@@ -38,7 +51,7 @@ def difference(category: DifferenceCategory, path: str = "control") -> Variation
         ([difference("observation_plan")], "observation_only_attempt"),
     ],
 )
-def test_relationship_classification_is_shared_and_category_driven(
+def test_relationship_classification_is_shared_and_semantically_explicit(
     differences: list[VariationDifference],
     expected: str,
 ) -> None:
