@@ -13,6 +13,7 @@ import numpy as np
 import xarray as xr
 from pydantic import BaseModel, Field
 
+from cloud_chamber.run_cost import ExactNumericalDomain, profile_by_id
 from cloud_chamber.run_manifest import (
     LifecycleState,
     RunManifest,
@@ -20,6 +21,10 @@ from cloud_chamber.run_manifest import (
     load_run_manifest,
 )
 from cloud_chamber.settings import CloudChamberSettings
+from cloud_chamber.supercells_attempt_provenance import (
+    SupercellsAttemptProvenanceError,
+    validate_supercells_attempt_provenance,
+)
 from cloud_chamber.variation_envelope import VariationEnvelope
 
 PRESERVED_RUN_ID = "quarter-circle-supercell-official-20260722T142521Z"
@@ -45,6 +50,9 @@ DEFAULT_PRESENTATION_TIME_INDEX = PRESENTATION_TIMES_SECONDS.index(
     PRESENTATION_DEFAULT_TIME_SECONDS
 )
 HYDROMETEORS = ("qc", "qr", "qi", "qs", "qg")
+SUPERCELLS_DAMPING_BASE_M = 15_000.0
+SUPERCELLS_MOTION_INTERACTION_THRESHOLD_M_S = 1.0
+SUPERCELLS_CONDENSATE_INTERACTION_THRESHOLD_KG_KG = 1.0e-6
 PRESENTATION_REQUIRED_FIELDS = {
     "th",
     "prs",
@@ -128,6 +136,15 @@ class _RunContract:
     history_filenames: tuple[str, ...]
     evidence_filename: str | None
     unavailable_label: str
+    exact_domain: ExactNumericalDomain
+    useful_window_end_seconds: int
+
+
+def _profile_domain(profile_id: str) -> ExactNumericalDomain:
+    domain = profile_by_id(profile_id).numerical_realization.exact_domain
+    if domain is None:
+        raise RuntimeError(f"Supercells profile lacks an exact domain: {profile_id}")
+    return domain
 
 
 GATE_C_RUN = _RunContract(
@@ -140,6 +157,8 @@ GATE_C_RUN = _RunContract(
     history_filenames=HISTORY_FILENAMES,
     evidence_filename=None,
     unavailable_label="accepted Gate B retained output",
+    exact_domain=_profile_domain("supercells_presentation_v1"),
+    useful_window_end_seconds=7_200,
 )
 PRESENTATION_RUN = _RunContract(
     run_id=PRESENTATION_RUN_ID,
@@ -151,6 +170,8 @@ PRESENTATION_RUN = _RunContract(
     history_filenames=PRESENTATION_HISTORY_FILENAMES,
     evidence_filename=PRESENTATION_EVIDENCE_FILENAME,
     unavailable_label="accepted presentation output",
+    exact_domain=_profile_domain("supercells_presentation_v1"),
+    useful_window_end_seconds=10_800,
 )
 STRAIGHT_LINE_PRESENTATION_RUN = _RunContract(
     run_id=STRAIGHT_LINE_PRESENTATION_RUN_ID,
@@ -162,6 +183,8 @@ STRAIGHT_LINE_PRESENTATION_RUN = _RunContract(
     history_filenames=PRESENTATION_HISTORY_FILENAMES,
     evidence_filename=PRESENTATION_EVIDENCE_FILENAME,
     unavailable_label="controlled straight-line presentation output",
+    exact_domain=_profile_domain("supercells_presentation_v1"),
+    useful_window_end_seconds=10_800,
 )
 PRODUCT_RUNS: dict[str, _RunContract] = {
     QUARTER_CIRCLE_SIMULATION_ID: PRESENTATION_RUN,
@@ -374,6 +397,24 @@ class StormExaminationFrame(BaseModel):
     extraction_milliseconds: float
 
 
+class StormInteractionReport(BaseModel):
+    useful_window_end_seconds: int
+    lateral_boundary_first_time_seconds: float | None = None
+    damping_layer_first_time_seconds: float | None = None
+    blocking_lateral_boundary_first_time_seconds: float | None = None
+    blocking_damping_layer_first_time_seconds: float | None = None
+    classification: Literal[
+        "clear",
+        "after_useful_window",
+        "inside_useful_window",
+    ]
+    blocking_classification: Literal[
+        "clear",
+        "after_useful_window",
+        "inside_useful_window",
+    ]
+
+
 def preserved_storm_examination_frame(
     settings: CloudChamberSettings,
     *,
@@ -454,6 +495,14 @@ def _generated_run_contract(
     cadence = envelope.observation_plan.payload.get("output_cadence_seconds")
     history_count = envelope.observation_plan.payload.get("expected_history_count")
     retained_fields = envelope.observation_plan.payload.get("retained_field_inventory")
+    try:
+        exact_domain = ExactNumericalDomain.model_validate(
+            envelope.numerical_realization.payload.get("exact_domain")
+        )
+    except ValueError as exc:
+        raise StormExaminationError(
+            "The completed Supercells variation lacks an exact numerical domain."
+        ) from exc
     if (
         not isinstance(duration, int)
         or not isinstance(cadence, int)
@@ -477,6 +526,10 @@ def _generated_run_contract(
         history_filenames=tuple(f"cm1out_{index:06d}.nc" for index in range(1, history_count + 1)),
         evidence_filename=None,
         unavailable_label="completed Supercells variation output",
+        exact_domain=exact_domain,
+        useful_window_end_seconds=int(
+            envelope.world_payload.get("useful_window_end_seconds", duration)
+        ),
     )
 
 
@@ -541,6 +594,152 @@ def storm_examination_variation_inventory(
         )
     contract = _generated_run_contract(manifest, envelope)
     return _validated_inventory(manifest_path.parent, contract)
+
+
+def storm_examination_variation_interactions(
+    settings: CloudChamberSettings,
+    manifest_path: Path,
+) -> StormInteractionReport:
+    """Classify retained boundary and damping interaction against the useful window."""
+    try:
+        manifest = load_run_manifest(manifest_path)
+        envelope = VariationEnvelope.model_validate(
+            manifest.run_configuration.get("variation_envelope")
+        )
+    except (OSError, RunManifestError, ValueError) as exc:
+        raise StormExaminationError(
+            "The completed Supercells variation identity is invalid."
+        ) from exc
+    contract = _generated_run_contract(manifest, envelope)
+    run_dir = manifest_path.parent
+    fingerprint = _run_fingerprint(run_dir, contract)
+    return _cached_interaction_report(str(run_dir), fingerprint, contract)
+
+
+def storm_examination_interactions(
+    settings: CloudChamberSettings,
+    simulation_id: str,
+) -> StormInteractionReport:
+    """Classify one current retained Simulation against its declared useful window."""
+    contract = _product_contract(settings, simulation_id)
+    run_dir = settings.runtime_home.expanduser() / "runs" / contract.run_id
+    fingerprint = _run_fingerprint(run_dir, contract)
+    return _cached_interaction_report(str(run_dir), fingerprint, contract)
+
+
+@lru_cache(maxsize=16)
+def _cached_interaction_report(
+    run_dir_text: str,
+    fingerprint: tuple[tuple[str, int, int], ...],
+    contract: _RunContract,
+) -> StormInteractionReport:
+    inventory = _cached_inventory(run_dir_text, fingerprint, contract)
+    horizontal_guard = max(
+        2,
+        int(np.ceil(2_000.0 / min(contract.exact_domain.dx_m, contract.exact_domain.dy_m))),
+    )
+    lateral_time: float | None = None
+    damping_time: float | None = None
+    blocking_lateral_time: float | None = None
+    blocking_damping_time: float | None = None
+    for path, time_seconds in inventory:
+        with xr.open_dataset(path, decode_times=False) as dataset:
+            w = np.abs(np.asarray(dataset["winterp"].values, dtype=np.float64)[0])
+            condensate = sum(
+                np.asarray(dataset[name].values, dtype=np.float64)[0] for name in HYDROMETEORS
+            )
+            signal = (w >= SUPERCELLS_MOTION_INTERACTION_THRESHOLD_M_S) | (
+                condensate >= SUPERCELLS_CONDENSATE_INTERACTION_THRESHOLD_KG_KG
+            )
+            lateral_w_max = max(
+                float(np.max(w[:, :horizontal_guard, :])),
+                float(np.max(w[:, -horizontal_guard:, :])),
+                float(np.max(w[:, :, :horizontal_guard])),
+                float(np.max(w[:, :, -horizontal_guard:])),
+            )
+            lateral_condensate_max = max(
+                float(np.max(condensate[:, :horizontal_guard, :])),
+                float(np.max(condensate[:, -horizontal_guard:, :])),
+                float(np.max(condensate[:, :, :horizontal_guard])),
+                float(np.max(condensate[:, :, -horizontal_guard:])),
+            )
+            if lateral_time is None and (
+                np.any(signal[:, :horizontal_guard, :])
+                or np.any(signal[:, -horizontal_guard:, :])
+                or np.any(signal[:, :, :horizontal_guard])
+                or np.any(signal[:, :, -horizontal_guard:])
+            ):
+                lateral_time = time_seconds
+            z_km = np.asarray(dataset["zh"].values, dtype=np.float64)
+            damping_indices = np.flatnonzero(z_km >= SUPERCELLS_DAMPING_BASE_M / 1_000.0)
+            damping_w_max = float(np.max(w[damping_indices, :, :])) if damping_indices.size else 0.0
+            damping_condensate_max = (
+                float(np.max(condensate[damping_indices, :, :])) if damping_indices.size else 0.0
+            )
+            if (
+                damping_time is None
+                and damping_indices.size
+                and np.any(signal[damping_indices, :, :])
+            ):
+                damping_time = time_seconds
+            if blocking_lateral_time is None and _region_contains_dominant_signal(
+                region_w_max=lateral_w_max,
+                region_condensate_max=lateral_condensate_max,
+                domain_w_max=float(np.max(w)),
+                domain_condensate_max=float(np.max(condensate)),
+            ):
+                blocking_lateral_time = time_seconds
+            if blocking_damping_time is None and _region_contains_dominant_signal(
+                region_w_max=damping_w_max,
+                region_condensate_max=damping_condensate_max,
+                domain_w_max=float(np.max(w)),
+                domain_condensate_max=float(np.max(condensate)),
+            ):
+                blocking_damping_time = time_seconds
+    return StormInteractionReport(
+        useful_window_end_seconds=contract.useful_window_end_seconds,
+        lateral_boundary_first_time_seconds=lateral_time,
+        damping_layer_first_time_seconds=damping_time,
+        blocking_lateral_boundary_first_time_seconds=blocking_lateral_time,
+        blocking_damping_layer_first_time_seconds=blocking_damping_time,
+        classification=_classify_interaction_times(
+            lateral_time,
+            damping_time,
+            useful_window_end_seconds=contract.useful_window_end_seconds,
+        ),
+        blocking_classification=_classify_interaction_times(
+            blocking_lateral_time,
+            blocking_damping_time,
+            useful_window_end_seconds=contract.useful_window_end_seconds,
+        ),
+    )
+
+
+def _region_contains_dominant_signal(
+    *,
+    region_w_max: float,
+    region_condensate_max: float,
+    domain_w_max: float,
+    domain_condensate_max: float,
+) -> bool:
+    return (
+        domain_w_max >= SUPERCELLS_MOTION_INTERACTION_THRESHOLD_M_S and region_w_max >= domain_w_max
+    ) or (
+        domain_condensate_max >= SUPERCELLS_CONDENSATE_INTERACTION_THRESHOLD_KG_KG
+        and region_condensate_max >= domain_condensate_max
+    )
+
+
+def _classify_interaction_times(
+    *times: float | None,
+    useful_window_end_seconds: int,
+) -> Literal["clear", "after_useful_window", "inside_useful_window"]:
+    interactions = [value for value in times if value is not None]
+    if not interactions:
+        return "clear"
+    if min(interactions) <= useful_window_end_seconds:
+        return "inside_useful_window"
+    return "after_useful_window"
 
 
 def _storm_frame(
@@ -841,6 +1040,17 @@ def _cached_inventory(
         raise StormExaminationError("The selected Simulation case identity does not match.")
     if contract.hodograph == "generated":
         try:
+            manifest_model = load_run_manifest(run_dir / "run_manifest.json")
+            validate_supercells_attempt_provenance(manifest_model)
+        except (
+            OSError,
+            RunManifestError,
+            SupercellsAttemptProvenanceError,
+        ) as exc:
+            raise StormExaminationError(
+                f"The completed Supercells variation provenance is invalid: {exc}"
+            ) from exc
+        try:
             envelope = VariationEnvelope.model_validate(
                 manifest.get("run_configuration", {}).get("variation_envelope")
             )
@@ -899,7 +1109,11 @@ def _cached_inventory(
             with xr.open_dataset(path, decode_times=False) as dataset:
                 actual_time = float(np.asarray(dataset["time"].values).reshape(-1)[0])
                 if contract.hodograph == "generated":
-                    _validate_generated_history_contract(dataset, float(expected_time))
+                    _validate_generated_history_contract(
+                        dataset,
+                        float(expected_time),
+                        contract.exact_domain,
+                    )
         except (OSError, KeyError, ValueError) as exc:
             raise StormExaminationError("A required retained history is unreadable.") from exc
         if not np.isclose(actual_time, expected_time):
@@ -913,6 +1127,7 @@ def _cached_inventory(
 def _validate_generated_history_contract(
     dataset: xr.Dataset,
     expected_time: float,
+    exact_domain: ExactNumericalDomain,
 ) -> None:
     missing = sorted(
         (set(NATIVE_COORDINATE_CONTRACT) | set(NATIVE_FIELD_CONTRACT) | {"time"}).difference(
@@ -936,17 +1151,46 @@ def _validate_generated_history_contract(
             "The Supercells variation output timeline does not match its contract."
         )
     coordinate_sizes: dict[str, int] = {}
+    expected_coordinates = {
+        "xh": np.linspace(
+            exact_domain.x_min_m + exact_domain.dx_m / 2.0,
+            exact_domain.x_max_m - exact_domain.dx_m / 2.0,
+            exact_domain.nx,
+        )
+        / 1_000.0,
+        "yh": np.linspace(
+            exact_domain.y_min_m + exact_domain.dy_m / 2.0,
+            exact_domain.y_max_m - exact_domain.dy_m / 2.0,
+            exact_domain.ny,
+        )
+        / 1_000.0,
+        "zh": np.linspace(
+            exact_domain.dz_m / 2.0,
+            exact_domain.model_top_m - exact_domain.dz_m / 2.0,
+            exact_domain.nz,
+        )
+        / 1_000.0,
+    }
     for name, (expected_dims, expected_units) in NATIVE_COORDINATE_CONTRACT.items():
         item = dataset[name]
         values = np.asarray(item.values, dtype=np.float64)
         if (
             item.dims != expected_dims
             or item.attrs.get("units") != expected_units
-            or values.size < 2
+            or values.shape != expected_coordinates[name].shape
             or not np.all(np.isfinite(values))
             or not np.all(np.diff(values) > 0)
+            or not np.allclose(
+                values,
+                expected_coordinates[name],
+                rtol=0.0,
+                atol=2.0e-5,
+            )
         ):
-            raise StormExaminationError(f"The Supercells variation {name} coordinate is invalid.")
+            raise StormExaminationError(
+                f"The Supercells variation {name} coordinate does not match the selected "
+                "run profile's exact native grid and extent."
+            )
         coordinate_sizes[name] = values.size
     expected_sizes = {
         "time": 1,

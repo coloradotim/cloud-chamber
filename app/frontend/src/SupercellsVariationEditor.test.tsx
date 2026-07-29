@@ -349,6 +349,7 @@ function preview(body: { controls: typeof referenceControls; run_profile_id: str
     numerical_realization: costEstimate(body.run_profile_id, "Standard").profile
       .numerical_realization,
     observation_plan: costEstimate(body.run_profile_id, "Standard").profile.observation_plan,
+    useful_window_end_seconds: 10_800,
     cost_estimate: costEstimate(body.run_profile_id, "Standard"),
   };
 }

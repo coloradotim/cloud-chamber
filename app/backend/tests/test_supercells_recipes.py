@@ -6,8 +6,10 @@ import pytest
 
 from cloud_chamber.run_cost import profile_by_id
 from cloud_chamber.supercells_recipes import (
+    HYDROSTATIC_RESIDUAL_TOLERANCE_PA,
     ResolvedSupercellsRecipe,
     SupercellsControls,
+    _hydrostatic_readback_residual_pa,
     default_controls,
     normalize_controls,
     resolve_supercells_recipe,
@@ -86,9 +88,49 @@ def test_all_authored_hodograph_families_are_finite_and_distinct(
         abs=0.02,
     )
     if family == "half_circle":
-        assert any("characterization" in warning for warning in resolved.warnings)
+        assert any("characterization" in error for error in resolved.blocking_errors)
     else:
         assert not resolved.blocking_errors
+
+
+def test_default_quarter_circle_reproduces_canonical_deep_layer_vector() -> None:
+    resolved = _resolve(default_controls())
+    by_height = {round(level.height_m): level for level in resolved.hodograph}
+    surface = by_height[0]
+    two = by_height[2_000]
+    six = by_height[6_000]
+
+    assert (two.u_m_s - surface.u_m_s, two.v_m_s - surface.v_m_s) == pytest.approx(
+        (7.0, 7.0),
+        abs=0.02,
+    )
+    assert (six.u_m_s - surface.u_m_s, six.v_m_s - surface.v_m_s) == pytest.approx(
+        (31.0, 7.0),
+        abs=0.02,
+    )
+
+
+def test_turning_depth_changes_the_authored_arc_beyond_two_km() -> None:
+    shallow = _resolve(default_controls().model_copy(update={"turning_depth_km_agl": 2.0}))
+    deep = _resolve(default_controls().model_copy(update={"turning_depth_km_agl": 6.0}))
+    shallow_three = next(level for level in shallow.hodograph if level.height_m == 3_000)
+    deep_three = next(level for level in deep.hodograph if level.height_m == 3_000)
+
+    assert (deep_three.u_m_s, deep_three.v_m_s) != pytest.approx(
+        (shallow_three.u_m_s, shallow_three.v_m_s),
+        abs=0.1,
+    )
+    assert deep.achieved_controls["shear_0_6_km_m_s"] == pytest.approx(
+        default_controls().shear_0_6_km_m_s,
+        abs=0.02,
+    )
+    extended_turn = _resolve(default_controls().model_copy(update={"turning_depth_km_agl": 8.0}))
+    deep_seven = next(level for level in deep.hodograph if level.height_m == 7_000)
+    extended_seven = next(level for level in extended_turn.hodograph if level.height_m == 7_000)
+    assert (extended_seven.u_m_s, extended_seven.v_m_s) != pytest.approx(
+        (deep_seven.u_m_s, deep_seven.v_m_s),
+        abs=0.1,
+    )
 
 
 def test_broad_wind_targets_preserve_mean_and_vector_shear() -> None:
@@ -264,3 +306,13 @@ def test_differences_are_direct_absolute_values_against_selected_parent() -> Non
         for difference in resolved.differences
         if difference.path.endswith("shear_0_2_km_m_s")
     ).before == pytest.approx(parent.shear_0_2_km_m_s)
+
+
+def test_hydrostatic_readback_is_independent_of_profile_generation() -> None:
+    resolved = _resolve(default_controls())
+    perturbed = list(resolved.sounding)
+    perturbed[10] = perturbed[10].model_copy(
+        update={"pressure_pa": perturbed[10].pressure_pa + 1.0}
+    )
+
+    assert _hydrostatic_readback_residual_pa(perturbed) > HYDROSTATIC_RESIDUAL_TOLERANCE_PA

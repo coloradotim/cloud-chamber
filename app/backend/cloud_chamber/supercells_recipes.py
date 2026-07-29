@@ -6,6 +6,7 @@ import math
 from typing import Any, Literal, TypedDict
 
 import numpy as np
+from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, Field
 from scipy.optimize import brentq  # type: ignore[import-untyped]
 
@@ -30,6 +31,7 @@ SURFACE_PRESSURE_PA = 100_000.0
 SURFACE_TEMPERATURE_K = 300.0
 MODEL_TOP_M = 20_000.0
 DAMPING_BASE_M = 15_000.0
+HYDROSTATIC_RESIDUAL_TOLERANCE_PA = 0.01
 PROFILE_DZ_M = 250.0
 GRAVITY_M_S2 = 9.80665
 DRY_AIR_GAS_CONSTANT = 287.05
@@ -219,9 +221,15 @@ def resolve_supercells_recipe(
             "a bounded characterization decision."
         )
     if effective.hodograph_family == "half_circle":
-        warnings.append(
-            "Half Circle is package-valid but requires bounded source/runtime characterization "
-            "before ordinary launch."
+        errors.append(
+            "Half Circle requires bounded characterization and is not enabled for ordinary "
+            "packaging or launch."
+        )
+    if thermo["hydrostatic_residual_pa"] > HYDROSTATIC_RESIDUAL_TOLERANCE_PA:
+        errors.append(
+            "The resolved sounding failed independent hydrostatic readback: "
+            f"{thermo['hydrostatic_residual_pa']:.6f} Pa exceeds "
+            f"{HYDROSTATIC_RESIDUAL_TOLERANCE_PA:.6f} Pa."
         )
 
     diagnostics = SupercellsDiagnostics(
@@ -290,22 +298,12 @@ def _wind_profile(
     controls: SupercellsControls,
     heights: list[float],
 ) -> list[tuple[float, float]]:
-    family_angle = {
-        "straight": 0.0,
-        "quarter_circle": 45.0,
-        "half_circle": 90.0,
-    }[controls.hodograph_family]
-    turning_fraction = min(2.0 / controls.turning_depth_km_agl, 1.0)
-    low_angle = math.radians(family_angle * turning_fraction)
-    low_endpoint = np.array(
-        [
-            controls.shear_0_2_km_m_s * math.cos(low_angle),
-            controls.shear_0_2_km_m_s * math.sin(low_angle),
-        ],
+    deep_direction = math.atan2(7.0, 31.0)
+    six_endpoint = controls.shear_0_6_km_m_s * np.array(
+        [math.cos(deep_direction), math.sin(deep_direction)],
         dtype=float,
     )
-    six_endpoint = np.array([controls.shear_0_6_km_m_s, 0.0], dtype=float)
-    upper_angle = math.radians(controls.upper_shear_direction_relative_deg)
+    upper_angle = deep_direction + math.radians(controls.upper_shear_direction_relative_deg)
     twelve_endpoint = six_endpoint + np.array(
         [
             controls.shear_6_12_km_m_s * math.cos(upper_angle),
@@ -313,32 +311,43 @@ def _wind_profile(
         ],
         dtype=float,
     )
-    curvature = {
-        "straight": 0.0,
-        "quarter_circle": 0.22,
-        "half_circle": 0.44,
-    }[controls.hodograph_family]
+    turn_depth_m = controls.turning_depth_km_agl * 1_000.0
+    low_endpoint = _curved_hodograph_point(
+        controls,
+        2_000.0,
+        turn_depth_m=turn_depth_m,
+        six_endpoint=six_endpoint,
+        deep_direction=deep_direction,
+    )
+    turn_endpoint = _curved_hodograph_point(
+        controls,
+        turn_depth_m,
+        turn_depth_m=turn_depth_m,
+        six_endpoint=six_endpoint,
+        deep_direction=deep_direction,
+    )
     raw: list[np.ndarray] = []
     for height in heights:
-        if height <= 2_000.0:
-            fraction = height / 2_000.0
-            point = fraction * low_endpoint
-            if controls.shear_0_2_km_m_s > 0.0 and curvature:
-                normal = np.array([-math.sin(low_angle), math.cos(low_angle)])
-                turn_weight = min(height / max(controls.turning_depth_km_agl * 1_000.0, 1.0), 1.0)
-                point = point + (
-                    normal
-                    * curvature
-                    * controls.shear_0_2_km_m_s
-                    * math.sin(math.pi * fraction)
-                    * turn_weight
-                )
+        if height <= turn_depth_m:
+            point = _curved_hodograph_point(
+                controls,
+                height,
+                turn_depth_m=turn_depth_m,
+                six_endpoint=six_endpoint,
+                deep_direction=deep_direction,
+            )
+        elif turn_depth_m < 2_000.0 and height <= 2_000.0:
+            point = low_endpoint
         elif height <= 6_000.0:
-            fraction = (height - 2_000.0) / 4_000.0
-            point = low_endpoint + fraction * (six_endpoint - low_endpoint)
+            anchor_height = max(turn_depth_m, 2_000.0)
+            anchor = turn_endpoint if turn_depth_m >= 2_000.0 else low_endpoint
+            fraction = (height - anchor_height) / (6_000.0 - anchor_height)
+            point = anchor + fraction * (six_endpoint - anchor)
         elif height <= 12_000.0:
-            fraction = (height - 6_000.0) / 6_000.0
-            point = six_endpoint + fraction * (twelve_endpoint - six_endpoint)
+            anchor_height = max(turn_depth_m, 6_000.0)
+            anchor = turn_endpoint if turn_depth_m > 6_000.0 else six_endpoint
+            fraction = (height - anchor_height) / (12_000.0 - anchor_height)
+            point = anchor + fraction * (twelve_endpoint - anchor)
         else:
             point = twelve_endpoint
         raw.append(point)
@@ -354,6 +363,80 @@ def _wind_profile(
     )
     offset = target_mean - np.array([mean_u, mean_v])
     return [(float(point[0] + offset[0]), float(point[1] + offset[1])) for point in raw]
+
+
+def _curved_hodograph_point(
+    controls: SupercellsControls,
+    height_m: float,
+    *,
+    turn_depth_m: float,
+    six_endpoint: NDArray[np.float64],
+    deep_direction: float,
+) -> NDArray[np.float64]:
+    if controls.hodograph_family == "straight":
+        if height_m <= 2_000.0:
+            return (
+                height_m
+                / 2_000.0
+                * controls.shear_0_2_km_m_s
+                * np.array([math.cos(deep_direction), math.sin(deep_direction)])
+            )
+        fraction = min((height_m - 2_000.0) / 4_000.0, 1.0)
+        low = controls.shear_0_2_km_m_s * np.array(
+            [math.cos(deep_direction), math.sin(deep_direction)]
+        )
+        return low + fraction * (six_endpoint - low)
+
+    total_turn = {
+        "quarter_circle": math.pi / 2.0,
+        "half_circle": math.pi,
+    }[controls.hodograph_family]
+    bounded_height = min(max(height_m, 0.0), turn_depth_m)
+
+    if turn_depth_m < 2_000.0:
+        radius = controls.shear_0_2_km_m_s / max(2.0 * math.sin(total_turn / 2.0), 1.0e-12)
+        initial_tangent = 0.0
+        theta = total_turn * bounded_height / turn_depth_m
+    elif turn_depth_m < 6_000.0:
+        theta_at_two = total_turn * 2_000.0 / turn_depth_m
+        radius = controls.shear_0_2_km_m_s / max(2.0 * math.sin(theta_at_two / 2.0), 1.0e-12)
+        initial_tangent = 0.0
+        theta = total_turn * bounded_height / turn_depth_m
+    else:
+        theta_at_six = total_turn * 6_000.0 / turn_depth_m
+        radius = controls.shear_0_6_km_m_s / max(2.0 * math.sin(theta_at_six / 2.0), 1.0e-12)
+        initial_tangent = deep_direction - theta_at_six / 2.0
+        theta_at_two = 2.0 * math.asin(
+            min(controls.shear_0_2_km_m_s / max(2.0 * radius, 1.0e-12), 1.0)
+        )
+        if bounded_height <= 2_000.0:
+            theta = theta_at_two * bounded_height / 2_000.0
+        elif bounded_height <= 6_000.0:
+            theta = theta_at_two + (
+                (theta_at_six - theta_at_two) * (bounded_height - 2_000.0) / 4_000.0
+            )
+        else:
+            theta = theta_at_six + (
+                (total_turn - theta_at_six)
+                * (bounded_height - 6_000.0)
+                / max(turn_depth_m - 6_000.0, 1.0)
+            )
+
+    center = radius * np.array(
+        [-math.sin(initial_tangent), math.cos(initial_tangent)],
+        dtype=np.float64,
+    )
+    radial_start = -center
+    cosine = math.cos(theta)
+    sine = math.sin(theta)
+    rotated = np.array(
+        [
+            radial_start[0] * cosine - radial_start[1] * sine,
+            radial_start[0] * sine + radial_start[1] * cosine,
+        ],
+        dtype=np.float64,
+    )
+    return center + rotated
 
 
 def _thermodynamic_profile(
@@ -383,48 +466,52 @@ def _thermodynamic_profile(
     pressure[0] = SURFACE_PRESSURE_PA
     output: list[SupercellsProfileLevel] = []
     previous_virtual_temperature = SURFACE_TEMPERATURE_K * (1.0 + 0.61 * surface_qv)
-    hydrostatic_residual = 0.0
 
     for index, height in enumerate(z):
         if index:
             dz = height - z[index - 1]
-            pressure[index] = pressure[index - 1] * math.exp(
+            pressure_estimate = pressure[index - 1] * math.exp(
                 -GRAVITY_M_S2 * dz / max(DRY_AIR_GAS_CONSTANT * previous_virtual_temperature, 1.0)
             )
-        parcel_qv = (
-            surface_qv
-            if height <= lcl_m
-            else _saturation_mixing_ratio(pressure[index], parcel_temperature[index])
-        )
-        parcel_virtual_temperature = parcel_temperature[index] * (1.0 + 0.61 * parcel_qv)
-        target_virtual_temperature = parcel_virtual_temperature / (
-            1.0 + target_buoyancy[index] / GRAVITY_M_S2
-        )
-        rh_percent = _environment_rh_percent(
+            for _iteration in range(20):
+                state = _environment_level_state(
+                    pressure_estimate,
+                    height,
+                    lcl_m=lcl_m,
+                    surface_qv=surface_qv,
+                    parcel_temperature_k=parcel_temperature[index],
+                    target_buoyancy_m_s2=target_buoyancy[index],
+                    midlevel_rh_percent=controls.midlevel_rh_percent,
+                )
+                updated_pressure = pressure[index - 1] * math.exp(
+                    -GRAVITY_M_S2
+                    * dz
+                    / max(
+                        DRY_AIR_GAS_CONSTANT
+                        * 0.5
+                        * (previous_virtual_temperature + state["virtual_temperature_k"]),
+                        1.0,
+                    )
+                )
+                if abs(updated_pressure - pressure_estimate) < 1.0e-8:
+                    pressure_estimate = updated_pressure
+                    break
+                pressure_estimate = updated_pressure
+            pressure[index] = pressure_estimate
+        state = _environment_level_state(
+            pressure[index],
             height,
             lcl_m=lcl_m,
-            surface_rh_percent=100.0
-            * surface_qv
-            / max(
-                _saturation_mixing_ratio(SURFACE_PRESSURE_PA, SURFACE_TEMPERATURE_K),
-                1.0e-12,
-            ),
+            surface_qv=surface_qv,
+            parcel_temperature_k=parcel_temperature[index],
+            target_buoyancy_m_s2=target_buoyancy[index],
             midlevel_rh_percent=controls.midlevel_rh_percent,
         )
-        temperature = _temperature_for_virtual_target(
-            pressure[index], target_virtual_temperature, rh_percent
-        )
-        qv = rh_percent / 100.0 * _saturation_mixing_ratio(pressure[index], temperature)
-        virtual_temperature = temperature * (1.0 + 0.61 * qv)
+        rh_percent = state["relative_humidity_percent"]
+        temperature = state["temperature_k"]
+        qv = state["qv_kg_kg"]
+        virtual_temperature = state["virtual_temperature_k"]
         theta = temperature * (100_000.0 / pressure[index]) ** (DRY_AIR_GAS_CONSTANT / DRY_AIR_CP)
-        if index:
-            dz = height - z[index - 1]
-            expected_pressure = pressure[index - 1] * math.exp(
-                -GRAVITY_M_S2 * dz / max(DRY_AIR_GAS_CONSTANT * previous_virtual_temperature, 1.0)
-            )
-            hydrostatic_residual = max(
-                hydrostatic_residual, abs(pressure[index] - expected_pressure)
-            )
         u_m_s, v_m_s = winds[index]
         output.append(
             SupercellsProfileLevel(
@@ -459,11 +546,69 @@ def _thermodynamic_profile(
             7_000.0,
         ),
         "freezing_level_m_agl": freezing_level,
-        "hydrostatic_residual_pa": hydrostatic_residual,
+        "hydrostatic_residual_pa": _hydrostatic_readback_residual_pa(output),
         "translation_u_m_s": mean_u,
         "translation_v_m_s": mean_v,
     }
     return output, diagnostics
+
+
+def _environment_level_state(
+    pressure_pa: float,
+    height_m: float,
+    *,
+    lcl_m: float,
+    surface_qv: float,
+    parcel_temperature_k: float,
+    target_buoyancy_m_s2: float,
+    midlevel_rh_percent: float,
+) -> dict[str, float]:
+    parcel_qv = (
+        surface_qv
+        if height_m <= lcl_m
+        else _saturation_mixing_ratio(pressure_pa, parcel_temperature_k)
+    )
+    parcel_virtual_temperature = parcel_temperature_k * (1.0 + 0.61 * parcel_qv)
+    target_virtual_temperature = parcel_virtual_temperature / (
+        1.0 + target_buoyancy_m_s2 / GRAVITY_M_S2
+    )
+    rh_percent = _environment_rh_percent(
+        height_m,
+        lcl_m=lcl_m,
+        surface_rh_percent=100.0
+        * surface_qv
+        / max(
+            _saturation_mixing_ratio(SURFACE_PRESSURE_PA, SURFACE_TEMPERATURE_K),
+            1.0e-12,
+        ),
+        midlevel_rh_percent=midlevel_rh_percent,
+    )
+    temperature = _temperature_for_virtual_target(
+        pressure_pa, target_virtual_temperature, rh_percent
+    )
+    qv = rh_percent / 100.0 * _saturation_mixing_ratio(pressure_pa, temperature)
+    return {
+        "relative_humidity_percent": rh_percent,
+        "temperature_k": temperature,
+        "qv_kg_kg": qv,
+        "virtual_temperature_k": temperature * (1.0 + 0.61 * qv),
+    }
+
+
+def _hydrostatic_readback_residual_pa(
+    sounding: list[SupercellsProfileLevel],
+) -> float:
+    residual = 0.0
+    for lower, upper in zip(sounding, sounding[1:], strict=False):
+        lower_virtual = lower.temperature_k * (1.0 + 0.61 * lower.qv_g_kg / 1_000.0)
+        upper_virtual = upper.temperature_k * (1.0 + 0.61 * upper.qv_g_kg / 1_000.0)
+        expected = lower.pressure_pa * math.exp(
+            -GRAVITY_M_S2
+            * (upper.height_m - lower.height_m)
+            / (DRY_AIR_GAS_CONSTANT * max(0.5 * (lower_virtual + upper_virtual), 1.0))
+        )
+        residual = max(residual, abs(upper.pressure_pa - expected))
+    return residual
 
 
 def _achieved_parent(

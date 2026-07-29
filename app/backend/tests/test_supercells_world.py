@@ -17,6 +17,19 @@ def _settings(runtime_home: Path) -> CloudChamberSettings:
     )
 
 
+@pytest.fixture(autouse=True)
+def _accepted_builtin_parent_eligibility(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cloud_chamber.supercells_world._builtin_parent_eligibility",
+        lambda _settings, _simulation_id, _run_id: (
+            True,
+            "Accepted retained presentation evidence.",
+        ),
+    )
+
+
 def test_world_exposes_stable_identity_and_data_driven_timeline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -50,6 +63,36 @@ def test_world_exposes_stable_identity_and_data_driven_timeline(
     assert variation.parent_simulation_id == simulation.simulation_id
     assert detail.capabilities.compare is True
     assert detail.summary().simulation_count == 2
+
+
+def test_world_inventory_does_not_deeply_revalidate_parent_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cloud_chamber.supercells_world.storm_examination_inventory",
+        lambda _settings, _simulation_id: ((tmp_path / "cm1out_000001.nc", 0.0),),
+    )
+    deep_calls = 0
+
+    def deep_validation(
+        _settings: CloudChamberSettings,
+        _simulation_id: str,
+        _run_id: str,
+    ) -> tuple[bool, str]:
+        nonlocal deep_calls
+        deep_calls += 1
+        return True, "Validated."
+
+    monkeypatch.setattr(
+        "cloud_chamber.supercells_world._builtin_parent_eligibility",
+        deep_validation,
+    )
+
+    detail = supercells_world_detail(_settings(tmp_path))
+
+    assert detail.capabilities.create_variation is True
+    assert deep_calls == 0
 
 
 def test_world_remains_usable_when_retained_output_is_missing(

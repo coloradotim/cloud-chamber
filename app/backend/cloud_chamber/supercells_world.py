@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,6 +13,7 @@ from cloud_chamber.generated_input_identity import (
     GeneratedInputIdentityError,
     verify_generated_input_identity,
 )
+from cloud_chamber.mountain_wave_case import sha256_file
 from cloud_chamber.run_manifest import (
     LifecycleState,
     RunManifest,
@@ -29,16 +30,20 @@ from cloud_chamber.storm_examination import (
     STRAIGHT_LINE_PRESENTATION_CASE_ID,
     STRAIGHT_LINE_PRESENTATION_RUN_ID,
     StormExaminationError,
+    storm_examination_interactions,
     storm_examination_inventory,
+    storm_examination_variation_interactions,
     storm_examination_variation_inventory,
 )
 from cloud_chamber.storm_examination import (
     STRAIGHT_LINE_SIMULATION_ID as STORM_STRAIGHT_LINE_SIMULATION_ID,
 )
+from cloud_chamber.supercell_benchmark import CM1_EXECUTABLE_SHA256
 from cloud_chamber.supercells_recipes import (
     RECIPE_CONTRACT_VERSION,
     RECIPE_ID,
     SupercellsControls,
+    default_controls,
     normalize_controls,
 )
 from cloud_chamber.supercells_source_customization import (
@@ -52,6 +57,7 @@ from cloud_chamber.variation_envelope import (
     VariationEnvelope,
     VariationValidationDecision,
     canonical_payload_sha256,
+    grouped_differences,
 )
 
 WORLD_ID: Literal["supercells"] = "supercells"
@@ -106,6 +112,12 @@ class SupercellSimulationRecord(BaseModel):
     run_profile_id: str = "supercells_presentation_v1"
     can_create_variation: bool = False
     parent_eligibility_reason: str
+    scientific_design: dict[str, Any] = Field(default_factory=dict)
+    numerical_realization: dict[str, Any] = Field(default_factory=dict)
+    observation_plan: dict[str, Any] = Field(default_factory=dict)
+    world_payload: dict[str, Any] = Field(default_factory=dict)
+    differences: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    run_profile_contract: dict[str, Any] = Field(default_factory=dict)
 
 
 class SupercellsCapabilities(BaseModel):
@@ -213,8 +225,8 @@ def supercells_world_detail(settings: CloudChamberSettings) -> SupercellsWorldDe
         ),
         caveats=[
             "These are idealized matched simulations, not observed storms.",
-            "The controlled atmospheric difference is hodograph curvature; thermodynamics, "
-            "trigger, grid, timing, output inventory, and numerical experiment are matched.",
+            "The original retained Quarter-Circle and Straight-Line pair differs only in "
+            "hodograph curvature; other variation pairs use their exact retained envelopes.",
             "Horizontal coordinates and winds use the same translating model frame.",
             "Coordinates and local evidence are comparable; storm objects and split lineage "
             "are not inferred between Simulations.",
@@ -278,20 +290,10 @@ def _variation_simulation_record(
         conflict_reason = "Multiple completed attempts claim accepted backing."
     elif accepted_claims and not accepted_claims.issubset(candidates_by_run):
         conflict_reason = "Accepted backing refers to a missing retained attempt."
-    if (
-        len(
-            {
-                (
-                    candidate.envelope.scientific_design.sha256,
-                    candidate.envelope.numerical_realization.sha256,
-                )
-                for candidate in ordered
-            }
-        )
-        > 1
-    ):
+    if len({_intended_simulation_sha256(candidate.envelope) for candidate in ordered}) > 1:
         conflict_reason = (
-            "Attempts grouped under this Simulation disagree on scientific or numerical identity."
+            "Attempts grouped under this Simulation disagree on their complete intended-"
+            "Simulation contract."
         )
 
     selected: _VariationCandidate | None = None
@@ -346,10 +348,17 @@ def _variation_simulation_record(
             run_profile_id=envelope.run_profile_id,
             can_create_variation=False,
             parent_eligibility_reason=reason,
+            scientific_design=envelope.scientific_design.payload,
+            numerical_realization=envelope.numerical_realization.payload,
+            observation_plan=envelope.observation_plan.payload,
+            world_payload=envelope.world_payload,
+            differences=grouped_differences(envelope.differences),
+            run_profile_contract=envelope.run_profile_contract,
         )
 
     attempts = _variation_attempts(ordered, accepted_run_id=candidate.manifest.run_id)
     promoted = _promote_variation_envelope(
+        settings,
         candidate,
         attempts=attempts,
         accepted_backing=True,
@@ -380,6 +389,12 @@ def _variation_simulation_record(
         run_profile_id=promoted.run_profile_id,
         can_create_variation=promoted.parent_eligible,
         parent_eligibility_reason=promoted.parent_eligibility_reason,
+        scientific_design=promoted.scientific_design.payload,
+        numerical_realization=promoted.numerical_realization.payload,
+        observation_plan=promoted.observation_plan.payload,
+        world_payload=promoted.world_payload,
+        differences=grouped_differences(promoted.differences),
+        run_profile_contract=promoted.run_profile_contract,
     )
 
 
@@ -411,6 +426,7 @@ def _variation_attempts(
 
 
 def _promote_variation_envelope(
+    settings: CloudChamberSettings,
     candidate: _VariationCandidate,
     *,
     attempts: list[VariationAttempt],
@@ -419,10 +435,28 @@ def _promote_variation_envelope(
     manifest = candidate.manifest
     envelope = candidate.envelope
     parent_eligible, parent_reason = _variation_parent_eligibility(
+        settings,
         candidate,
         accepted_backing=accepted_backing,
     )
-    caveated = bool(manifest.run_caveats or manifest.outputs.runtime_warnings)
+    interactions = storm_examination_variation_interactions(
+        settings,
+        candidate.manifest_path,
+    )
+    caveated = bool(
+        manifest.run_caveats
+        or manifest.outputs.runtime_warnings
+        or interactions.classification != "clear"
+    )
+    interaction_summary = (
+        "No retained storm signal reached the lateral guard or upper damping layer."
+        if interactions.classification == "clear"
+        else (
+            "Retained boundary/damping interaction is classified "
+            f"{interactions.classification.replace('_', ' ')} against the declared "
+            f"0-{interactions.useful_window_end_seconds:g} s useful window."
+        )
+    )
     replacements = {
         "attempt_integrity": (
             "passed",
@@ -430,8 +464,8 @@ def _promote_variation_envelope(
         ),
         "output_completeness": (
             "passed",
-            "Expected histories, native fields, dimensions, units, cadence, and "
-            "finite data passed.",
+            "Expected histories, exact selected grid and extents, native fields, "
+            "dimensions, units, cadence, and finite data passed. " + interaction_summary,
         ),
         "world_inspectability": (
             "passed",
@@ -484,6 +518,7 @@ def _promote_variation_envelope(
 
 
 def _variation_parent_eligibility(
+    settings: CloudChamberSettings,
     candidate: _VariationCandidate,
     *,
     accepted_backing: bool,
@@ -527,6 +562,25 @@ def _variation_parent_eligibility(
         envelope.world_payload.get("sounding")
     ):
         return False, "The retained generated profiles do not match source customization."
+    try:
+        storm_examination_variation_inventory(settings, candidate.manifest_path)
+        interactions = storm_examination_variation_interactions(
+            settings,
+            candidate.manifest_path,
+        )
+    except StormExaminationError as exc:
+        return False, str(exc)
+    if interactions.blocking_classification == "inside_useful_window":
+        return (
+            False,
+            _interaction_parent_reason(interactions),
+        )
+    if interactions.classification == "inside_useful_window":
+        return (
+            True,
+            "Accepted output remains reconstructible inside Supercells Recipe contract "
+            "version 1; retained boundary/damping overlap remains a nonblocking caveat.",
+        )
     return (
         True,
         "Accepted output remains reconstructible inside Supercells Recipe contract version 1.",
@@ -568,6 +622,9 @@ def _simulation_record(
 
     times = [item[1] for item in inventory]
     cadence = times[1] - times[0] if len(times) > 1 else None
+    scientific, numerical, observation, world_payload, differences, profile = (
+        _builtin_simulation_contract(simulation_id)
+    )
     return SupercellSimulationRecord(
         simulation_id=simulation_id,
         display_name=display_name,
@@ -584,7 +641,202 @@ def _simulation_record(
         history_cadence_seconds=cadence,
         can_create_variation=True,
         parent_eligibility_reason=(
-            "Accepted retained presentation evidence has a reconstructible "
-            "Supercells Recipe contract."
+            "Current retained output is available. Create Variation revalidates generated "
+            "inputs, source execution, and useful-window evidence before packaging."
         ),
+        scientific_design=scientific,
+        numerical_realization=numerical,
+        observation_plan=observation,
+        world_payload=world_payload,
+        differences=differences,
+        run_profile_contract=profile,
+    )
+
+
+def validate_supercells_parent_eligibility(
+    settings: CloudChamberSettings,
+    *,
+    simulation_id: str,
+    manifest: RunManifest,
+    manifest_path: Path,
+) -> tuple[bool, str]:
+    """Deeply revalidate only the selected parent when Create Variation opens."""
+    if simulation_id in {REFERENCE_SIMULATION_ID, STRAIGHT_LINE_SIMULATION_ID}:
+        return _builtin_parent_eligibility(settings, simulation_id, manifest.run_id)
+    try:
+        envelope = VariationEnvelope.model_validate(
+            manifest.run_configuration.get("variation_envelope")
+        )
+    except ValueError:
+        return False, "The selected parent lacks a valid retained variation envelope."
+    if envelope.simulation_id != simulation_id:
+        return False, "The selected parent identity disagrees with its retained envelope."
+    return _variation_parent_eligibility(
+        settings,
+        _VariationCandidate(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            envelope=envelope,
+        ),
+        accepted_backing=True,
+    )
+
+
+def _builtin_parent_eligibility(
+    settings: CloudChamberSettings,
+    simulation_id: str,
+    run_id: str,
+) -> tuple[bool, str]:
+    manifest_path = settings.runtime_home.expanduser() / "runs" / run_id / "run_manifest.json"
+    try:
+        manifest = load_run_manifest(manifest_path)
+        verify_generated_input_identity(manifest)
+    except (OSError, RunManifestError, GeneratedInputIdentityError) as exc:
+        return False, f"Retained parent generated-input identity is invalid: {exc}"
+    if manifest.lifecycle_state != LifecycleState.COMPLETED:
+        return False, "The retained parent is not complete."
+    if not (manifest_path.parent / "namelist.input").is_file():
+        return False, "The retained parent namelist is unavailable."
+    if not manifest.execution.command:
+        return False, "The retained parent execution command is unavailable."
+    executable = Path(manifest.execution.command[0]).expanduser().resolve()
+    if not executable.is_file():
+        return False, "The retained parent executable is unavailable."
+    if simulation_id == REFERENCE_SIMULATION_ID:
+        if sha256_file(executable) != CM1_EXECUTABLE_SHA256:
+            return False, "The retained reference executable no longer matches approved CM1."
+    else:
+        status = manifest.cm1_source_customization_status
+        if not isinstance(status, dict):
+            return False, "The retained straight-line source customization is unavailable."
+        expected_hash = status.get("custom_executable_sha256")
+        if (
+            status.get("source_restored_after_build") != "not_modified_isolated_build_tree"
+            or status.get("build_command") != ["make"]
+            or not isinstance(expected_hash, str)
+            or sha256_file(executable) != expected_hash
+        ):
+            return False, "The retained straight-line isolated build identity is invalid."
+        build_root = Path(str(status.get("build_root", ""))).expanduser()
+        if not build_root.is_dir():
+            return False, "The retained straight-line isolated build tree is unavailable."
+    try:
+        interactions = storm_examination_interactions(settings, simulation_id)
+    except StormExaminationError as exc:
+        return False, str(exc)
+    if interactions.blocking_classification == "inside_useful_window":
+        return (
+            False,
+            _interaction_parent_reason(interactions),
+        )
+    if interactions.classification == "inside_useful_window":
+        return (
+            True,
+            "Accepted retained presentation evidence remains reconstructible; observed "
+            "boundary/damping overlap is retained as a nonblocking caveat.",
+        )
+    return (
+        True,
+        "Accepted retained presentation evidence, generated inputs, source execution, and "
+        "useful-window contract remain reconstructible.",
+    )
+
+
+def _interaction_parent_reason(interactions: Any) -> str:
+    labels = []
+    if interactions.blocking_lateral_boundary_first_time_seconds is not None:
+        labels.append(
+            "dominant storm signal at the lateral boundary at "
+            f"{interactions.blocking_lateral_boundary_first_time_seconds:g} s"
+        )
+    if interactions.blocking_damping_layer_first_time_seconds is not None:
+        labels.append(
+            "dominant storm signal in the upper damping layer at "
+            f"{interactions.blocking_damping_layer_first_time_seconds:g} s"
+        )
+    return (
+        "Retained storm evidence reaches "
+        + " and ".join(labels)
+        + f" inside the declared 0-{interactions.useful_window_end_seconds:g} s "
+        "useful window."
+    )
+
+
+def _intended_simulation_sha256(envelope: VariationEnvelope) -> str:
+    return canonical_payload_sha256(
+        {
+            "schema_version": envelope.schema_version,
+            "world_id": envelope.world_id,
+            "recipe_id": envelope.recipe_id,
+            "recipe_contract_version": envelope.recipe_contract_version,
+            "simulation_id": envelope.simulation_id,
+            "parent_simulation_id": envelope.parent_simulation_id,
+            "reference_simulation_id": envelope.reference_simulation_id,
+            "display_name": envelope.display_name,
+            "question": envelope.question,
+            "scientific_design": envelope.scientific_design.payload,
+            "numerical_realization": envelope.numerical_realization.payload,
+            "observation_plan": envelope.observation_plan.payload,
+            "world_payload": envelope.world_payload,
+            "differences": [
+                difference.model_dump(mode="json") for difference in envelope.differences
+            ],
+            "relationship_classification": envelope.relationship_classification,
+            "run_profile_id": envelope.run_profile_id,
+            "run_profile_contract": envelope.run_profile_contract,
+        }
+    )
+
+
+def _builtin_simulation_contract(
+    simulation_id: str,
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, list[dict[str, Any]]],
+    dict[str, Any],
+]:
+    from cloud_chamber.run_cost import profile_by_id
+
+    profile = profile_by_id("supercells_presentation_v1")
+    controls = default_controls()
+    if simulation_id == STRAIGHT_LINE_SIMULATION_ID:
+        controls = controls.model_copy(update={"hodograph_family": "straight"})
+    controls_payload = controls.model_dump(mode="json")
+    scientific = {
+        "world_id": WORLD_ID,
+        "recipe_id": RECIPE_ID,
+        "recipe_contract_version": RECIPE_CONTRACT_VERSION,
+        "reference_simulation_id": REFERENCE_SIMULATION_ID,
+        "controls": controls_payload,
+    }
+    numerical = profile.numerical_realization.model_dump(mode="json")
+    observation = profile.observation_plan.model_dump(mode="json")
+    differences: dict[str, list[dict[str, Any]]] = {}
+    if simulation_id == STRAIGHT_LINE_SIMULATION_ID:
+        differences = {
+            "wind": [
+                {
+                    "category": "wind",
+                    "path": "controls.hodograph_family",
+                    "label": "Hodograph family",
+                    "before": "quarter_circle",
+                    "after": "straight",
+                    "units": None,
+                    "material": True,
+                }
+            ]
+        }
+    return (
+        scientific,
+        numerical,
+        observation,
+        {
+            "controls": controls_payload,
+            "useful_window_end_seconds": 10_800,
+        },
+        differences,
+        profile.model_dump(mode="json"),
     )

@@ -154,6 +154,7 @@ class SupercellsVariationPreview(BaseModel):
     initiation: dict[str, float]
     numerical_realization: dict[str, Any]
     observation_plan: dict[str, Any]
+    useful_window_end_seconds: int
     cost_estimate: RunCostEstimate
 
 
@@ -213,6 +214,10 @@ def preview_supercells_variation(
             mode="json"
         ),
         observation_plan=resolved.observation_plan.model_dump(mode="json"),
+        useful_window_end_seconds=_useful_window_end_seconds(
+            request.run_profile_id,
+            int(resolved.observation_plan.duration_seconds or 0),
+        ),
         cost_estimate=estimate_profile(settings, resolved.resolved_cost_profile),
     )
 
@@ -230,6 +235,10 @@ def create_supercells_variation(
     provenance = collect_cm1_provenance(settings)
     numerical_payload = resolved.resolved_cost_profile.numerical_realization.model_dump(mode="json")
     observation_payload = resolved.observation_plan.model_dump(mode="json")
+    useful_window_end_seconds = _useful_window_end_seconds(
+        request.run_profile_id,
+        int(resolved.observation_plan.duration_seconds or 0),
+    )
     fixed_assumptions: dict[str, Any] = {
         "horizontally_homogeneous_environment": True,
         "microphysics": "Morrison double-moment",
@@ -247,8 +256,8 @@ def create_supercells_variation(
         "controls": resolved.controls,
         "achieved_controls": resolved.achieved_controls,
         "generators": {
-            "wind": "authored_hodograph_direct_targets_v1",
-            "thermodynamics": "hydrostatic_buoyancy_profile_v1",
+            "wind": "authored_true_circle_hodograph_direct_targets_v2",
+            "thermodynamics": "iterated_hydrostatic_buoyancy_profile_v2",
             "initiation": "source_locked_single_thermal_v1",
         },
         "fixed_assumptions": fixed_assumptions,
@@ -345,6 +354,7 @@ def create_supercells_variation(
                 "hodograph": [level.model_dump(mode="json") for level in resolved.hodograph],
                 "initiation": resolved.initiation,
                 "diagnostics": resolved.diagnostics.model_dump(mode="json"),
+                "useful_window_end_seconds": useful_window_end_seconds,
             },
             differences=differences,
             relationship_classification=relationship,
@@ -646,6 +656,7 @@ def _parent_context(
         parent_profile_id if parent_profile_id in available_ids else "supercells_standard_v1"
     )
     eligible, reason = _parent_eligibility(
+        settings,
         parent_simulation_id,
         parent_manifest,
         parent_path,
@@ -728,6 +739,11 @@ def _request_errors(
         errors.append("Variation name is required.")
     if not differences:
         errors.append("Change at least one scientific control or run profile before packaging.")
+    if _relationship(differences) == "observation_only_attempt":
+        errors.append(
+            "Output-only changes are alternate_observation_attempts beneath the same "
+            "Simulation; they cannot create a named Supercells Variation."
+        )
     try:
         _configured_init3d_path(settings)
     except SupercellsVariationError as exc:
@@ -739,6 +755,17 @@ def _parent_manifest(
     settings: CloudChamberSettings,
     simulation_id: str,
 ) -> tuple[RunManifest, Path, str, str]:
+    from cloud_chamber.supercells_world import supercells_world_detail
+
+    world = supercells_world_detail(settings)
+    record = next(
+        (item for item in world.simulations if item.simulation_id == simulation_id),
+        None,
+    )
+    if record is None:
+        raise SupercellsVariationError(
+            f"Supercells parent Simulation is unavailable: {simulation_id}."
+        )
     builtins = {
         REFERENCE_SIMULATION_ID: (
             PRESENTATION_RUN_ID,
@@ -754,7 +781,7 @@ def _parent_manifest(
         ),
     }
     if simulation_id in builtins:
-        run_id, case_id, display_name, source = builtins[simulation_id]
+        run_id, case_id, _display_name, source = builtins[simulation_id]
         path = settings.runtime_home.expanduser() / "runs" / run_id / "run_manifest.json"
         if not path.is_file():
             raise SupercellsVariationError(
@@ -765,27 +792,24 @@ def _parent_manifest(
             raise SupercellsVariationError(
                 f"The retained parent contract is invalid: {simulation_id}."
             )
-        return manifest, path, display_name, source
-    for path in sorted((settings.runtime_home.expanduser() / "runs").glob("*/run_manifest.json")):
-        try:
-            manifest = load_run_manifest(path)
-            envelope = _manifest_envelope(manifest)
-        except (OSError, RunManifestError, SupercellsVariationError):
-            continue
-        if (
-            envelope.world_id == WORLD_ID
-            and envelope.simulation_id == simulation_id
-            and envelope.parent_eligible
-            and manifest.lifecycle_state == LifecycleState.COMPLETED
-        ):
-            return (
-                manifest,
-                path,
-                envelope.display_name,
-                "Available descendant with a complete shared Recipe envelope",
-            )
-    raise SupercellsVariationError(
-        f"Supercells parent Simulation is unavailable or ineligible: {simulation_id}."
+        return manifest, path, record.display_name, source
+    path = settings.runtime_home.expanduser() / "runs" / record.run_id / "run_manifest.json"
+    if not path.is_file():
+        raise SupercellsVariationError(
+            f"The retained parent manifest is unavailable: {simulation_id}."
+        )
+    manifest = load_run_manifest(path)
+    envelope = _manifest_envelope(manifest)
+    if (
+        manifest.lifecycle_state != LifecycleState.COMPLETED
+        or envelope.simulation_id != simulation_id
+    ):
+        raise SupercellsVariationError(f"The retained parent contract is invalid: {simulation_id}.")
+    return (
+        manifest,
+        path,
+        record.display_name,
+        "Current accepted descendant resolved from the Supercells World inventory",
     )
 
 
@@ -811,20 +835,24 @@ def _parent_profile_id(simulation_id: str, manifest: RunManifest) -> str:
 
 
 def _parent_eligibility(
+    settings: CloudChamberSettings,
     simulation_id: str,
     manifest: RunManifest,
     manifest_path: Path,
 ) -> tuple[bool, str | None]:
+    from cloud_chamber.supercells_world import validate_supercells_parent_eligibility
+
     if manifest.lifecycle_state != LifecycleState.COMPLETED:
         return False, "The selected parent is not complete."
     if not (manifest_path.parent / "namelist.input").is_file():
         return False, "The selected parent namelist is unavailable."
-    if simulation_id in {REFERENCE_SIMULATION_ID, STRAIGHT_LINE_SIMULATION_ID}:
-        return True, None
-    envelope = _manifest_envelope(manifest)
-    if not envelope.parent_eligible:
-        return False, envelope.parent_eligibility_reason
-    return True, None
+    eligible, reason = validate_supercells_parent_eligibility(
+        settings,
+        simulation_id=simulation_id,
+        manifest=manifest,
+        manifest_path=manifest_path,
+    )
+    return (True, None) if eligible else (False, reason)
 
 
 def _render_variation_namelist(
@@ -1053,6 +1081,14 @@ def _relationship(differences: list[VariationDifference]) -> str | None:
         return classify_relationship(differences)
     except ValueError:
         return None
+
+
+def _useful_window_end_seconds(profile_id: str, duration_seconds: int) -> int:
+    if duration_seconds <= 0:
+        raise SupercellsVariationError(
+            f"Supercells run profile has no declared duration: {profile_id}."
+        )
+    return min(duration_seconds, 10_800)
 
 
 def _manifest_controls(

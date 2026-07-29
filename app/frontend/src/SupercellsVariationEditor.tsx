@@ -156,6 +156,7 @@ type VariationPreview = {
   initiation: Record<string, number>;
   numerical_realization: NumericalRealization;
   observation_plan: ObservationPlan;
+  useful_window_end_seconds: number;
   cost_estimate: RunCostEstimate;
 };
 
@@ -823,6 +824,10 @@ export function SupercellsVariationEditor({
                   <div>
                     <dt>Free after high estimate</dt>
                     <dd>{formatBytes(preview.cost_estimate.projected_free_space_bytes)}</dd>
+                  </div>
+                  <div>
+                    <dt>Declared useful window</dt>
+                    <dd>0-{formatDuration(preview.useful_window_end_seconds)}</dd>
                   </div>
                 </dl>
                 <p className={preview.cost_estimate.disposition === "passes" ? "" : "blocked"}>

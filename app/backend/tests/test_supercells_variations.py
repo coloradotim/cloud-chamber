@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,6 +10,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from cloud_chamber.run_cost import profile_by_id
 from cloud_chamber.run_manifest import (
     AppMetadata,
     GeneratedInputs,
@@ -26,7 +28,6 @@ from cloud_chamber.run_manifest import (
 )
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.storm_examination import (
-    NATIVE_COORDINATE_CONTRACT,
     NATIVE_FIELD_CONTRACT,
     PRESENTATION_CASE_ID,
     PRESENTATION_RUN_ID,
@@ -34,7 +35,16 @@ from cloud_chamber.storm_examination import (
     STRAIGHT_LINE_PRESENTATION_CASE_ID,
     STRAIGHT_LINE_PRESENTATION_RUN_ID,
     STRAIGHT_LINE_SIMULATION_ID,
-    supercells_explore_frame,
+    StormExaminationError,
+    _validate_generated_history_contract,
+)
+from cloud_chamber.supercell_benchmark import (
+    CM1_EXECUTABLE_SHA256,
+    CM1_SOURCE_MANIFEST_SHA256,
+)
+from cloud_chamber.supercells_attempt_provenance import (
+    SupercellsAttemptProvenanceError,
+    validate_supercells_attempt_provenance,
 )
 from cloud_chamber.supercells_recipes import SupercellsControls, default_controls
 from cloud_chamber.supercells_variations import (
@@ -45,7 +55,30 @@ from cloud_chamber.supercells_variations import (
     preview_supercells_variation,
     supercells_variation_template,
 )
-from cloud_chamber.supercells_world import supercells_world_detail
+from cloud_chamber.supercells_world import (
+    _intended_simulation_sha256,
+    supercells_world_detail,
+)
+
+
+@pytest.fixture(autouse=True)
+def _accepted_builtin_parent_contracts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cloud_chamber.supercells_world.storm_examination_inventory",
+        lambda _settings, _simulation_id: tuple(
+            (tmp_path / f"cm1out_{index + 1:06d}.nc", float(index * 120)) for index in range(91)
+        ),
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.supercells_world._builtin_parent_eligibility",
+        lambda _settings, _simulation_id, _run_id: (
+            True,
+            "Accepted retained presentation evidence.",
+        ),
+    )
 
 
 def test_templates_inherit_both_accepted_real_parents_and_all_profiles(
@@ -135,6 +168,46 @@ def test_unchanged_specification_and_uncharacterized_extended_profile_block(
     assert any("uncharacterized" in item for item in extended.blocking_errors)
 
 
+def test_observation_only_change_is_not_a_named_variation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_builtin_parents(settings)
+    presentation = profile_by_id("supercells_presentation_v1")
+    observation_only = presentation.model_copy(
+        update={
+            "profile_id": "supercells_observation_only_test",
+            "observation_plan": presentation.observation_plan.model_copy(
+                update={
+                    "output_cadence_seconds": 60,
+                    "expected_history_count": 181,
+                }
+            ),
+        }
+    )
+    original_profile_by_id = profile_by_id
+    monkeypatch.setattr(
+        "cloud_chamber.supercells_variations.profile_by_id",
+        lambda profile_id: (
+            observation_only
+            if profile_id == observation_only.profile_id
+            else original_profile_by_id(profile_id)
+        ),
+    )
+    request = _request(
+        controls=default_controls(),
+        profile_id=observation_only.profile_id,
+    )
+
+    preview = preview_supercells_variation(settings, request)
+
+    assert preview.relationship_classification == "observation_only_attempt"
+    assert any("alternate_observation_attempt" in error for error in preview.blocking_errors)
+    with pytest.raises(Exception, match="cannot create a named"):
+        create_supercells_variation(settings, request)
+
+
 def test_package_persists_exact_profiles_source_readback_and_launch_binding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -179,6 +252,60 @@ def test_package_persists_exact_profiles_source_readback_and_launch_binding(
     assert float(sounding_rows[-1].split()[0]) > 20_000.0
 
 
+def test_completed_attempt_binds_isolated_build_and_executable_used(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_builtin_parents(settings)
+    _trust_packaging(monkeypatch, settings)
+    package = create_supercells_variation(
+        settings,
+        _request(
+            controls=default_controls().model_copy(
+                update={"thermal_perturbation_amplitude_k": 2.0}
+            ),
+            profile_id="supercells_quick_v1",
+        ),
+    )
+    manifest = _apply_fake_custom_build(package, settings)
+
+    report = validate_supercells_attempt_provenance(manifest)
+
+    assert report["source_build_isolated"] is True
+    assert report["executable_kind"] == "isolated_supercells_customization"
+
+    manifest.execution.command = [str(Path(package.package_dir) / "other-cm1.exe")]
+    with pytest.raises(
+        SupercellsAttemptProvenanceError,
+        match="did not use",
+    ):
+        validate_supercells_attempt_provenance(manifest)
+
+
+def test_attempt_grouping_hash_covers_the_complete_intended_simulation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_builtin_parents(settings)
+    _trust_packaging(monkeypatch, settings)
+    package = create_supercells_variation(
+        settings,
+        _request(
+            controls=default_controls().model_copy(
+                update={"thermal_perturbation_amplitude_k": 2.0}
+            ),
+            profile_id="supercells_quick_v1",
+        ),
+    )
+    altered = package.envelope.model_copy(
+        update={"question": "A materially different intended scientific question."}
+    )
+
+    assert _intended_simulation_sha256(package.envelope) != (_intended_simulation_sha256(altered))
+
+
 def test_impossible_thermal_clearance_blocks_before_writing_a_package(
     tmp_path: Path,
 ) -> None:
@@ -213,12 +340,31 @@ def test_completed_weak_variation_becomes_available_in_all_three_lenses(
             profile_id="supercells_quick_v1",
         ),
     )
-    _complete_package_with_native_output(package)
+    _mark_package_completed_for_world_wiring(package)
     assert settings.cm1_root is not None
     source_hash = hashlib.sha256((settings.cm1_root / "src" / "init3d.F").read_bytes()).hexdigest()
     monkeypatch.setattr(
         "cloud_chamber.supercells_world.PINNED_INIT3D_F_SHA256",
         source_hash,
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.supercells_world.storm_examination_variation_inventory",
+        lambda _settings, _path: tuple(
+            (Path(package.package_dir) / f"cm1out_{index + 1:06d}.nc", float(index * 300))
+            for index in range(25)
+        ),
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.supercells_world.storm_examination_variation_interactions",
+        lambda _settings, _path: SimpleNamespace(
+            classification="clear",
+            blocking_classification="clear",
+            useful_window_end_seconds=7_200,
+            lateral_boundary_first_time_seconds=None,
+            damping_layer_first_time_seconds=None,
+            blocking_lateral_boundary_first_time_seconds=None,
+            blocking_damping_layer_first_time_seconds=None,
+        ),
     )
 
     detail = supercells_world_detail(settings)
@@ -233,48 +379,52 @@ def test_completed_weak_variation_becomes_available_in_all_three_lenses(
     assert child.saved_output_count == 25
     assert child.can_create_variation is True
     assert "reconstructible" in child.parent_eligibility_reason
-    for lens in (
-        "rotating_updraft",
-        "cloud_precipitation",
-        "low_level_interactions",
-    ):
-        frame = supercells_explore_frame(
-            settings,
-            simulation_id=package.simulation_id,
-            lens=lens,
-            time_index=1,
-            viewport="full",
-        )
-        assert frame.lens_id == lens
-        assert frame.simulation_id == package.simulation_id
 
 
-def test_completed_variation_with_invalid_native_units_fails_closed(
+def test_generated_output_rejects_readable_but_wrong_native_grid(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    settings = _settings(tmp_path)
-    _write_builtin_parents(settings)
-    _trust_packaging(monkeypatch, settings)
-    package = create_supercells_variation(
-        settings,
-        _request(
-            controls=default_controls().model_copy(update={"surface_based_cape_j_kg": 0.0}),
-            profile_id="supercells_quick_v1",
-        ),
+    exact_domain = profile_by_id("supercells_quick_v1").numerical_realization.exact_domain
+    assert exact_domain is not None
+    dataset = _native_dataset(
+        time_seconds=0,
+        xh=np.asarray([-1.0, 1.0], dtype=np.float32),
+        yh=np.asarray([-1.0, 1.0], dtype=np.float32),
+        zh=np.asarray([0.25, 1.25], dtype=np.float32),
     )
-    _complete_package_with_native_output(package, invalid_w_units=True)
+    with pytest.raises(StormExaminationError, match="exact native grid"):
+        _validate_generated_history_contract(dataset, 0.0, exact_domain)
 
-    detail = supercells_world_detail(settings)
 
-    child = next(
-        simulation
-        for simulation in detail.simulations
-        if simulation.simulation_id == package.simulation_id
+def test_generated_output_accepts_the_selected_profile_exact_native_grid() -> None:
+    exact_domain = profile_by_id("supercells_quick_v1").numerical_realization.exact_domain
+    assert exact_domain is not None
+    dataset = _native_dataset(
+        time_seconds=0,
+        xh=np.linspace(
+            exact_domain.x_min_m + exact_domain.dx_m / 2,
+            exact_domain.x_max_m - exact_domain.dx_m / 2,
+            exact_domain.nx,
+            dtype=np.float32,
+        )
+        / 1_000,
+        yh=np.linspace(
+            exact_domain.y_min_m + exact_domain.dy_m / 2,
+            exact_domain.y_max_m - exact_domain.dy_m / 2,
+            exact_domain.ny,
+            dtype=np.float32,
+        )
+        / 1_000,
+        zh=np.linspace(
+            exact_domain.dz_m / 2,
+            exact_domain.model_top_m - exact_domain.dz_m / 2,
+            exact_domain.nz,
+            dtype=np.float32,
+        )
+        / 1_000,
     )
-    assert child.technical_state == "invalid"
-    assert child.explore_available is False
-    assert "dimensions or units" in child.technical_state_message
+
+    _validate_generated_history_contract(dataset, 0.0, exact_domain)
 
 
 def _request(*, controls: SupercellsControls, profile_id: str) -> SupercellsVariationRequest:
@@ -287,66 +437,91 @@ def _request(*, controls: SupercellsControls, profile_id: str) -> SupercellsVari
     )
 
 
-def _complete_package_with_native_output(
+def _mark_package_completed_for_world_wiring(
     package: SupercellsVariationPackage,
-    *,
-    invalid_w_units: bool = False,
 ) -> None:
     manifest_path = Path(package.manifest_path)
-    run_dir = manifest_path.parent
     manifest = load_run_manifest(manifest_path)
-    observation = package.envelope.observation_plan.payload
-    duration = int(observation["duration_seconds"])
-    cadence = int(observation["output_cadence_seconds"])
-    coordinates = {
-        "xh": np.asarray([-1.0, 1.0], dtype=np.float32),
-        "yh": np.asarray([-1.0, 1.0], dtype=np.float32),
-        "zh": np.asarray([0.25, 1.25], dtype=np.float32),
-    }
-    shape_3d = (1, 2, 2, 2)
-    shape_2d = (1, 2, 2)
-    output_paths: list[str] = []
-    for index, time_seconds in enumerate(range(0, duration + cadence, cadence), start=1):
-        data_vars: dict[str, tuple[tuple[str, ...], np.ndarray, dict[str, str]]] = {}
-        for name, (dims, units) in NATIVE_FIELD_CONTRACT.items():
-            shape = shape_3d if "zh" in dims else shape_2d
-            values = np.zeros(shape, dtype=np.float32)
-            if name == "winterp":
-                values[...] = 0.05
-            data_vars[name] = (
-                dims,
-                values,
-                {"units": "K" if invalid_w_units and name == "winterp" else units},
-            )
-        dataset = xr.Dataset(
-            data_vars=data_vars,
-            coords={
-                "time": (
-                    "time",
-                    np.asarray([time_seconds], dtype=np.float32),
-                    {"units": "seconds"},
-                ),
-                **{
-                    name: (
-                        dims[0],
-                        coordinates[name],
-                        {"units": units},
-                    )
-                    for name, (dims, units) in NATIVE_COORDINATE_CONTRACT.items()
-                },
-            },
-        )
-        path = run_dir / f"cm1out_{index:06d}.nc"
-        dataset.to_netcdf(path)
-        output_paths.append(str(path))
     manifest.lifecycle_state = LifecycleState.COMPLETED
     manifest.provenance.product_state = ProductState.COMPLETED_CM1_RESULT
     manifest.execution.exit_code = 0
     manifest.execution.started_at = manifest.created_at
     manifest.execution.finished_at = manifest.updated_at
-    manifest.outputs.netcdf_paths = output_paths
     manifest.updated_at = datetime.now(UTC)
     write_run_manifest(manifest_path, manifest)
+
+
+def _native_dataset(
+    *,
+    time_seconds: int,
+    xh: np.ndarray,
+    yh: np.ndarray,
+    zh: np.ndarray,
+) -> xr.Dataset:
+    shape_3d = (1, len(zh), len(yh), len(xh))
+    shape_2d = (1, len(yh), len(xh))
+    data_vars = {
+        name: (
+            dims,
+            np.broadcast_to(
+                np.zeros((1, 1, 1, 1) if "zh" in dims else (1, 1, 1), dtype=np.float32),
+                shape_3d if "zh" in dims else shape_2d,
+            ),
+            {"units": units},
+        )
+        for name, (dims, units) in NATIVE_FIELD_CONTRACT.items()
+    }
+    return xr.Dataset(
+        data_vars=data_vars,
+        coords={
+            "time": (
+                "time",
+                np.asarray([time_seconds], dtype=np.float32),
+                {"units": "seconds"},
+            ),
+            "xh": ("xh", xh, {"units": "km"}),
+            "yh": ("yh", yh, {"units": "km"}),
+            "zh": ("zh", zh, {"units": "km"}),
+        },
+    )
+
+
+def _apply_fake_custom_build(
+    package: SupercellsVariationPackage,
+    settings: CloudChamberSettings,
+) -> RunManifest:
+    manifest_path = Path(package.manifest_path)
+    manifest = load_run_manifest(manifest_path)
+    run_dir = manifest_path.parent
+    customization_path = Path(manifest.generated_inputs.cm1_source_customization or "")
+    customization = json.loads(customization_path.read_text())
+    build_root = settings.runtime_home / "cm1_source_builds" / manifest.run_id
+    build_root.mkdir(parents=True)
+    executable = run_dir / "cm1_cloud_chamber_custom.exe"
+    executable.write_bytes(b"custom-supercells-executable")
+    executable_hash = hashlib.sha256(executable.read_bytes()).hexdigest()
+    manifest.cm1_source_customization_status = {
+        "schema_version": "cm1_source_customization_status_v1",
+        "customization_kind": "supercells_environment_and_thermal_v1",
+        "run_id": manifest.run_id,
+        "build_root": str(build_root),
+        "customization_manifest": str(customization_path),
+        "original_target_sha256": customization["original_source_sha256"],
+        "patched_target_sha256": customization["patched_source_sha256"],
+        "patched_files": ["src/init3d.F"],
+        "source_restored_after_build": "not_modified_isolated_build_tree",
+        "build_command": ["make"],
+        "custom_executable": str(executable),
+        "custom_executable_sha256": executable_hash,
+        "wind_profile_sha256": customization["wind_profile_sha256"],
+        "thermodynamic_profile_sha256": customization["thermodynamic_profile_sha256"],
+        "initiation": customization["initiation"],
+        "no_silent_profile_or_thermal_fallback": True,
+    }
+    manifest.execution.command = [str(executable)]
+    manifest.execution.executable_sha256 = executable_hash
+    write_run_manifest(manifest_path, manifest)
+    return load_run_manifest(manifest_path)
 
 
 def _settings(tmp_path: Path) -> CloudChamberSettings:
@@ -431,12 +606,21 @@ def _trust_packaging(
         hashlib.sha256(source.encode()).hexdigest(),
     )
     monkeypatch.setattr(
+        "cloud_chamber.supercells_attempt_provenance.PINNED_INIT3D_F_SHA256",
+        hashlib.sha256(source.encode()).hexdigest(),
+    )
+    monkeypatch.setattr(
         "cloud_chamber.supercells_variations.verified_clean_git_commit",
         lambda: "implementation-commit",
     )
     monkeypatch.setattr(
         "cloud_chamber.supercells_variations.collect_cm1_provenance",
-        lambda _settings: SimpleNamespace(report_record=lambda: {"release": "21.1"}),
+        lambda _settings: SimpleNamespace(
+            report_record=lambda: {
+                "source_manifest_sha256": CM1_SOURCE_MANIFEST_SHA256,
+                "executable_sha256": CM1_EXECUTABLE_SHA256,
+            }
+        ),
     )
     monkeypatch.setattr(
         "cloud_chamber.run_cost.shutil.disk_usage",
