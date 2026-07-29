@@ -10,15 +10,12 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from cloud_chamber.bomex_case import (
-    CM1_EXECUTABLE_SHA256,
-    CM1_SOURCE_MANIFEST_SHA256,
-    CRITICAL_SOURCE_HASHES,
-)
+from cloud_chamber.bomex_case import CM1_SOURCE_MANIFEST_SHA256, CRITICAL_SOURCE_HASHES
 from cloud_chamber.cm1_source_customization import (
     CUSTOM_EXECUTABLE_FILENAME,
 )
 from cloud_chamber.result_ingest import ResultMetadata
+from cloud_chamber.run_cost import ExactNumericalDomain
 from cloud_chamber.run_manifest import (
     AppMetadata,
     ExecutionMetadata,
@@ -38,6 +35,10 @@ from cloud_chamber.trade_cumulus_forcing import (
     TRADE_CUMULUS_FORCING_SCHEMA_VERSION,
     TRADE_CUMULUS_FORCING_TARGET,
 )
+from cloud_chamber.trade_cumulus_forcing_diagnostics import (
+    expected_forcing_profiles,
+    forcing_diagnostic_contract,
+)
 from cloud_chamber.trade_cumulus_output_validation import (
     TradeCumulusOutputValidationError,
     clear_trade_cumulus_output_validation_cache,
@@ -51,10 +52,17 @@ from cloud_chamber.variation_envelope import (
     immutable_layer,
 )
 
+_CANONICAL_EXECUTABLE_BYTES = b"approved canonical executable"
+_CANONICAL_EXECUTABLE_SHA256 = hashlib.sha256(_CANONICAL_EXECUTABLE_BYTES).hexdigest()
+
 
 @pytest.fixture(autouse=True)
-def _clear_cache() -> None:
+def _clear_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     clear_trade_cumulus_output_validation_cache()
+    monkeypatch.setattr(
+        "cloud_chamber.trade_cumulus_attempt_provenance.CM1_EXECUTABLE_SHA256",
+        _CANONICAL_EXECUTABLE_SHA256,
+    )
 
 
 def test_valid_output_is_cached_and_cloud_free_response_is_available(
@@ -82,7 +90,8 @@ def test_valid_output_is_cached_and_cloud_free_response_is_available(
     assert first["history_count"] == 3
     assert first["cloud_response_required"] is False
     assert first["resolved_fields"]["w"] == "w"
-    assert calls == 3
+    assert first["forcing_diagnostics"]["file_count"] == 3
+    assert calls == 6
 
 
 @pytest.mark.parametrize(
@@ -101,6 +110,14 @@ def test_valid_output_is_cached_and_cloud_free_response_is_available(
         ("escaped_output", "escapes the accepted attempt directory"),
         ("wrong_surface_flux", "does not match the reviewed target"),
         ("wrong_provenance", "approved source manifest"),
+        ("missing_diagnostic", "forcing diagnostic histories"),
+        ("wrong_diagnostic_time", "exact retained cadence"),
+        ("missing_diagnostic_field", "Required forcing diagnostic field"),
+        ("wrong_diagnostic_units", "unsupported units"),
+        ("wrong_diagnostic_profile", "reviewed forcing profile"),
+        ("wrong_canonical_command", "approved configured executable"),
+        ("tampered_canonical_executable", "executable identity"),
+        ("wrong_launch_executable_hash", "executable identity"),
     ],
 )
 def test_invalid_native_output_fails_closed(
@@ -187,6 +204,13 @@ def _artifacts(
     customization_path: Path | None = None
     customization_status: dict[str, Any] | None = None
     execution_command: list[str] = []
+    execution_sha256: str | None = None
+    runtime_run_dir = tmp_path / "cm1-run"
+    runtime_run_dir.mkdir()
+    canonical_executable = runtime_run_dir / "cm1.exe"
+    canonical_executable.write_bytes(_CANONICAL_EXECUTABLE_BYTES)
+    execution_command = [str(canonical_executable)]
+    execution_sha256 = _CANONICAL_EXECUTABLE_SHA256
     if forcing_customization:
         controls = controls.model_copy(
             update={
@@ -221,6 +245,7 @@ def _artifacts(
         executable.write_bytes(b"custom executable")
         executable_sha256 = hashlib.sha256(executable.read_bytes()).hexdigest()
         execution_command = [str(executable)]
+        execution_sha256 = executable_sha256
         customization_status = {
             "schema_version": "cm1_source_customization_status_v1",
             "customization_kind": TRADE_CUMULUS_FORCING_CUSTOMIZATION_KIND,
@@ -245,6 +270,7 @@ def _artifacts(
     }
 
     paths: list[Path] = []
+    diagnostic_paths: list[Path] = []
     times = [0.0, 60.0, 120.0]
     if corruption == "wrong_start":
         times[0] = 1.0
@@ -271,6 +297,23 @@ def _artifacts(
             wrong_surface_flux=corruption == "wrong_surface_flux" and index == 2,
         )
         paths.append(path)
+
+    diagnostic_times = [0.0, 60.0, 120.0]
+    if corruption == "wrong_diagnostic_time":
+        diagnostic_times[1] = 61.0
+    for index, time_seconds in enumerate(diagnostic_times, start=1):
+        if corruption == "missing_diagnostic" and index == 2:
+            continue
+        path = run_dir / f"cm1out_diag_{index:06d}.nc"
+        _write_forcing_diagnostic(
+            path,
+            time_seconds=time_seconds,
+            controls=controls,
+            missing_field=corruption == "missing_diagnostic_field" and index == 2,
+            wrong_units=corruption == "wrong_diagnostic_units" and index == 2,
+            wrong_profile=corruption == "wrong_diagnostic_profile" and index == 2,
+        )
+        diagnostic_paths.append(path)
 
     scientific = {
         "controls": controls.model_dump(mode="json"),
@@ -299,6 +342,11 @@ def _artifacts(
             "timestep_seconds": 1.0,
         },
     }
+    exact_numerical = ExactNumericalDomain.model_validate(numerical["exact_domain"])
+    forcing_diagnostics = forcing_diagnostic_contract(
+        duration_seconds=120,
+        numerical=exact_numerical,
+    )
     identity = canonical_payload_sha256(
         {"scientific_design": scientific, "numerical_realization": numerical}
     )
@@ -337,7 +385,10 @@ def _artifacts(
                 ],
             }
         ),
-        world_payload={"controls": controls.model_dump(mode="json")},
+        world_payload={
+            "controls": controls.model_dump(mode="json"),
+            "forcing_diagnostic_contract": forcing_diagnostics,
+        },
         differences=[],
         relationship_classification="replicate_realization",
         run_profile_id="fixture",
@@ -371,8 +422,9 @@ def _artifacts(
                 "source_manifest_sha256": (
                     "0" * 64 if corruption == "wrong_provenance" else CM1_SOURCE_MANIFEST_SHA256
                 ),
-                "executable_sha256": CM1_EXECUTABLE_SHA256,
+                "executable_sha256": _CANONICAL_EXECUTABLE_SHA256,
             },
+            "forcing_diagnostic_contract": forcing_diagnostics,
             "cm1_source_customization_kind": (
                 TRADE_CUMULUS_FORCING_CUSTOMIZATION_KIND if forcing_customization else None
             ),
@@ -389,18 +441,22 @@ def _artifacts(
             ),
             runtime_file_checklist=[str(checklist)],
         ),
-        runtime_paths=RuntimePaths(runtime_home=str(tmp_path)),
+        runtime_paths=RuntimePaths(
+            runtime_home=str(tmp_path),
+            cm1_run_dir=str(runtime_run_dir),
+        ),
         app=AppMetadata(app_version="test", commit="test"),
         lifecycle_state=LifecycleState.COMPLETED,
         validation_status=ValidationStatus.NEEDS_REVIEW,
         provenance=ProvenanceMetadata(product_state=ProductState.COMPLETED_CM1_RESULT),
         execution=ExecutionMetadata(
             command=execution_command,
+            executable_sha256=execution_sha256,
             started_at=now,
             finished_at=now,
             exit_code=0,
         ),
-        outputs=OutputMetadata(netcdf_paths=[str(path) for path in paths]),
+        outputs=OutputMetadata(netcdf_paths=[str(path) for path in [*paths, *diagnostic_paths]]),
         required_output_fields=[
             "ql",
             "qv",
@@ -422,7 +478,17 @@ def _artifacts(
         updated_at=now,
         user=UserMetadata(name="Output validation fixture"),
         cm1_source_customization_status=customization_status,
+        expected_outputs=[
+            "native_numbered_cm1_model_netcdf",
+            "cm1_domain_diagnostic_netcdf",
+        ],
     )
+    if corruption == "wrong_canonical_command":
+        manifest.execution.command = [str(run_dir / "other-cm1.exe")]
+    elif corruption == "tampered_canonical_executable":
+        canonical_executable.write_bytes(b"tampered")
+    elif corruption == "wrong_launch_executable_hash":
+        manifest.execution.executable_sha256 = "f" * 64
     metadata = ResultMetadata(
         result_id="result-trade-output-validation",
         run_id=manifest.run_id,
@@ -435,7 +501,7 @@ def _artifacts(
         source_model="CM1",
         required_output_fields=manifest.required_output_fields,
         model_output_paths=[str(path) for path in paths],
-        netcdf_paths=[str(path) for path in paths],
+        netcdf_paths=[str(path) for path in [*paths, *diagnostic_paths]],
         model_output_file_count=3,
         time_steps=3,
         first_output_time_seconds=0.0,
@@ -531,4 +597,52 @@ def _write_history(
         dataset[field].attrs["units"] = "m s-1"
     if "w" in dataset:
         dataset["w"].attrs["units"] = "m s-1"
+    dataset.to_netcdf(path)
+
+
+def _write_forcing_diagnostic(
+    path: Path,
+    *,
+    time_seconds: float,
+    controls: Any,
+    missing_field: bool,
+    wrong_units: bool,
+    wrong_profile: bool,
+) -> None:
+    zh_m = np.asarray([50.0, 150.0])
+    zf_m = np.asarray([0.0, 100.0, 200.0])
+    profiles = expected_forcing_profiles(controls, zh_m=zh_m, zf_m=zf_m)
+    if wrong_profile:
+        profiles["wprof"] = profiles["wprof"].copy()
+        profiles["wprof"][1] += 0.01
+    data_vars: dict[str, Any] = {
+        "wprof": (
+            ("time", "zf", "yh", "xh"),
+            profiles["wprof"].reshape(1, 3, 1, 1).astype(np.float32),
+        ),
+        "ptb_frc": (
+            ("time", "zh", "yh", "xh"),
+            profiles["ptb_frc"].reshape(1, 2, 1, 1).astype(np.float32),
+        ),
+        "qvb_frc": (
+            ("time", "zh", "yh", "xh"),
+            profiles["qvb_frc"].reshape(1, 2, 1, 1).astype(np.float32),
+        ),
+    }
+    if missing_field:
+        data_vars.pop("qvb_frc")
+    dataset = xr.Dataset(
+        data_vars,
+        coords={
+            "time": ("time", [time_seconds], {"units": "seconds"}),
+            "zh": ("zh", zh_m, {"units": "m"}),
+            "zf": ("zf", zf_m, {"units": "m"}),
+            "yh": ("yh", [0.0], {"units": "degree_north"}),
+            "xh": ("xh", [0.0], {"units": "degree_east"}),
+        },
+    )
+    dataset["wprof"].attrs["units"] = "cm/s" if wrong_units else "m/s"
+    dataset["ptb_frc"].attrs["units"] = "K/s"
+    if "qvb_frc" in dataset:
+        dataset["qvb_frc"].attrs["units"] = "g/g/s"
     dataset.to_netcdf(path)

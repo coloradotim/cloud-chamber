@@ -90,6 +90,7 @@ class ExecutionMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     command: list[str] = Field(default_factory=list)
+    executable_sha256: str | None = None
     process_id: int | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None

@@ -39,8 +39,11 @@ from cloud_chamber.run_manifest import (
 from cloud_chamber.settings import CloudChamberSettings
 from cloud_chamber.trade_cumulus_recipes import TradeCumulusControls
 from cloud_chamber.trade_cumulus_variations import (
+    EXTENDED_CHARACTERIZATION_AUTHORIZATION_ID,
+    TradeCumulusExtendedCharacterizationRequest,
     TradeCumulusVariationError,
     TradeCumulusVariationRequest,
+    create_trade_cumulus_extended_characterization,
     create_trade_cumulus_variation,
     preflight_trade_cumulus_variation,
     preview_trade_cumulus_variation,
@@ -119,6 +122,61 @@ def test_preview_blocks_unattainable_vertical_domain_without_clipping(
 
     assert any("run profile ends" in error for error in preview.blocking_errors)
     assert preview.diagnostics["inversion_top_m_agl"] == 3_000
+
+
+def test_normal_extended_profile_remains_blocked(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    _write_parent(settings)
+
+    preview = preview_trade_cumulus_variation(
+        settings,
+        TradeCumulusVariationRequest(
+            parent_simulation_id=REFERENCE_SIMULATION_ID,
+            simulation_name="Ordinary Extended request",
+            run_profile_id="trade_cumulus_extended_v1",
+            controls=TradeCumulusControls(),
+        ),
+    )
+
+    assert any("uncharacterized" in error for error in preview.blocking_errors)
+
+
+def test_pm_authorized_extended_reference_characterization_packages_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_parent(settings)
+    _patch_package_environment(tmp_path, monkeypatch)
+
+    package = create_trade_cumulus_extended_characterization(
+        settings,
+        TradeCumulusExtendedCharacterizationRequest(
+            authorization_id=EXTENDED_CHARACTERIZATION_AUTHORIZATION_ID
+        ),
+    )
+    manifest = load_run_manifest(Path(package.manifest_path))
+    authorization = manifest.run_configuration["characterization_authorization"]
+
+    assert authorization["issue_number"] == 448
+    assert authorization["ordinary_extended_profile_enabled"] is False
+    assert manifest.run_configuration["parent_simulation_id"] == REFERENCE_SIMULATION_ID
+    assert manifest.run_configuration["launch_specification"]["profile_id"] == (
+        "trade_cumulus_extended_v1"
+    )
+    assert manifest.controls == TradeCumulusControls().model_dump(mode="json")
+    assert manifest.manual_validation_status == (
+        "pm_authorized_extended_reference_characterization_packaged"
+    )
+    assert package.preflight["passed"] is True
+    assert package.envelope.world_payload["characterization_authorization"] == authorization
+    with pytest.raises(TradeCumulusVariationError, match="already been used"):
+        create_trade_cumulus_extended_characterization(
+            settings,
+            TradeCumulusExtendedCharacterizationRequest(
+                authorization_id=EXTENDED_CHARACTERIZATION_AUTHORIZATION_ID
+            ),
+        )
 
 
 def test_package_persists_exact_inputs_shared_envelope_and_retry_identity(
@@ -229,6 +287,10 @@ def test_completed_retries_promote_one_backing_and_support_descendant_creation(
     monkeypatch.setattr(
         "cloud_chamber.cloud_worlds.validate_trade_cumulus_variation_outputs",
         lambda _manifest, _metadata: {"passed": True},
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.cloud_worlds.validate_trade_cumulus_attempt_provenance",
+        lambda _manifest: {"passed": True},
     )
 
     world = trade_cumulus_world_detail(settings)
@@ -430,23 +492,34 @@ def _patch_package_environment(
         "cloud_chamber.trade_cumulus_variations.collect_cm1_provenance",
         lambda _settings: provenance,
     )
-    monkeypatch.setattr(
-        "cloud_chamber.trade_cumulus_variations._render_namelist",
-        lambda _reference, controls, _profile: (
-            "nx = 96,\n"
-            "ny = 96,\n"
-            "nz = 100,\n"
-            "dx = 66.66666667,\n"
-            "dy = 66.66666667,\n"
-            "dz = 30,\n"
-            "dtl = 2,\n"
+
+    def render_namelist(
+        _reference: str,
+        controls: TradeCumulusControls,
+        profile_id: str,
+    ) -> str:
+        extended = profile_id == "trade_cumulus_extended_v1"
+        return (
+            f"nx = {128 if extended else 96},\n"
+            f"ny = {128 if extended else 96},\n"
+            f"nz = {75 if extended else 100},\n"
+            f"dx = {100 if extended else 66.66666667},\n"
+            f"dy = {100 if extended else 66.66666667},\n"
+            f"dz = {40 if extended else 30},\n"
+            f"dtl = {3 if extended else 2},\n"
             "timax = 14400,\n"
-            "tapfrq = 60,\n"
+            f"tapfrq = {120 if extended else 60},\n"
+            "dodomaindiag = .true.,\n"
+            "diagfrq = 60,\n"
             "isnd = 7,\n"
             "iwnd = 0,\n"
             f"cnst_shflx = {controls.surface_sensible_heat_flux_k_m_s:.12e},\n"
             f"cnst_lhflx = {controls.surface_moisture_flux_g_kg_m_s / 1000:.12e},\n"
-        ),
+        )
+
+    monkeypatch.setattr(
+        "cloud_chamber.trade_cumulus_variations._render_namelist",
+        render_namelist,
     )
     monkeypatch.setattr(
         "cloud_chamber.run_cost.shutil.disk_usage",

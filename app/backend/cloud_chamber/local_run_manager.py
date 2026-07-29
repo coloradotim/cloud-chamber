@@ -6,6 +6,7 @@ Tests inject fake processes; CI never requires a real CM1 runtime.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -228,6 +229,7 @@ class LocalRunManager:
                 + str(exc)
             ) from exc
         command = [str(executable)]
+        executable_sha256 = _sha256_file(executable)
         log_dir = run_dir / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         stdout_log = log_dir / "stdout.log"
@@ -238,6 +240,7 @@ class LocalRunManager:
             state=LifecycleState.QUEUED,
             product_state=ProductState.QUEUED_RUNNING_CM1_PROCESS,
             command=command,
+            executable_sha256=executable_sha256,
             stdout_log=stdout_log,
             stderr_log=stderr_log,
             cm1_source_customization_status=source_customization_status,
@@ -378,6 +381,7 @@ class LocalRunManager:
         state: LifecycleState,
         product_state: ProductState,
         command: list[str] | None = None,
+        executable_sha256: str | None = None,
         stdout_log: Path | None = None,
         stderr_log: Path | None = None,
         process_id: int | None = None,
@@ -409,6 +413,11 @@ class LocalRunManager:
         execution = existing_execution.model_copy(
             update={
                 "command": command or existing_execution.command,
+                "executable_sha256": (
+                    executable_sha256
+                    if executable_sha256 is not None
+                    else existing_execution.executable_sha256
+                ),
                 "process_id": (
                     process_id if process_id is not None else existing_execution.process_id
                 ),
@@ -440,6 +449,14 @@ class LocalRunManager:
                 "updated_at": now,
             }
         )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _status_from_manifest(

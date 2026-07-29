@@ -216,11 +216,13 @@ from cloud_chamber.trade_cumulus_updraft_lens import (
     trade_cumulus_updraft_lens_frame,
 )
 from cloud_chamber.trade_cumulus_variations import (
+    TradeCumulusExtendedCharacterizationRequest,
     TradeCumulusVariationError,
     TradeCumulusVariationPackage,
     TradeCumulusVariationPreview,
     TradeCumulusVariationRequest,
     TradeCumulusVariationTemplate,
+    create_trade_cumulus_extended_characterization,
     create_trade_cumulus_variation,
     preflight_trade_cumulus_variation,
     preview_trade_cumulus_variation,
@@ -1229,6 +1231,21 @@ def package_trade_cumulus_variation(
 ) -> TradeCumulusVariationPackage:
     try:
         return create_trade_cumulus_variation(load_settings(), request)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, BomexCaseError, TradeCumulusVariationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/api/worlds/trade-cumulus/characterizations/extended-reference",
+    response_model=TradeCumulusVariationPackage,
+)
+def package_trade_cumulus_extended_characterization(
+    request: TradeCumulusExtendedCharacterizationRequest,
+) -> TradeCumulusVariationPackage:
+    try:
+        return create_trade_cumulus_extended_characterization(load_settings(), request)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (OSError, BomexCaseError, TradeCumulusVariationError) as exc:

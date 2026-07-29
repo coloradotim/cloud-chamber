@@ -2783,7 +2783,7 @@ test.describe("mocked smoke: Build, Results, Explore path", () => {
 
     await page.getByRole("radio", { name: /Standard/ }).check();
     await expect(page.getByText("Mixed physical and numerical variation")).toBeVisible();
-    await page.getByLabel("Inversion base exact value").fill("4000");
+    await page.getByLabel("Inversion base exact value").fill("2800");
     await expect(page.getByRole("alert")).toContainText(
       "requested inversion does not fit the model top",
     );

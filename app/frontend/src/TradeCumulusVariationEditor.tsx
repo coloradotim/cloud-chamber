@@ -191,7 +191,7 @@ const CONTROL_META: Record<
     label: "Inversion base",
     units: "m AGL",
     min: 300,
-    max: 4000,
+    max: 2800,
     step: 10,
     digits: 0,
   },

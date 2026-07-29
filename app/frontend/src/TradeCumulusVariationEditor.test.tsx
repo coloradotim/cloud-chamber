@@ -243,7 +243,7 @@ describe("TradeCumulusVariationEditor", () => {
     );
 
     fireEvent.change(screen.getByLabelText("Inversion base exact value"), {
-      target: { value: "4000" },
+      target: { value: "2800" },
     });
     expect(await screen.findByText(/requested inversion does not fit/i)).toBeInTheDocument();
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
@@ -360,7 +360,8 @@ function preview(body: {
   const changed = Object.entries(body.controls).filter(
     ([key, value]) => value !== parent[key as keyof typeof parent],
   );
-  const impossible = body.controls.inversion_base_m_agl === 4000;
+  const impossible =
+    body.controls.inversion_base_m_agl + body.controls.inversion_thickness_m >= 3000;
   const differences = changed.map(([key, value]) => ({
     path: `controls.${key}`,
     label:

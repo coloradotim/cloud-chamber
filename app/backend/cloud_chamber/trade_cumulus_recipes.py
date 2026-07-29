@@ -34,7 +34,7 @@ class TradeCumulusControls(BaseModel):
     sub_inversion_total_water_g_kg: float = Field(
         default=REFERENCE_SUB_INVERSION_QT_G_KG, ge=0.0, le=25.0
     )
-    inversion_base_m_agl: float = Field(default=520.0, ge=300.0, le=4_000.0)
+    inversion_base_m_agl: float = Field(default=520.0, ge=300.0, le=2_800.0)
     inversion_thickness_m: float = Field(default=960.0, ge=50.0, le=2_000.0)
     inversion_strength_k: float = Field(default=3.7, ge=-5.0, le=20.0)
     free_tropospheric_rh_percent: float = Field(

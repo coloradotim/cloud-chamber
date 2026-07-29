@@ -21,6 +21,12 @@ from cloud_chamber.trade_cumulus_attempt_provenance import (
     TradeCumulusAttemptProvenanceError,
     validate_trade_cumulus_attempt_provenance,
 )
+from cloud_chamber.trade_cumulus_forcing_diagnostics import (
+    FORCING_DIAGNOSTIC_CADENCE_SECONDS,
+    FORCING_DIAGNOSTIC_FIELDS,
+    expected_forcing_profiles,
+    forcing_diagnostic_contract,
+)
 from cloud_chamber.trade_cumulus_recipes import TradeCumulusControls, normalize_controls
 from cloud_chamber.variation_envelope import VariationEnvelope, canonical_payload_sha256
 
@@ -57,11 +63,20 @@ def validate_trade_cumulus_variation_outputs(
 ) -> dict[str, Any]:
     """Validate one ingested Recipe variation and cache by retained artifact identity."""
     paths = [Path(path).expanduser() for path in metadata.model_output_paths]
+    diagnostic_paths = sorted(
+        (
+            Path(path).expanduser()
+            for path in metadata.netcdf_paths
+            if Path(path).name.startswith("cm1out_diag_")
+        ),
+        key=lambda path: path.name,
+    )
     key = (
         manifest.run_id,
         manifest.updated_at.isoformat(),
         metadata.updated_at.isoformat(),
         tuple(_path_fingerprint(path) for path in paths),
+        tuple(_path_fingerprint(path) for path in diagnostic_paths),
         tuple(_generated_input_fingerprints(manifest)),
         canonical_payload_sha256(manifest.cm1_source_customization_status),
     )
@@ -70,7 +85,7 @@ def validate_trade_cumulus_variation_outputs(
         _VALIDATION_CACHE.move_to_end(key)
         return cached
 
-    report = _validate_uncached(manifest, metadata, paths)
+    report = _validate_uncached(manifest, metadata, paths, diagnostic_paths)
     _VALIDATION_CACHE[key] = report
     _VALIDATION_CACHE.move_to_end(key)
     while len(_VALIDATION_CACHE) > _MAX_CACHE_ENTRIES:
@@ -87,6 +102,7 @@ def _validate_uncached(
     manifest: RunManifest,
     metadata: ResultMetadata,
     paths: list[Path],
+    diagnostic_paths: list[Path],
 ) -> dict[str, Any]:
     if manifest.lifecycle_state not in {
         LifecycleState.COMPLETED,
@@ -163,6 +179,14 @@ def _validate_uncached(
             "Ingested output is missing required fields: "
             + ", ".join(metadata.missing_required_output_fields)
         )
+    forcing_diagnostic_report = _validate_forcing_diagnostics(
+        manifest,
+        envelope=envelope,
+        numerical=numerical,
+        controls=controls,
+        diagnostic_paths=diagnostic_paths,
+        duration_seconds=int(expected_duration),
+    )
 
     times: list[float] = []
     scalar_dimensions: tuple[str, str, str] | None = None
@@ -240,7 +264,189 @@ def _validate_uncached(
         "numerical_realization": numerical.model_dump(mode="json"),
         "surface_flux_readback": surface_readbacks[-1],
         "attempt_provenance": provenance_report,
+        "forcing_diagnostics": forcing_diagnostic_report,
     }
+
+
+def _validate_forcing_diagnostics(
+    manifest: RunManifest,
+    *,
+    envelope: VariationEnvelope,
+    numerical: ExactNumericalDomain,
+    controls: TradeCumulusControls,
+    diagnostic_paths: list[Path],
+    duration_seconds: int,
+) -> dict[str, Any]:
+    expected_contract = forcing_diagnostic_contract(
+        duration_seconds=duration_seconds,
+        numerical=numerical,
+    )
+    if envelope.world_payload.get("forcing_diagnostic_contract") != expected_contract:
+        raise TradeCumulusOutputValidationError(
+            "The retained envelope lacks the exact forcing diagnostic contract."
+        )
+    if manifest.run_configuration.get("forcing_diagnostic_contract") != expected_contract:
+        raise TradeCumulusOutputValidationError(
+            "The run configuration disagrees with the forcing diagnostic contract."
+        )
+    if "cm1_domain_diagnostic_netcdf" not in manifest.expected_outputs:
+        raise TradeCumulusOutputValidationError(
+            "The manifest does not declare retained CM1 domain diagnostics."
+        )
+    expected_count = int(expected_contract["expected_file_count"])
+    if len(diagnostic_paths) != expected_count:
+        raise TradeCumulusOutputValidationError(
+            f"Expected {expected_count} forcing diagnostic histories but found "
+            f"{len(diagnostic_paths)}."
+        )
+
+    run_dir = Path(manifest.generated_inputs.run_directory).expanduser().resolve()
+    expected_times = [
+        float(index * FORCING_DIAGNOSTIC_CADENCE_SECONDS) for index in range(expected_count)
+    ]
+    actual_times: list[float] = []
+    final_readback: dict[str, dict[str, float]] = {}
+    for path, expected_time in zip(diagnostic_paths, expected_times, strict=True):
+        resolved_path = path.resolve()
+        if not resolved_path.is_relative_to(run_dir):
+            raise TradeCumulusOutputValidationError(
+                f"Forcing diagnostic escapes the accepted attempt directory: {path.name}."
+            )
+        if not path.is_file():
+            raise TradeCumulusOutputValidationError(
+                f"Forcing diagnostic is unavailable: {path.name}."
+            )
+        try:
+            dataset = xr.open_dataset(path, decode_times=False)
+        except (OSError, ValueError) as exc:
+            raise TradeCumulusOutputValidationError(
+                f"Forcing diagnostic {path.name} is unreadable."
+            ) from exc
+        try:
+            times = _time_values(dataset, path)
+            if len(times) != 1 or not math.isclose(
+                times[0],
+                expected_time,
+                rel_tol=0.0,
+                abs_tol=_TIME_TOLERANCE_SECONDS,
+            ):
+                raise TradeCumulusOutputValidationError(
+                    "Forcing diagnostic times do not reproduce the exact retained cadence."
+                )
+            actual_times.append(times[0])
+            zh_m = _diagnostic_vertical_coordinate(
+                dataset,
+                "zh",
+                expected_count=numerical.nz,
+                spacing_m=numerical.dz_m,
+                model_top_m=numerical.model_top_m,
+                path=path,
+            )
+            zf_m = _diagnostic_vertical_coordinate(
+                dataset,
+                "zf",
+                expected_count=numerical.nz + 1,
+                spacing_m=numerical.dz_m,
+                model_top_m=numerical.model_top_m,
+                path=path,
+            )
+            expected_profiles = expected_forcing_profiles(controls, zh_m=zh_m, zf_m=zf_m)
+            frame_readback: dict[str, dict[str, float]] = {}
+            for field, field_contract in FORCING_DIAGNOSTIC_FIELDS.items():
+                if field not in dataset.data_vars:
+                    raise TradeCumulusOutputValidationError(
+                        f"Required forcing diagnostic field {field} is absent from {path.name}."
+                    )
+                data = dataset[field]
+                if list(data.dims) != field_contract["dimensions"]:
+                    raise TradeCumulusOutputValidationError(
+                        f"Forcing diagnostic field {field} in {path.name} has unsupported "
+                        "dimensions."
+                    )
+                units = str(data.attrs.get("units", "")).strip().lower()
+                expected_units = str(field_contract["units"]).lower()
+                if units != expected_units:
+                    raise TradeCumulusOutputValidationError(
+                        f"Forcing diagnostic field {field} in {path.name} has unsupported units."
+                    )
+                values = np.asarray(data.isel(time=0).values, dtype=float).reshape(-1)
+                if values.size != expected_profiles[field].size or not np.all(np.isfinite(values)):
+                    raise TradeCumulusOutputValidationError(
+                        f"Forcing diagnostic field {field} in {path.name} is incomplete or "
+                        "nonfinite."
+                    )
+                if not np.allclose(
+                    values,
+                    expected_profiles[field],
+                    rtol=2.0e-5,
+                    atol=1.0e-10,
+                ):
+                    raise TradeCumulusOutputValidationError(
+                        f"Forcing diagnostic field {field} does not reproduce the reviewed "
+                        "forcing profile."
+                    )
+                frame_readback[field] = {
+                    "minimum": float(np.min(values)),
+                    "maximum": float(np.max(values)),
+                }
+            final_readback = frame_readback
+        finally:
+            dataset.close()
+
+    return {
+        "schema_version": expected_contract["schema_version"],
+        "file_count": len(diagnostic_paths),
+        "cadence_seconds": FORCING_DIAGNOSTIC_CADENCE_SECONDS,
+        "first_time_seconds": actual_times[0],
+        "last_time_seconds": actual_times[-1],
+        "fields": list(FORCING_DIAGNOSTIC_FIELDS),
+        "final_profile_readback": final_readback,
+    }
+
+
+def _diagnostic_vertical_coordinate(
+    dataset: xr.Dataset,
+    name: str,
+    *,
+    expected_count: int,
+    spacing_m: float,
+    model_top_m: float,
+    path: Path,
+) -> np.ndarray:
+    if name not in dataset.coords:
+        raise TradeCumulusOutputValidationError(
+            f"Forcing diagnostic {path.name} lacks coordinate {name}."
+        )
+    coordinate = dataset.coords[name]
+    units = str(coordinate.attrs.get("units", "")).strip().lower()
+    if units not in {"m", "meter", "meters", "km", "kilometer", "kilometers"}:
+        raise TradeCumulusOutputValidationError(
+            f"Forcing diagnostic coordinate {name} in {path.name} lacks length units."
+        )
+    values = np.asarray(coordinate.values, dtype=float)
+    values_m = values * 1_000.0 if units.startswith("km") else values
+    if (
+        values_m.ndim != 1
+        or values_m.size != expected_count
+        or not np.all(np.isfinite(values_m))
+        or (values_m.size > 1 and not np.allclose(np.diff(values_m), spacing_m))
+    ):
+        raise TradeCumulusOutputValidationError(
+            f"Forcing diagnostic coordinate {name} in {path.name} does not match the "
+            "reviewed vertical grid."
+        )
+    expected_start = 0.0 if name == "zf" else spacing_m / 2.0
+    expected_end = model_top_m if name == "zf" else model_top_m - spacing_m / 2.0
+    if not math.isclose(values_m[0], expected_start, abs_tol=1.0e-4) or not math.isclose(
+        values_m[-1],
+        expected_end,
+        abs_tol=1.0e-4,
+    ):
+        raise TradeCumulusOutputValidationError(
+            f"Forcing diagnostic coordinate {name} in {path.name} does not match the "
+            "reviewed model top."
+        )
+    return values_m
 
 
 def _variation_envelope(manifest: RunManifest) -> VariationEnvelope:

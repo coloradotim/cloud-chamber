@@ -8,7 +8,7 @@ import re
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
@@ -35,6 +35,7 @@ from cloud_chamber.generated_input_identity import (
 )
 from cloud_chamber.run_cost import (
     RunCostEstimate,
+    RunCostProfile,
     create_launch_review_snapshot,
     estimate_profile,
     profile_by_id,
@@ -63,6 +64,10 @@ from cloud_chamber.trade_cumulus_forcing import (
     forcing_customization_artifact,
     verify_forcing_artifact,
 )
+from cloud_chamber.trade_cumulus_forcing_diagnostics import (
+    FORCING_DIAGNOSTIC_CADENCE_SECONDS,
+    forcing_diagnostic_contract,
+)
 from cloud_chamber.trade_cumulus_recipes import (
     RECIPE_CONTRACT_VERSION,
     RECIPE_ID,
@@ -90,6 +95,10 @@ WORLD_ID = "trade_cumulus"
 VARIATION_CASE_ID = "trade_cumulus_recipe_variation_v1"
 VARIATION_SCHEMA_VERSION = "trade_cumulus_variation_v1"
 DEFAULT_PROFILE_ID = "trade_cumulus_standard_v1"
+EXTENDED_PROFILE_ID = "trade_cumulus_extended_v1"
+EXTENDED_CHARACTERIZATION_AUTHORIZATION_ID: Literal[
+    "issue-448-extended-reference-characterization-v1"
+] = "issue-448-extended-reference-characterization-v1"
 
 
 class TradeCumulusVariationError(RuntimeError):
@@ -105,6 +114,14 @@ class TradeCumulusVariationRequest(BaseModel):
     recipe_id: str = RECIPE_ID
     run_profile_id: str = DEFAULT_PROFILE_ID
     controls: TradeCumulusControls
+
+
+class TradeCumulusExtendedCharacterizationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_id: Literal["issue-448-extended-reference-characterization-v1"] = (
+        EXTENDED_CHARACTERIZATION_AUTHORIZATION_ID
+    )
 
 
 class TradeCumulusVariationTemplate(BaseModel):
@@ -217,8 +234,46 @@ def create_trade_cumulus_variation(
     settings: CloudChamberSettings,
     request: TradeCumulusVariationRequest,
 ) -> TradeCumulusVariationPackage:
+    return _create_trade_cumulus_variation(settings, request)
+
+
+def create_trade_cumulus_extended_characterization(
+    settings: CloudChamberSettings,
+    request: TradeCumulusExtendedCharacterizationRequest,
+) -> TradeCumulusVariationPackage:
+    authorization = _extended_characterization_authorization(request.authorization_id)
+    _require_unused_characterization_authorization(settings, request.authorization_id)
+    characterization_request = TradeCumulusVariationRequest(
+        parent_simulation_id=REFERENCE_SIMULATION_ID,
+        simulation_name="Extended reference characterization",
+        user_question=(
+            "What runtime and retained-storage cost does the exact Extended "
+            "wide-domain reference configuration require?"
+        ),
+        run_profile_id=EXTENDED_PROFILE_ID,
+        controls=default_controls(),
+    )
+    return _create_trade_cumulus_variation(
+        settings,
+        characterization_request,
+        profile_override=_authorized_extended_profile(),
+        characterization_authorization=authorization,
+    )
+
+
+def _create_trade_cumulus_variation(
+    settings: CloudChamberSettings,
+    request: TradeCumulusVariationRequest,
+    *,
+    profile_override: RunCostProfile | None = None,
+    characterization_authorization: dict[str, Any] | None = None,
+) -> TradeCumulusVariationPackage:
     context = _variation_context(settings, request.parent_simulation_id)
-    resolved, differences = _resolve_request(request, context)
+    resolved, differences = _resolve_request(
+        request,
+        context,
+        profile_override=profile_override,
+    )
     errors = _request_errors(request, context, resolved, differences)
     if errors:
         raise TradeCumulusVariationError(" ".join(_dedupe(errors)))
@@ -227,6 +282,16 @@ def create_trade_cumulus_variation(
     controls = normalize_controls(request.controls)
     numerical_payload = resolved.resolved_cost_profile.numerical_realization.model_dump(mode="json")
     observation_payload = resolved.observation_plan.model_dump(mode="json")
+    exact_numerical = resolved.resolved_cost_profile.numerical_realization.exact_domain
+    duration_seconds = resolved.observation_plan.duration_seconds
+    if exact_numerical is None or duration_seconds is None:
+        raise TradeCumulusVariationError(
+            "Trade Cumulus packaging requires an exact numerical and observation realization."
+        )
+    forcing_diagnostics = forcing_diagnostic_contract(
+        duration_seconds=duration_seconds,
+        numerical=exact_numerical,
+    )
     scientific_design: dict[str, Any] = {
         "world_id": WORLD_ID,
         "recipe_id": RECIPE_ID,
@@ -242,6 +307,8 @@ def create_trade_cumulus_variation(
             "initial_profile_path": "consumed external CM1 isnd=7 sounding",
         },
     }
+    if characterization_authorization is not None:
+        scientific_design["characterization_authorization"] = characterization_authorization
     identity = canonical_payload_sha256(
         {
             "scientific_design": scientific_design,
@@ -346,6 +413,8 @@ def create_trade_cumulus_variation(
                     level.model_dump(mode="json") for level in resolved.forcing_profile
                 ],
                 "diagnostics": resolved.diagnostics.model_dump(mode="json"),
+                "forcing_diagnostic_contract": forcing_diagnostics,
+                "characterization_authorization": characterization_authorization,
             },
             differences=differences,
             relationship_classification=relationship,
@@ -430,6 +499,8 @@ def create_trade_cumulus_variation(
             "parent_manifest_path": str(context.parent_manifest_path),
             "cm1_provenance": provenance.model_dump(mode="json"),
             "launch_specification": launch_specification,
+            "forcing_diagnostic_contract": forcing_diagnostics,
+            "characterization_authorization": characterization_authorization,
             "cm1_source_customization_kind": (
                 TRADE_CUMULUS_FORCING_CUSTOMIZATION_KIND if forcing_changed else None
             ),
@@ -504,9 +575,27 @@ def create_trade_cumulus_variation(
             recipe_assumptions=scientific_design["fixed_assumptions"],
             required_output_fields=list(resolved.observation_plan.retained_field_inventory),
             input_source="source_locked_bomex_external_profile_transform_v1",
-            expected_outputs=["native_numbered_cm1_model_netcdf", "cm1_stats_and_logs"],
-            run_caveats=resolved.warnings,
-            manual_validation_status="approved_recipe_variation_packaged",
+            expected_outputs=[
+                "native_numbered_cm1_model_netcdf",
+                "cm1_domain_diagnostic_netcdf",
+                "cm1_stats_and_logs",
+            ],
+            run_caveats=[
+                *resolved.warnings,
+                *(
+                    [
+                        "PM-authorized bounded Extended reference characterization; "
+                        "not an ordinary Extended variation."
+                    ]
+                    if characterization_authorization is not None
+                    else []
+                ),
+            ],
+            manual_validation_status=(
+                "pm_authorized_extended_reference_characterization_packaged"
+                if characterization_authorization is not None
+                else "approved_recipe_variation_packaged"
+            ),
         )
         write_run_manifest(paths["manifest"], manifest)
         case_manifest: dict[str, Any] = {
@@ -579,7 +668,7 @@ def preflight_trade_cumulus_variation(manifest_path: Path) -> dict[str, Any]:
         controls = normalize_controls(
             TradeCumulusControls.model_validate(envelope.world_payload.get("controls"))
         )
-        profile = profile_by_id(envelope.run_profile_id)
+        profile = _profile_for_manifest_preflight(manifest, envelope.run_profile_id)
         resolved = resolve_trade_cumulus_recipe(
             controls=controls,
             parent_controls=controls,
@@ -642,6 +731,13 @@ def preflight_trade_cumulus_variation(manifest_path: Path) -> dict[str, Any]:
     )
     expected_observation = resolved.observation_plan.model_dump(mode="json")
     declared_observation = envelope.observation_plan.payload
+    exact_numerical = resolved.resolved_cost_profile.numerical_realization.exact_domain
+    if exact_numerical is None or resolved.observation_plan.duration_seconds is None:
+        raise TradeCumulusVariationError("Variation package lacks an exact diagnostic realization.")
+    expected_forcing_diagnostics = forcing_diagnostic_contract(
+        duration_seconds=resolved.observation_plan.duration_seconds,
+        numerical=exact_numerical,
+    )
     declared_domain = manifest.run_configuration.get("domain")
     expected_domain = _domain_record(envelope.run_profile_id)
     checks = {
@@ -663,6 +759,23 @@ def preflight_trade_cumulus_variation(manifest_path: Path) -> dict[str, Any]:
             "expected_model_output_count"
         )
         == resolved.observation_plan.expected_history_count,
+        "domain_diagnostics_enabled": (
+            (_namelist_assignment(namelist_text, "dodomaindiag") or "").lower() == ".true."
+        ),
+        "diagnostic_cadence_matches_review": math.isclose(
+            _namelist_number(namelist_text, "diagfrq") or -1.0,
+            FORCING_DIAGNOSTIC_CADENCE_SECONDS,
+            rel_tol=0.0,
+            abs_tol=1.0e-12,
+        ),
+        "forcing_diagnostic_contract_matches_review": (
+            envelope.world_payload.get("forcing_diagnostic_contract")
+            == expected_forcing_diagnostics
+            == manifest.run_configuration.get("forcing_diagnostic_contract")
+        ),
+        "forcing_diagnostics_declared_as_output": (
+            "cm1_domain_diagnostic_netcdf" in manifest.expected_outputs
+        ),
         "source_customization_valid": source_customization_valid,
         "launch_specification_bound": isinstance(
             manifest.run_configuration.get("launch_specification"), dict
@@ -763,11 +876,13 @@ def _variation_context(
 def _resolve_request(
     request: TradeCumulusVariationRequest,
     context: _VariationContext,
+    *,
+    profile_override: RunCostProfile | None = None,
 ) -> tuple[ResolvedTradeCumulusRecipe, list[VariationDifference]]:
     if request.recipe_id != RECIPE_ID:
         raise TradeCumulusVariationError("The selected parent and Recipe do not match.")
     try:
-        profile = profile_by_id(request.run_profile_id)
+        profile = profile_override or profile_by_id(request.run_profile_id)
     except ValueError as exc:
         raise TradeCumulusVariationError(str(exc)) from exc
     resolved = resolve_trade_cumulus_recipe(
@@ -799,6 +914,97 @@ def _resolve_request(
             )
         )
     return resolved, differences
+
+
+def _authorized_extended_profile() -> RunCostProfile:
+    profile = profile_by_id(EXTENDED_PROFILE_ID)
+    return profile.model_copy(
+        update={
+            "estimate_basis": "scaled_from_measured",
+            "confidence": (
+                "PM-approved conservative reservation for one bounded characterization, "
+                "scaled from measured Trade Cumulus runs; not characterization evidence."
+            ),
+            "scientific_limitations": [
+                "Authorized only for the exact #448 Extended reference characterization.",
+                "Completion does not enable ordinary Extended variations.",
+            ],
+        }
+    )
+
+
+def _extended_characterization_authorization(
+    authorization_id: str,
+) -> dict[str, Any]:
+    if authorization_id != EXTENDED_CHARACTERIZATION_AUTHORIZATION_ID:
+        raise TradeCumulusVariationError(
+            "Extended characterization requires the exact PM authorization."
+        )
+    return {
+        "schema_version": "trade_cumulus_characterization_authorization_v1",
+        "authorization_id": EXTENDED_CHARACTERIZATION_AUTHORIZATION_ID,
+        "issue_number": 448,
+        "scope": "one_exact_extended_reference_characterization",
+        "profile_id": EXTENDED_PROFILE_ID,
+        "parent_simulation_id": REFERENCE_SIMULATION_ID,
+        "controls": default_controls().model_dump(mode="json"),
+        "maximum_packages": 1,
+        "ordinary_extended_profile_enabled": False,
+    }
+
+
+def _profile_for_manifest_preflight(
+    manifest: RunManifest,
+    profile_id: str,
+) -> RunCostProfile:
+    authorization = manifest.run_configuration.get("characterization_authorization")
+    if authorization is None:
+        return profile_by_id(profile_id)
+    expected = _extended_characterization_authorization(
+        str(authorization.get("authorization_id") if isinstance(authorization, dict) else "")
+    )
+    if (
+        authorization != expected
+        or profile_id != EXTENDED_PROFILE_ID
+        or manifest.run_configuration.get("parent_simulation_id") != REFERENCE_SIMULATION_ID
+    ):
+        raise TradeCumulusVariationError(
+            "Extended characterization package exceeds its exact PM authorization."
+        )
+    envelope = _manifest_envelope(manifest)
+    if (
+        envelope.world_payload.get("characterization_authorization") != expected
+        or normalize_controls(
+            TradeCumulusControls.model_validate(envelope.world_payload.get("controls"))
+        )
+        != default_controls()
+    ):
+        raise TradeCumulusVariationError(
+            "Extended characterization package no longer matches its authorized reference."
+        )
+    return _authorized_extended_profile()
+
+
+def _require_unused_characterization_authorization(
+    settings: CloudChamberSettings,
+    authorization_id: str,
+) -> None:
+    runs_dir = settings.runtime_home.expanduser() / "runs"
+    if not runs_dir.exists():
+        return
+    for manifest_path in runs_dir.glob("*/run_manifest.json"):
+        try:
+            manifest = load_run_manifest(manifest_path)
+        except (OSError, ValueError):
+            continue
+        authorization = manifest.run_configuration.get("characterization_authorization")
+        if (
+            isinstance(authorization, dict)
+            and authorization.get("authorization_id") == authorization_id
+        ):
+            raise TradeCumulusVariationError(
+                "The one-package Extended characterization authorization has already been used."
+            )
 
 
 def _request_errors(

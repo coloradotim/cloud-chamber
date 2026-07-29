@@ -54,7 +54,7 @@ def test_reference_recipe_resolves_exact_direct_targets() -> None:
         ("surface_sensible_heat_flux_k_m_s", -0.020, 0.050),
         ("surface_moisture_flux_g_kg_m_s", -0.10, 0.25),
         ("sub_inversion_total_water_g_kg", 0.0, 25.0),
-        ("inversion_base_m_agl", 300.0, 4_000.0),
+        ("inversion_base_m_agl", 300.0, 2_800.0),
         ("inversion_thickness_m", 50.0, 2_000.0),
         ("inversion_strength_k", -5.0, 20.0),
         ("free_tropospheric_rh_percent", 0.0, 100.0),

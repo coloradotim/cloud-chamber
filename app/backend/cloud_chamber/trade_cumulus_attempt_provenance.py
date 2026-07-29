@@ -58,10 +58,34 @@ def validate_trade_cumulus_attempt_provenance(
             raise TradeCumulusAttemptProvenanceError(
                 "Canonical forcing attempt carries contradictory source-customization evidence."
             )
+        command_path = _execution_path(manifest)
+        configured_run_dir = manifest.runtime_paths.cm1_run_dir
+        if not configured_run_dir:
+            raise TradeCumulusAttemptProvenanceError(
+                "Canonical CM1 execution lacks its configured run directory."
+            )
+        expected_path = Path(configured_run_dir).expanduser().resolve() / "cm1.exe"
+        if command_path != expected_path:
+            raise TradeCumulusAttemptProvenanceError(
+                "Retained CM1 execution did not use the approved configured executable."
+            )
+        if not command_path.is_file():
+            raise TradeCumulusAttemptProvenanceError(
+                "The approved configured CM1 executable is unavailable."
+            )
+        actual_sha256 = _sha256_file(command_path)
+        if (
+            manifest.execution.executable_sha256 != CM1_EXECUTABLE_SHA256
+            or actual_sha256 != CM1_EXECUTABLE_SHA256
+        ):
+            raise TradeCumulusAttemptProvenanceError(
+                "Retained canonical CM1 executable identity does not match the executable used."
+            )
         return {
             "approved_source_manifest_sha256": CM1_SOURCE_MANIFEST_SHA256,
             "executable_kind": "approved_canonical",
             "executable_sha256": CM1_EXECUTABLE_SHA256,
+            "executable_path": str(command_path),
             "forcing_customization_required": False,
         }
 
@@ -159,12 +183,13 @@ def validate_trade_cumulus_attempt_provenance(
         raise TradeCumulusAttemptProvenanceError(
             "Applied custom CM1 executable hash does not match the retained executable."
         )
-    if (
-        not manifest.execution.command
-        or Path(manifest.execution.command[0]).expanduser().resolve() != executable_path
-    ):
+    if _execution_path(manifest) != executable_path:
         raise TradeCumulusAttemptProvenanceError(
             "Retained CM1 execution did not use the applied custom executable."
+        )
+    if manifest.execution.executable_sha256 != executable_sha256:
+        raise TradeCumulusAttemptProvenanceError(
+            "Retained launch-time executable hash does not match the applied custom executable."
         )
 
     return {
@@ -239,6 +264,12 @@ def _required_status_path(status: Mapping[str, object], key: str) -> Path:
             f"Applied source-customization status lacks {key}."
         )
     return Path(value).expanduser().resolve()
+
+
+def _execution_path(manifest: RunManifest) -> Path:
+    if not manifest.execution.command or not manifest.execution.command[0]:
+        raise TradeCumulusAttemptProvenanceError("Retained CM1 execution command is unavailable.")
+    return Path(manifest.execution.command[0]).expanduser().resolve()
 
 
 def _require_contained(path: Path, root: Path, label: str) -> None:

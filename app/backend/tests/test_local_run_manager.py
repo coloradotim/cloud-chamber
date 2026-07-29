@@ -283,6 +283,10 @@ def test_launch_constructs_cm1_command_and_captures_logs(tmp_path: Path) -> None
     assert manifest.lifecycle_state == LifecycleState.RUNNING
     assert manifest.provenance.product_state == ProductState.QUEUED_RUNNING_CM1_PROCESS
     assert manifest.execution.command == [str(settings.cm1_run_dir / "cm1.exe")]
+    assert (
+        manifest.execution.executable_sha256
+        == hashlib.sha256((settings.cm1_run_dir / "cm1.exe").read_bytes()).hexdigest()
+    )
     assert manifest.execution.process_id == fake_process.pid
 
 

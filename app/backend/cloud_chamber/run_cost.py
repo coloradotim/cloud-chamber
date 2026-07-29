@@ -1054,6 +1054,7 @@ def _profile(
         observation_plan=ObservationPlan(
             duration_seconds=duration,
             output_cadence_seconds=cadence,
+            diagnostic_cadence_seconds=60 if world_id == "trade_cumulus" else None,
             expected_history_count=histories,
             retained_field_inventory=_retained_field_inventory(world_id, recipe_id),
         ),

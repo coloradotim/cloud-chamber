@@ -616,7 +616,7 @@ Recipe generator. They do not compound a child's prior transform.
 | Control | Direct target | Supported envelope | Generation behavior |
 | --- | --- | --- | --- |
 | **Sub-inversion moisture** | Mean total-water mixing ratio below inversion base, `g kg⁻¹` | `0` to `25` | Preserve the authored vertical shape while solving the requested layer mean |
-| **Inversion base** | `m AGL` | `300` to `4,000` | Absolute base target |
+| **Inversion base** | `m AGL` | `300` to `2,800` | Absolute base target; the upper bound preserves room for the minimum inversion thickness beneath the 3 km Standard model top |
 | **Inversion thickness** | `m` | `50` to `2,000` | Advanced direct field; preserve a continuous profile |
 | **Inversion strength** | Liquid-water-potential-temperature jump, `K` | `−5` to `+20` | Weak, absent, or reversed inversion is permitted and warned |
 | **Free-tropospheric humidity** | Layer-mean RH above the inversion through the authored free-tropospheric layer, `%` | `0` to `100` | Solve and report the achieved layer mean |
@@ -643,6 +643,13 @@ temperature and total-water tendencies are cooling and drying; positive values
 are warming and moistening. **Restore reference forcing** and **Zero forcing**
 set all three fields visibly. The preview shows their complete authored
 profiles and does not imply steady-state preservation.
+
+Every Trade Cumulus package retains the native CM1 domain-diagnostic stream at
+60-second cadence from model time zero through completion. Availability and
+descendant eligibility require finite `wprof`, `ptb_frc`, and `qvb_frc`
+profiles at every diagnostic time, with native units and vertical support that
+reproduce the reviewed direct forcing targets. Packaged source changes alone
+are not forcing evidence.
 
 Odd, weak, cloud-free, initially cloudy, strongly forced, stably stratified,
 unstable, or otherwise surprising requests are valid experiments. They receive
@@ -675,6 +682,12 @@ All profiles retain the required Trade Cumulus Explore and Updraft Lens fields, 
 | **Extended — Wide-domain organization** | `128×128×75`; `100×100×40 m`; target `dt=3 s`; 12.8 km horizontal domain | `14,400 s`; `120 s`; 121 histories | provisional `60–120 min`; `6.5–9 GB` | Requires characterization | Domain-size and organization sensitivity; not the ordinary default |
 
 Control choices may alter adaptive timestep behavior. The prelaunch range must widen when prior local evidence shows that a control state runs materially slower.
+
+Issue #448 authorizes exactly one reference-control Extended package for
+bounded cost characterization. That package uses the ordinary immutable
+package, snapshot, disk, provenance, diagnostics, and output-validation paths,
+but remains visibly a characterization and does not enable Extended for
+ordinary variation creation.
 
 ## 8.8 Trade Cumulus dependencies and comparison rules
 

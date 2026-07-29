@@ -790,6 +790,7 @@ def _ordinary_simulations(
                 selection.manifest,
                 selection.manifest_path,
                 envelope,
+                metadata=candidate.metadata,
                 attempts=selection.attempts,
                 accepted_backing=selection.accepted_backing,
             )
@@ -1024,6 +1025,7 @@ def _promote_variation_envelope(
     manifest_path: Path | None,
     envelope: VariationEnvelope,
     *,
+    metadata: ResultMetadata,
     attempts: tuple[VariationAttempt, ...],
     accepted_backing: bool,
 ) -> VariationEnvelope:
@@ -1032,6 +1034,7 @@ def _promote_variation_envelope(
     parent_eligible, parent_reason = _evaluate_variation_parent_eligibility(
         manifest,
         envelope,
+        metadata=metadata,
         accepted_backing=accepted_backing,
     )
     caveated = bool(manifest.run_caveats or manifest.outputs.runtime_warnings)
@@ -1102,10 +1105,16 @@ def _evaluate_variation_parent_eligibility(
     manifest: RunManifest,
     envelope: VariationEnvelope,
     *,
+    metadata: ResultMetadata,
     accepted_backing: bool,
 ) -> tuple[bool, str]:
     if not accepted_backing:
         return False, "Only the accepted backing attempt can parent a new variation."
+    if manifest.run_configuration.get("characterization_authorization") is not None:
+        return (
+            False,
+            "A characterization output requires explicit PM acceptance before it can parent.",
+        )
     if (
         envelope.recipe_id != RECIPE_ID
         or envelope.recipe_contract_version != RECIPE_CONTRACT_VERSION
@@ -1122,6 +1131,10 @@ def _evaluate_variation_parent_eligibility(
     try:
         validate_trade_cumulus_attempt_provenance(manifest)
     except TradeCumulusAttemptProvenanceError as exc:
+        return False, str(exc)
+    try:
+        validate_trade_cumulus_variation_outputs(manifest, metadata)
+    except TradeCumulusOutputValidationError as exc:
         return False, str(exc)
     return True, "Accepted output remains reconstructible inside Recipe contract version 1."
 
