@@ -25,7 +25,7 @@ const world: MountainWavesWorldDetail = {
       state: "available",
       state_message: "Completed output is inspectable.",
       inspectable: true,
-      can_create_variation: false,
+      can_create_variation: true,
       moist: false,
       moist_fields_available: false,
       purpose: "A dry terrain-wave reference.",
@@ -86,43 +86,88 @@ describe("MountainWavesWorld", () => {
         const url = String(input);
         if (url === "/api/worlds/mountain-waves") return ok(world);
         if (url.includes("variation-template")) {
+          const dry = url.includes("mountain_waves_dry_ridge");
+          const recipePrefix = dry ? "mountain_waves_dry" : "mountain_waves_boulder";
           return ok({
-            parent_simulation_id: world.default_parent_simulation_id,
-            parent_run_id: "moist-run",
-            parent_display_name: "Boulder Windstorm",
-            parent_configuration_source: "retained_exact_sounding",
-            reference_simulation_id: world.default_parent_simulation_id,
-            configuration: {
-              terrain: { height_m: 1_000, half_width_m: 10_000, center_m: 0 },
-              sounding: [
-                {
-                  height_m: 0,
-                  pressure_pa: 100_000,
-                  theta_k: 288,
-                  qv_g_kg: 5,
-                  u_m_s: 10,
-                  v_m_s: 0,
-                },
-                {
-                  height_m: 1_000,
-                  pressure_pa: 90_000,
-                  theta_k: 292,
-                  qv_g_kg: 4,
-                  u_m_s: 12,
-                  v_m_s: 0,
-                },
-                {
-                  height_m: 2_000,
-                  pressure_pa: 80_000,
-                  theta_k: 296,
-                  qv_g_kg: 3,
-                  u_m_s: 14,
-                  v_m_s: 0,
-                },
-              ],
-              duration_seconds: 3_600,
-              output_cadence_seconds: 180,
+            parent_simulation_id: dry
+              ? "mountain_waves_dry_ridge"
+              : world.default_parent_simulation_id,
+            parent_run_id: dry ? "dry-run" : "moist-run",
+            parent_display_name: dry ? "Dry Ridge" : "Boulder Windstorm",
+            parent_configuration_source: "Hash-locked approved Recipe reference",
+            reference_simulation_id: dry
+              ? "mountain_waves_dry_ridge"
+              : world.default_parent_simulation_id,
+            recipe_id: dry ? "dry_ridge_mechanics" : "boulder_moist_wave",
+            recipe_name: dry ? "Dry Ridge Mechanics" : "Boulder Moist Wave",
+            recipe_contract_version: "1",
+            controls: {
+              recipe_id: dry ? "dry_ridge_mechanics" : "boulder_moist_wave",
+              dry_ridge: dry
+                ? {
+                    ridge_height_m: 400,
+                    ridge_half_width_m: 1_000,
+                    cross_ridge_wind_m_s: 10,
+                    dry_stability_n_s: 0.01,
+                    wind_shear_through_10km_m_s: 0,
+                    layered_stability: false,
+                    lower_stability_n_s: 0.01,
+                    upper_stability_n_s: 0.01,
+                    stability_transition_height_m: 6_000,
+                    stability_transition_width_m: 1_000,
+                  }
+                : null,
+              boulder_moist: dry
+                ? null
+                : {
+                    ridge_height_m: 2_000,
+                    ridge_half_width_m: 10_000,
+                    low_level_wind_m_s: 14.1,
+                    shear_through_10km_m_s: 23.8,
+                    lower_layer_rh_percent: 66,
+                    midlevel_rh_percent: 34.5,
+                    dry_air_counterpart: false,
+                    lower_stability_factor: 1,
+                    midlevel_stability_factor: 1,
+                    upper_stability_factor: 1,
+                  },
             },
+            run_profiles: [
+              {
+                profile: {
+                  profile_id: `${recipePrefix}_standard_v1`,
+                  profile_name: "Standard — Working run",
+                  role: "Standard",
+                  recipe_id: dry ? "dry_ridge_mechanics" : "boulder_moist_wave",
+                  numerical_realization: {
+                    domain: "Generated from exact controls",
+                    grid: "400 × 1 × 200",
+                    spacing: "250 m × 250 m × 100 m",
+                    timestep_strategy: "CM1 adaptive timestep",
+                    physics_source: "Recipe contract version 1",
+                  },
+                  observation_plan: {
+                    duration_seconds: 3_600,
+                    output_cadence_seconds: 60,
+                    expected_history_count: 61,
+                    retained_field_inventory: ["w", "th", "uinterp"],
+                  },
+                  expected_runtime_min_seconds: 60,
+                  expected_runtime_max_seconds: 120,
+                  expected_size_min_bytes: 104_857_600,
+                  expected_size_max_bytes: 209_715_200,
+                  estimate_basis: "scaled_from_measured",
+                  confidence: "moderate",
+                  scientific_limitations: [],
+                },
+                current_free_space_bytes: 107_374_182_400,
+                projected_free_space_bytes: 106_300_440_576,
+                required_free_space_bytes: 524_288_000,
+                disposition: "passes",
+                disposition_reason: "Current free space satisfies the resolved profile.",
+              },
+            ],
+            default_run_profile_id: `${recipePrefix}_standard_v1`,
             can_create_variation: true,
             unavailable_reason: null,
           });
@@ -182,8 +227,11 @@ describe("MountainWavesWorld", () => {
     );
     await screen.findByRole("heading", { name: "Boulder Windstorm" });
     const createButtons = screen.getAllByRole("button", { name: "Create variation" });
-    fireEvent.click(createButtons[0]);
-    expect(await screen.findByRole("heading", { name: /Change the terrain/ })).toBeInTheDocument();
+    fireEvent.click(createButtons[1]);
+    expect(
+      await screen.findByRole("heading", { name: "Atmosphere and terrain" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Boulder Moist Wave")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create Variation" })).toHaveClass("active-control");
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/api/worlds/mountain-waves/variation-template?"),

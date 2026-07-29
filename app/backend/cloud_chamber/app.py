@@ -61,6 +61,7 @@ from cloud_chamber.lan_worker import (
 from cloud_chamber.lifecycle import LifecycleProjection, lifecycle_projection
 from cloud_chamber.local_run_manager import LocalRunManager, LocalRunManagerError, RunStatus
 from cloud_chamber.local_run_queue import LocalRunQueueError, LocalRunQueueManager
+from cloud_chamber.mountain_wave_case import MountainWaveCaseError
 from cloud_chamber.mountain_wave_terrain_visualization import (
     MountainWavesCompareFrame,
     MountainWaveTerrainField,
@@ -1218,7 +1219,7 @@ def package_mountain_waves_variation(
         return create_mountain_waves_variation(load_settings(), request)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except (OSError, MountainWavesVariationError) as exc:
+    except (OSError, MountainWaveCaseError, MountainWavesVariationError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

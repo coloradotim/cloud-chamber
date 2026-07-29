@@ -23,6 +23,11 @@ export type MountainWavesSimulation = {
   parent_run_id: string | null;
   reference_simulation_id: string;
   user_question: string | null;
+  recipe_id?: string | null;
+  recipe_contract_version?: string | null;
+  relationship_classification?: string | null;
+  legacy_contract?: boolean;
+  parent_eligibility_reason?: string | null;
   state:
     | "available"
     | "packaged"
@@ -39,6 +44,9 @@ export type MountainWavesSimulation = {
   moist_fields_available: boolean;
   purpose: string;
   configuration: Record<string, unknown> | null;
+  scientific_design?: Record<string, unknown> | null;
+  numerical_realization?: Record<string, unknown> | null;
+  observation_plan?: Record<string, unknown> | null;
   differences: Record<string, MountainWavesDifference[]>;
   warnings: string[];
   caveats: string[];
@@ -321,11 +329,13 @@ function MountainWavesSimulationCard({
       <header>
         <div>
           <p className="eyebrow">
-            {simulation.role === "variation"
-              ? "Variation"
-              : simulation.simulation_id === simulation.reference_simulation_id
-                ? "Reference Simulation"
-                : "Built-in Simulation"}
+            {simulation.legacy_contract
+              ? "Legacy-contract Simulation"
+              : simulation.role === "variation"
+                ? "Variation"
+                : simulation.simulation_id === simulation.reference_simulation_id
+                  ? "Reference Simulation"
+                  : "Built-in Simulation"}
           </p>
           <h3>{simulation.display_name}</h3>
         </div>
@@ -356,6 +366,31 @@ function MountainWavesSimulationCard({
           <div>
             <dt>Geometry</dt>
             <dd>Native 2-D x-z · singleton y</dd>
+          </div>
+          {simulation.recipe_id && (
+            <div>
+              <dt>Recipe</dt>
+              <dd>
+                {simulation.recipe_id.replaceAll("_", " ")}
+                {simulation.recipe_contract_version
+                  ? ` · contract ${simulation.recipe_contract_version}`
+                  : ""}
+              </dd>
+            </div>
+          )}
+          {simulation.relationship_classification && (
+            <div>
+              <dt>Relationship</dt>
+              <dd>{simulation.relationship_classification.replaceAll("_", " ")}</dd>
+            </div>
+          )}
+          <div>
+            <dt>Parent eligibility</dt>
+            <dd>
+              {simulation.can_create_variation
+                ? "Eligible"
+                : (simulation.parent_eligibility_reason ?? "Not eligible")}
+            </dd>
           </div>
         </dl>
         {simulation.caveats.map((caveat) => (

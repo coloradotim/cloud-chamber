@@ -54,6 +54,10 @@ class FakeProcess:
         self.terminated = True
         self.exit_code = -15
 
+    def kill(self) -> None:
+        self.terminated = True
+        self.exit_code = -9
+
 
 class FakeProcessFactory:
     def __init__(
@@ -94,6 +98,9 @@ class FakePopen:
         return 0
 
     def terminate(self) -> None:
+        return None
+
+    def kill(self) -> None:
         return None
 
 
@@ -276,6 +283,68 @@ def test_launch_constructs_cm1_command_and_captures_logs(tmp_path: Path) -> None
     assert manifest.provenance.product_state == ProductState.QUEUED_RUNNING_CM1_PROCESS
     assert manifest.execution.command == [str(settings.cm1_run_dir / "cm1.exe")]
     assert manifest.execution.process_id == fake_process.pid
+
+
+def test_process_factory_failure_restores_packaged_manifest(tmp_path: Path) -> None:
+    settings = fake_settings(tmp_path)
+    manifest_path = dry_run_manifest_path(tmp_path)
+
+    def fail_process_start(
+        command: list[str],
+        *,
+        cwd: Path,
+        stdout: TextIO,
+        stderr: TextIO,
+    ) -> FakeProcess:
+        del command, cwd, stdout, stderr
+        raise OSError("process start failed")
+
+    manager = LocalRunManager(settings=settings, process_factory=fail_process_start)
+
+    with pytest.raises(LocalRunManagerError, match="process start failed"):
+        manager.launch(manifest_path)
+
+    manifest = load_run_manifest(manifest_path)
+    assert manifest.lifecycle_state == LifecycleState.PACKAGED
+    assert manifest.provenance.product_state == ProductState.PACKAGED_DRY_RUN_OUTPUT
+
+
+def test_running_manifest_failure_terminates_started_process_and_restores_package(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = fake_settings(tmp_path)
+    manifest_path = dry_run_manifest_path(tmp_path)
+    fake_process = FakeProcess()
+    manager = LocalRunManager(
+        settings=settings,
+        process_factory=FakeProcessFactory(fake_process),
+    )
+    real_write = write_run_manifest
+    failed_running_write = False
+
+    def fail_once_for_running(path: Path, manifest: Any) -> None:
+        nonlocal failed_running_write
+        if manifest.lifecycle_state == LifecycleState.RUNNING and not failed_running_write:
+            failed_running_write = True
+            raise OSError("running manifest write failed")
+        real_write(path, manifest)
+
+    monkeypatch.setattr(
+        "cloud_chamber.local_run_manager.write_run_manifest",
+        fail_once_for_running,
+    )
+
+    with pytest.raises(LocalRunManagerError, match="process was terminated"):
+        manager.launch(manifest_path)
+
+    assert fake_process.terminated is True
+    assert fake_process.exit_code == -15
+    manifest = load_run_manifest(manifest_path)
+    assert manifest.lifecycle_state == LifecycleState.PACKAGED
+    assert manifest.provenance.product_state == ProductState.PACKAGED_DRY_RUN_OUTPUT
+    with pytest.raises(LocalRunManagerError, match="No local CM1 run is active"):
+        manager.cancel()
 
 
 def test_launch_allows_source_defined_case_without_input_sounding(tmp_path: Path) -> None:

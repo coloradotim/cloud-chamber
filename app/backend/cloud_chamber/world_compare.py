@@ -234,22 +234,37 @@ def _mountain_descriptor(
         right_simulation_id or default_right,
     )
     records = {item.simulation_id: item for item in world.simulations}
-    differences = _mapping_differences(
-        _mountain_comparison_configuration(records[left.simulation_id]),
-        _mountain_comparison_configuration(records[right.simulation_id]),
+    left_record = records[left.simulation_id]
+    right_record = records[right.simulation_id]
+    direct_relationship = _mountain_envelope_relationship(left_record, right_record)
+    differences = (
+        _mountain_envelope_differences(left_record, right_record)
+        if direct_relationship is not None
+        else _mountain_absolute_differences(left_record, right_record)
     )
+    pair_classification = direct_relationship or _mountain_pair_classification(
+        left_record, right_record, differences
+    )
+    controlled = pair_classification == "controlled_physical_variation"
     compatibility = _compatibility(
         left,
         right,
-        relationship=(
-            "Both are retained built-in Mountain Waves Simulations; no controlled "
-            "experimental relationship is declared."
-        ),
-        controlled_pair=False,
+        relationship=(_mountain_relationship_message(left, right, pair_classification)),
+        controlled_pair=controlled,
         controlled_message=(
-            "Dry Ridge and Boulder Windstorm differ in moisture, atmosphere, terrain, "
-            "domain, grid, and duration. This is a structural comparison, not a "
-            "one-variable experiment."
+            "The shared variation envelope records one material physical change and "
+            "matched numerical and observation layers."
+            if controlled
+            else (
+                "The shared variation envelope classifies this pair as "
+                f"{pair_classification.replace('_', ' ')}."
+                if pair_classification != "different_recipes"
+                else (
+                    "The selected Simulations use different Mountain Waves Recipes. "
+                    "Their absolute scientific and numerical layers remain comparable, "
+                    "but they are not a controlled pair."
+                )
+            )
         ),
     )
     return WorldCompareDescriptor(
@@ -794,6 +809,202 @@ def _mountain_comparison_configuration(
             if key in terrain
         },
     }
+
+
+def _mountain_envelope_relationship(
+    left: MountainWavesSimulationRecord,
+    right: MountainWavesSimulationRecord,
+) -> str | None:
+    if right.parent_simulation_id == left.simulation_id:
+        return right.relationship_classification
+    if left.parent_simulation_id == right.simulation_id:
+        return left.relationship_classification
+    return None
+
+
+def _mountain_relationship_message(
+    left: CompareSimulationDescriptor,
+    right: CompareSimulationDescriptor,
+    classification: str | None,
+) -> str:
+    if classification == "different_recipes":
+        return (
+            "Different Recipes: the selected Mountain Waves Simulations do not share "
+            "one controlled Recipe envelope."
+        )
+    if classification is not None:
+        if right.parent_simulation_id == left.simulation_id:
+            return (
+                f"{right.display_name} is a {classification.replace('_', ' ')} of "
+                f"{left.display_name}."
+            )
+        if left.parent_simulation_id == right.simulation_id:
+            return (
+                f"{left.display_name} is a {classification.replace('_', ' ')} of "
+                f"{right.display_name}."
+            )
+        return (
+            "The selected same-Recipe Simulations form a "
+            f"{classification.replace('_', ' ')} based on their normalized absolute layers."
+        )
+    return "No material normalized difference is recorded for this pair."
+
+
+def _mountain_envelope_differences(
+    left: MountainWavesSimulationRecord,
+    right: MountainWavesSimulationRecord,
+) -> list[CompareDifference]:
+    child = right if right.parent_simulation_id == left.simulation_id else left
+    reverse = child is left
+    category_map = {
+        "terrain": "atmospheric",
+        "wind": "atmospheric",
+        "moisture": "atmospheric",
+        "stability/thermodynamics": "atmospheric",
+        "forcing/initiation": "atmospheric",
+        "numerical realization": "numerical",
+        "observation plan": "output",
+    }
+    rows: list[CompareDifference] = []
+    for group, differences in child.differences.items():
+        for difference in differences:
+            if difference.get("material") is False:
+                continue
+            before = difference.get("before")
+            after = difference.get("after")
+            rows.append(
+                CompareDifference(
+                    path=str(difference.get("path") or difference.get("label") or group),
+                    label=str(difference.get("label") or group),
+                    category=category_map.get(group, "metadata"),  # type: ignore[arg-type]
+                    left_value=after if reverse else before,
+                    right_value=before if reverse else after,
+                    units=(
+                        str(difference["units"]) if difference.get("units") is not None else None
+                    ),
+                    material=True,
+                )
+            )
+    return rows
+
+
+def _mountain_absolute_differences(
+    left: MountainWavesSimulationRecord,
+    right: MountainWavesSimulationRecord,
+) -> list[CompareDifference]:
+    layers = (
+        ("scientific_design", "atmospheric", left.scientific_design, right.scientific_design),
+        (
+            "numerical_realization",
+            "numerical",
+            left.numerical_realization,
+            right.numerical_realization,
+        ),
+        ("observation_plan", "output", left.observation_plan, right.observation_plan),
+    )
+    rows: list[CompareDifference] = []
+    left_recipe_id = _mountain_recipe_id(left)
+    right_recipe_id = _mountain_recipe_id(right)
+    if left_recipe_id != right_recipe_id:
+        rows.append(
+            CompareDifference(
+                path="recipe_id",
+                label="Recipe",
+                category="metadata",
+                left_value=left_recipe_id,
+                right_value=right_recipe_id,
+            )
+        )
+    for prefix, category, left_payload, right_payload in layers:
+        flattened_left = _flatten_mapping(left_payload or {})
+        flattened_right = _flatten_mapping(right_payload or {})
+        for path in sorted(set(flattened_left) | set(flattened_right)):
+            left_known = path in flattened_left
+            right_known = path in flattened_right
+            left_value = flattened_left.get(path)
+            right_value = flattened_right.get(path)
+            if left_known and right_known and left_value == right_value:
+                continue
+            full_path = f"{prefix}.{path}"
+            rows.append(
+                CompareDifference(
+                    path=full_path,
+                    label=_mountain_difference_label(full_path),
+                    category=category,  # type: ignore[arg-type]
+                    left_value=left_value,
+                    right_value=right_value,
+                    left_known=left_known,
+                    right_known=right_known,
+                    units=_mountain_difference_units(full_path),
+                )
+            )
+    return rows
+
+
+def _mountain_pair_classification(
+    left: MountainWavesSimulationRecord,
+    right: MountainWavesSimulationRecord,
+    differences: list[CompareDifference],
+) -> str:
+    if _mountain_recipe_id(left) != _mountain_recipe_id(right):
+        return "different_recipes"
+    physical = [item for item in differences if item.category == "atmospheric"]
+    numerical = [item for item in differences if item.category == "numerical"]
+    observation = [item for item in differences if item.category == "output"]
+    if physical and (numerical or observation):
+        return "mixed_variation"
+    if numerical:
+        return "numerical_sensitivity"
+    if physical:
+        return (
+            "controlled_physical_variation"
+            if len(physical) == 1
+            else "multi_factor_physical_variation"
+        )
+    if observation:
+        return "observation_only_attempt"
+    return "replicate_realization"
+
+
+def _mountain_recipe_id(record: MountainWavesSimulationRecord) -> str | None:
+    if record.recipe_id:
+        return record.recipe_id
+    if record.simulation_id == "mountain_waves_dry_ridge":
+        return "dry_ridge_mechanics"
+    if record.simulation_id == "mountain_waves_boulder_moist_reference":
+        return "boulder_moist_wave"
+    return None
+
+
+def _mountain_difference_label(path: str) -> str:
+    labels = {
+        "scientific_design.controls.ridge_height_m": "Ridge height",
+        "scientific_design.controls.ridge_half_width_m": "Ridge half-width",
+        "scientific_design.controls.low_level_wind_m_s": "0–4 km mean wind",
+        "scientific_design.controls.shear_through_10km_m_s": "0–10 km shear",
+        "scientific_design.controls.lower_layer_rh_percent": "0–4 km mean RH",
+        "scientific_design.controls.midlevel_rh_percent": "4–10 km mean RH",
+        "scientific_design.controls.dry_air_counterpart": "Boulder dry-air counterpart",
+        "scientific_design.controls.lower_stability_factor": "Lower-layer stability",
+        "scientific_design.controls.midlevel_stability_factor": "Midlevel stability",
+        "scientific_design.controls.upper_stability_factor": "Upper-layer stability",
+        "observation_plan.output_cadence_seconds": "Saved-output cadence",
+        "observation_plan.duration_seconds": "Simulation duration",
+        "observation_plan.expected_history_count": "Expected saved outputs",
+    }
+    return labels.get(path, path.replace(".", " / ").replace("_", " ").title())
+
+
+def _mountain_difference_units(path: str) -> str | None:
+    if path.endswith(("_wind_m_s", "shear_through_10km_m_s")):
+        return "m/s"
+    if path.endswith("_rh_percent"):
+        return "%"
+    if path.endswith("_m"):
+        return "m"
+    if path.endswith("_seconds"):
+        return "s"
+    return None
 
 
 def _flatten_mapping(value: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:

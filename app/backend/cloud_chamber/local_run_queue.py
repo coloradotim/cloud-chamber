@@ -12,7 +12,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from cloud_chamber.local_run_manager import LocalRunManagerError, RunStatus
 from cloud_chamber.pre_run_validation import report_blocks_execution
 from cloud_chamber.result_ingest import ResultIngestError, ingest_completed_run
-from cloud_chamber.run_cost import LaunchBudgetError, validate_manifest_launch_budget
+from cloud_chamber.run_cost import (
+    LaunchBudgetError,
+    consume_manifest_launch_budget,
+    preflight_manifest_launch_budget,
+)
 from cloud_chamber.run_manifest import (
     LifecycleState,
     ProductState,
@@ -200,13 +204,17 @@ class LocalRunQueueManager:
         self._finalize_terminal_entry(entry, status)
 
     def _launch_entry(self, entry: RunQueueEntry) -> None:
+        manifest = None
+        snapshot_id: str | None = None
+        preflight_check = None
         try:
             manifest = load_run_manifest(Path(entry.manifest_path))
-            snapshot_id = manifest.run_configuration.get("launch_review_snapshot_id")
-            validate_manifest_launch_budget(
+            snapshot_value = manifest.run_configuration.get("launch_review_snapshot_id")
+            snapshot_id = snapshot_value if isinstance(snapshot_value, str) else None
+            preflight_check = preflight_manifest_launch_budget(
                 self._settings,
                 manifest=manifest,
-                snapshot_id=snapshot_id if isinstance(snapshot_id, str) else None,
+                snapshot_id=snapshot_id,
             )
             status = self._run_manager.launch(Path(entry.manifest_path))
         except (LaunchBudgetError, LocalRunManagerError, OSError, RunManifestError) as exc:
@@ -216,6 +224,25 @@ class LocalRunQueueManager:
             entry.message = "Local CM1 launch failed; fix settings and queue this package again."
             entry.finished_at = now
             entry.updated_at = now
+            return
+
+        try:
+            consume_manifest_launch_budget(
+                self._settings,
+                manifest=manifest,
+                snapshot_id=snapshot_id,
+                preflight_check=preflight_check,
+            )
+        except LaunchBudgetError as exc:
+            now = _now()
+            entry.state = "running"
+            entry.started_at = now
+            entry.updated_at = now
+            entry.error = str(exc)
+            entry.message = (
+                "CM1 started, but launch-authorization audit finalization failed; "
+                "the active process remains tracked."
+            )
             return
 
         now = _now()

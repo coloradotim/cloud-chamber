@@ -69,7 +69,7 @@ retained Experiments open directly in non-World Explore.
 | World | Current content | Current surfaces | Current limitation |
 | --- | --- | --- | --- |
 | **Trade Cumulus** | Canonical BOMEX Baseline and More Moisture retained Simulations | Overview, Simulations, Activity, History, featured and ordinary Compare, Saved Comparisons, Explore resume, and Saved Views | Shared variation creation is not implemented |
-| **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, Activity, History, ordinary Compare, Saved Comparisons, World-specific Create Variation, Explore resume, and Saved Views | Variation creation remains World-specific |
+| **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, Activity, History, ordinary Compare, Saved Comparisons, shared-contract Create Variation, Explore resume, and Saved Views | The first shared variation envelope is implemented; other Worlds do not yet supply Recipe payloads |
 | **Supercells** | Quarter-Circle and Straight-Line Hodograph retained Simulations | Overview, Simulations, Activity, History, ordinary Compare, Saved Comparisons, Explore resume, and Saved Views | No create-variation workflow |
 
 The World Overview and Simulations surfaces use stable content identities and
@@ -98,11 +98,46 @@ and attempt relationships with text search, practical filters, and sort.
 Technical identifiers, differences, caveats, dependencies, and attempt evidence
 remain available on demand.
 
-Current approved-contract Mountain Waves variations can be assigned to their
-World when their current contract evidence is present. A World name or
-Simulation string by itself does not establish ownership. Sounding-related
+Current shared-envelope Mountain Waves variations can be assigned to their
+World when their Recipe identity and current contract evidence are present.
+Availability is evaluated independently from parent eligibility. A World name
+or Simulation string by itself does not establish ownership. Sounding-related
 work remains under Fun With Soundings, while ambiguous records remain visibly
 legacy or unassigned.
+
+## Create Variation
+
+Mountain Waves is the first consumer of the shared variation envelope. The
+envelope records stable intended Simulation identity, parent and reference
+lineage, immutable scientific, numerical, and observation layers, categorized
+material differences, relationship classification, explicit run profile,
+cost review, technical attempts, validation decisions, availability, and
+parent eligibility.
+
+Two versioned Mountain Waves Recipes are implemented:
+
+- Dry Ridge Mechanics, using an analytic dry atmosphere and bounded terrain,
+  wind, shear, and stability controls;
+- Boulder Moist Wave, using absolute transforms against the retained
+  source-backed Boulder reference for terrain, wind, moisture, and stability.
+
+The selected parent determines the Recipe. Controls resolve against the Recipe
+reference rather than compounding relative to a previous variation. Quick,
+Standard, Presentation, and Extended profiles remain explicit; Extended is
+visible but blocked until characterized.
+
+Preview resolves the exact numerical realization, observation plan, scientific
+diagnostics, categorized differences, relationship, and storage estimate.
+Packaging creates the deterministic intended Simulation identity and one new
+technical attempt, writes exact inputs and a package-bound launch review, and
+stops. Queueing is a separate action with the immediate launch gate from
+Storage. Packaging or process success does not imply Simulation availability.
+
+Validated completed output is made available automatically when current World
+inspectability passes. Parent eligibility is a separate decision. Existing
+out-of-contract Mountain Waves variations remain visible as Legacy-contract
+history and may remain inspectable or comparable, but cannot parent a new
+Recipe variation.
 
 ## Explore Experiences
 
@@ -255,6 +290,11 @@ Simulations retain matched thermodynamics, trigger, grid, timing, output
 inventory, model translation, and numerical options while changing hodograph
 curvature. Compare maps physical coordinates and local native evidence; it
 does not claim that storm structures on the two sides have object lineage.
+
+For shared-envelope Mountain Waves parent-child pairs, Compare consumes the
+same relationship classification and categorized material differences written
+at packaging. It does not reconstruct a second account from raw manifest
+fields.
 
 ## Shared Scientific Presentation
 

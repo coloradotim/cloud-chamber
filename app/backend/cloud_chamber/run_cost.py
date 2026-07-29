@@ -40,7 +40,15 @@ TRADE_CUMULUS_RETAINED_FIELDS = (
     "qfx",
     "rain",
 )
-MOUNTAIN_WAVES_DRY_RETAINED_FIELDS = ("zs", "zhval", "th", "prs", "u", "v", "w")
+MOUNTAIN_WAVES_DRY_RETAINED_FIELDS = (
+    "zs",
+    "zhval",
+    "th",
+    "prs",
+    "uinterp",
+    "winterp",
+    "w",
+)
 MOUNTAIN_WAVES_MOIST_RETAINED_FIELDS = (
     "zs",
     "zhval",
@@ -166,7 +174,7 @@ class ImmediatePrelaunchCheck(BaseModel):
     schema_version: Literal["1"] = RUN_COST_SCHEMA_VERSION
     check_id: str
     snapshot_id: str
-    check_kind: Literal["planning", "launch"]
+    check_kind: Literal["planning", "launch_preflight", "launch"]
     attempt_id: str | None = None
     specification_fingerprint: str | None = None
     checked_at: str
@@ -251,8 +259,27 @@ def create_launch_review_snapshot(
     profile_id: str,
     warning_threshold_bytes: int,
     manifest: RunManifest | None = None,
+    resolved_profile: RunCostProfile | None = None,
 ) -> LaunchReviewRecord:
-    profile = profile_by_id(profile_id)
+    catalog_profile = profile_by_id(profile_id)
+    profile = resolved_profile or catalog_profile
+    if (
+        profile.profile_id != catalog_profile.profile_id
+        or profile.world_id != catalog_profile.world_id
+        or profile.recipe_id != catalog_profile.recipe_id
+        or profile.recipe_version != catalog_profile.recipe_version
+        or profile.role != catalog_profile.role
+    ):
+        raise LaunchBudgetError(
+            "Resolved run-cost profile identity does not match the selected catalog profile."
+        )
+    if (
+        profile.observation_plan.retained_field_inventory
+        != catalog_profile.observation_plan.retained_field_inventory
+    ):
+        raise LaunchBudgetError(
+            "Resolved run-cost profile cannot change the approved retained-field inventory."
+        )
     estimate = estimate_profile(settings, profile)
     binding = _manifest_binding(profile, manifest) if manifest else None
     now = datetime.now(UTC)
@@ -287,7 +314,7 @@ def immediate_prelaunch_disk_gate(
     settings: CloudChamberSettings,
     *,
     snapshot_id: str,
-    check_kind: Literal["planning", "launch"] = "planning",
+    check_kind: Literal["planning", "launch_preflight", "launch"] = "planning",
     attempt_id: str | None = None,
     specification_fingerprint: str | None = None,
     forced_block_reason: str | None = None,
@@ -344,7 +371,29 @@ def validate_manifest_launch_budget(
     manifest: RunManifest | None,
     snapshot_id: str | None,
 ) -> ImmediatePrelaunchCheck | None:
-    """Enforce the shared gate when a package opts into the approved contract."""
+    """Validate and consume one authorization in a single legacy-compatible call."""
+    check = preflight_manifest_launch_budget(
+        settings,
+        manifest=manifest,
+        snapshot_id=snapshot_id,
+    )
+    if check is None:
+        return None
+    return consume_manifest_launch_budget(
+        settings,
+        manifest=manifest,
+        snapshot_id=snapshot_id,
+        preflight_check=check,
+    )
+
+
+def preflight_manifest_launch_budget(
+    settings: CloudChamberSettings,
+    *,
+    manifest: RunManifest | None,
+    snapshot_id: str | None,
+) -> ImmediatePrelaunchCheck | None:
+    """Run the immediate gate without consuming launch authorization."""
     if not snapshot_id:
         return None
     if manifest is None:
@@ -401,7 +450,7 @@ def validate_manifest_launch_budget(
     record = immediate_prelaunch_disk_gate(
         settings,
         snapshot_id=snapshot_id,
-        check_kind="launch",
+        check_kind="launch_preflight",
         attempt_id=manifest.run_id,
         specification_fingerprint=current_binding.specification_fingerprint,
     )
@@ -411,23 +460,109 @@ def validate_manifest_launch_budget(
     return check
 
 
+def consume_manifest_launch_budget(
+    settings: CloudChamberSettings,
+    *,
+    manifest: RunManifest | None,
+    snapshot_id: str | None,
+    preflight_check: ImmediatePrelaunchCheck | None,
+) -> ImmediatePrelaunchCheck | None:
+    """Consume authorization only after the process manager confirms a start."""
+    if not snapshot_id:
+        return None
+    if manifest is None or preflight_check is None:
+        raise LaunchBudgetError(
+            "Launch authorization consumption requires a manifest and passed preflight."
+        )
+    if (
+        preflight_check.check_kind != "launch_preflight"
+        or preflight_check.disposition != "passes"
+        or preflight_check.snapshot_id != snapshot_id
+        or preflight_check.attempt_id != manifest.run_id
+    ):
+        raise LaunchBudgetError(
+            "Launch authorization consumption requires the matching passed preflight."
+        )
+    record = load_launch_review_record(settings, snapshot_id)
+    binding = record.snapshot.manifest_binding
+    if binding is None:
+        raise LaunchBudgetError("Launch authorization is not bound to a package.")
+    current_binding = _manifest_binding(record.snapshot.estimate.profile, manifest)
+    if current_binding != binding:
+        raise LaunchBudgetError(
+            "Launch authorization cannot be consumed because the package binding changed."
+        )
+    if preflight_check.specification_fingerprint != current_binding.specification_fingerprint:
+        raise LaunchBudgetError(
+            "Launch authorization cannot be consumed because the preflight binding changed."
+        )
+    if _has_successful_launch_check(settings, snapshot_id):
+        raise LaunchBudgetError(
+            "Launch blocked: this launch-review authorization has already been consumed."
+        )
+    check = ImmediatePrelaunchCheck(
+        check_id=uuid4().hex,
+        snapshot_id=snapshot_id,
+        check_kind="launch",
+        attempt_id=manifest.run_id,
+        specification_fingerprint=current_binding.specification_fingerprint,
+        checked_at=datetime.now(UTC).isoformat(),
+        current_free_space_bytes=preflight_check.current_free_space_bytes,
+        expected_size_high_bytes=preflight_check.expected_size_high_bytes,
+        required_post_run_reserve_bytes=preflight_check.required_post_run_reserve_bytes,
+        projected_free_space_bytes=preflight_check.projected_free_space_bytes,
+        disposition="passes",
+        reason="Launch authorization consumed after the CM1 process start was confirmed.",
+    )
+    _append_check(settings, check)
+    return check
+
+
 def _manifest_binding(profile: RunCostProfile, manifest: RunManifest) -> LaunchManifestBinding:
     contract = manifest.run_configuration.get("launch_specification")
-    expected_contract = {
+    expected_identity = {
         "world_id": profile.world_id,
         "recipe_id": profile.recipe_id,
         "recipe_version": profile.recipe_version,
         "profile_id": profile.profile_id,
-        "numerical_realization": profile.numerical_realization.model_dump(mode="json"),
-        "observation_plan": profile.observation_plan.model_dump(mode="json"),
     }
-    if contract != expected_contract:
+    if not isinstance(contract, dict) or any(
+        contract.get(key) != value for key, value in expected_identity.items()
+    ):
         raise LaunchBudgetError(
-            "the manifest launch specification does not match the approved run-cost profile"
+            "the manifest launch specification identity does not match the approved "
+            "run-cost profile"
+        )
+    try:
+        numerical_realization = NumericalRealization.model_validate(
+            contract.get("numerical_realization")
+        )
+        observation_plan = ObservationPlan.model_validate(contract.get("observation_plan"))
+    except ValueError as exc:
+        raise LaunchBudgetError(
+            "the manifest launch specification is incomplete or malformed"
+        ) from exc
+    if profile.world_id != "mountain_waves":
+        expected_contract = {
+            **expected_identity,
+            "numerical_realization": profile.numerical_realization.model_dump(mode="json"),
+            "observation_plan": profile.observation_plan.model_dump(mode="json"),
+        }
+        if contract != expected_contract:
+            raise LaunchBudgetError(
+                "the manifest launch specification does not match the approved run-cost profile"
+            )
+    elif (
+        numerical_realization != profile.numerical_realization
+        or observation_plan != profile.observation_plan
+    ):
+        raise LaunchBudgetError(
+            "the generated Mountain Waves launch specification no longer matches the "
+            "reviewed resolved profile"
         )
     if manifest.recipe_id != profile.recipe_id:
         raise LaunchBudgetError("the manifest Recipe does not match the reviewed Recipe")
-    if manifest.required_output_fields != list(profile.observation_plan.retained_field_inventory):
+    if manifest.required_output_fields != list(observation_plan.retained_field_inventory):
         raise LaunchBudgetError(
             "the manifest retained fields do not match the reviewed observation plan"
         )
@@ -437,18 +572,22 @@ def _manifest_binding(profile: RunCostProfile, manifest: RunManifest) -> LaunchM
         recipe_id=profile.recipe_id,
         recipe_version=profile.recipe_version,
         profile_id=profile.profile_id,
-        numerical_realization=profile.numerical_realization,
-        observation_plan=profile.observation_plan,
+        numerical_realization=numerical_realization,
+        observation_plan=observation_plan,
         specification_fingerprint=_manifest_specification_fingerprint(manifest),
     )
 
 
 def _manifest_specification_fingerprint(manifest: RunManifest) -> str:
-    run_configuration = {
-        key: value
-        for key, value in manifest.run_configuration.items()
-        if key not in {"launch_review_snapshot_id"}
-    }
+    run_configuration = json.loads(
+        json.dumps(manifest.run_configuration, sort_keys=True, ensure_ascii=True)
+    )
+    run_configuration.pop("launch_review_snapshot_id", None)
+    envelope = run_configuration.get("variation_envelope")
+    if isinstance(envelope, dict):
+        # The snapshot id is audit linkage written only after the immutable
+        # specification has been bound to that snapshot.
+        envelope.pop("launch_review_snapshot_id", None)
     payload = {
         "run_id": manifest.run_id,
         "scenario": manifest.scenario.model_dump(mode="json"),
@@ -597,7 +736,7 @@ def profiles() -> list[RunCostProfile]:
         _profile(
             world_id="mountain_waves",
             world_name="Mountain Waves",
-            recipe_id="dry_ridge_wave_mechanics",
+            recipe_id="dry_ridge_mechanics",
             profile_id="mountain_waves_dry_quick_v1",
             profile_name="Dry Ridge Quick — Mechanics check",
             role="Quick",
@@ -616,7 +755,7 @@ def profiles() -> list[RunCostProfile]:
         _profile(
             world_id="mountain_waves",
             world_name="Mountain Waves",
-            recipe_id="dry_ridge_wave_mechanics",
+            recipe_id="dry_ridge_mechanics",
             profile_id="mountain_waves_dry_standard_v1",
             profile_name="Dry Ridge Standard — Wave evolution",
             role="Standard",
@@ -634,7 +773,7 @@ def profiles() -> list[RunCostProfile]:
         _profile(
             world_id="mountain_waves",
             world_name="Mountain Waves",
-            recipe_id="dry_ridge_wave_mechanics",
+            recipe_id="dry_ridge_mechanics",
             profile_id="mountain_waves_dry_presentation_v1",
             profile_name="Dry Ridge Presentation — Smooth wave evolution",
             role="Presentation",
@@ -652,7 +791,7 @@ def profiles() -> list[RunCostProfile]:
         _profile(
             world_id="mountain_waves",
             world_name="Mountain Waves",
-            recipe_id="dry_ridge_wave_mechanics",
+            recipe_id="dry_ridge_mechanics",
             profile_id="mountain_waves_dry_extended_v1",
             profile_name="Dry Ridge Extended — Long wave evolution",
             role="Extended",
@@ -876,7 +1015,7 @@ def _retained_field_inventory(world_id: str, recipe_id: str) -> tuple[str, ...]:
     if world_id == "trade_cumulus":
         return TRADE_CUMULUS_RETAINED_FIELDS
     if world_id == "mountain_waves":
-        if recipe_id == "dry_ridge_wave_mechanics":
+        if recipe_id == "dry_ridge_mechanics":
             return MOUNTAIN_WAVES_DRY_RETAINED_FIELDS
         return MOUNTAIN_WAVES_MOIST_RETAINED_FIELDS
     if world_id == "supercells":

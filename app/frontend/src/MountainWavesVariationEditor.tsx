@@ -1,27 +1,79 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { MountainWavesDifference, MountainWavesWorldDetail } from "./MountainWavesWorld";
 
-type TerrainConfiguration = {
-  height_m: number;
-  half_width_m: number;
-  center_m: number;
+type RecipeId = "dry_ridge_mechanics" | "boulder_moist_wave";
+
+type DryRidgeControls = {
+  ridge_height_m: number;
+  ridge_half_width_m: number;
+  cross_ridge_wind_m_s: number;
+  dry_stability_n_s: number;
+  wind_shear_through_10km_m_s: number;
+  layered_stability: boolean;
+  lower_stability_n_s: number;
+  upper_stability_n_s: number;
+  stability_transition_height_m: number;
+  stability_transition_width_m: number;
 };
 
-type SoundingLevel = {
-  height_m: number;
-  pressure_pa: number;
-  theta_k: number;
-  qv_g_kg: number;
-  u_m_s: number;
-  v_m_s: number;
+type BoulderMoistControls = {
+  ridge_height_m: number;
+  ridge_half_width_m: number;
+  low_level_wind_m_s: number;
+  shear_through_10km_m_s: number;
+  lower_layer_rh_percent: number;
+  midlevel_rh_percent: number;
+  dry_air_counterpart: boolean;
+  lower_stability_factor: number;
+  midlevel_stability_factor: number;
+  upper_stability_factor: number;
 };
 
-type MountainWavesConfiguration = {
-  terrain: TerrainConfiguration;
-  sounding: SoundingLevel[];
-  duration_seconds: number;
-  output_cadence_seconds: number;
+type RecipeControls = {
+  recipe_id: RecipeId;
+  dry_ridge: DryRidgeControls | null;
+  boulder_moist: BoulderMoistControls | null;
+};
+
+type NumericalRealization = {
+  domain: string;
+  grid: string;
+  spacing: string;
+  timestep_strategy: string;
+  physics_source: string;
+};
+
+type ObservationPlan = {
+  duration_seconds: number | null;
+  output_cadence_seconds: number | null;
+  expected_history_count: number | null;
+  retained_field_inventory: string[];
+};
+
+type RunCostProfile = {
+  profile_id: string;
+  profile_name: string;
+  role: string;
+  recipe_id: string;
+  numerical_realization: NumericalRealization;
+  observation_plan: ObservationPlan;
+  expected_runtime_min_seconds: number | null;
+  expected_runtime_max_seconds: number | null;
+  expected_size_min_bytes: number | null;
+  expected_size_max_bytes: number | null;
+  estimate_basis: "measured" | "scaled_from_measured" | "uncharacterized";
+  confidence: string;
+  scientific_limitations: string[];
+};
+
+type RunCostEstimate = {
+  profile: RunCostProfile;
+  current_free_space_bytes: number;
+  projected_free_space_bytes: number | null;
+  required_free_space_bytes: number | null;
+  disposition: "passes" | "blocked";
+  disposition_reason: string;
 };
 
 type VariationTemplate = {
@@ -30,17 +82,48 @@ type VariationTemplate = {
   parent_display_name: string;
   parent_configuration_source: string;
   reference_simulation_id: string;
-  configuration: MountainWavesConfiguration;
+  recipe_id: RecipeId;
+  recipe_name: string;
+  recipe_contract_version: string;
+  controls: RecipeControls;
+  run_profiles: RunCostEstimate[];
+  default_run_profile_id: string;
   can_create_variation: boolean;
   unavailable_reason: string | null;
 };
 
 type VariationPreview = {
+  recipe_id: RecipeId;
+  recipe_name: string;
+  resolved_controls: Record<string, number | boolean>;
   differences: Record<string, MountainWavesDifference[]>;
+  relationship_classification: string | null;
   warnings: string[];
   blocking_errors: string[];
-  derived_stability_n2_s2: number[];
+  diagnostics: {
+    maximum_terrain_slope: number;
+    cells_per_half_width: number;
+    nondimensional_mountain_height: number;
+    nonhydrostatic_width_parameter: number;
+    critical_levels_m: number[];
+    terrain_resolution: string;
+    upstream_clearance_km: number;
+    downstream_clearance_km: number;
+    advective_time_seconds: number;
+    periodic_wrap_time_seconds: number;
+    model_top_m: number;
+    damping_base_m: number;
+    labels: string[];
+  };
   terrain_profile: Array<{ x_m: number; height_m: number }>;
+  wind_profile: Array<{ height_m: number; value: number }>;
+  moisture_profile: Array<{ height_m: number; value: number }>;
+  relative_humidity_profile: Array<{ height_m: number; value: number }>;
+  theta_profile: Array<{ height_m: number; value: number }>;
+  stability_profile: Array<{ height_m: number; n2_s2: number }>;
+  numerical_realization: NumericalRealization;
+  observation_plan: ObservationPlan;
+  cost_estimate: RunCostEstimate;
 };
 
 type VariationPackage = {
@@ -48,6 +131,7 @@ type VariationPackage = {
   run_id: string;
   manifest_path: string;
   package_dir: string;
+  launch_review_snapshot_id: string;
   warnings: string[];
 };
 
@@ -56,8 +140,9 @@ const DIFFERENCE_GROUPS = [
   "wind",
   "moisture",
   "stability/thermodynamics",
-  "numerics/time",
-  "output",
+  "forcing/initiation",
+  "numerical realization",
+  "observation plan",
 ] as const;
 
 export function MountainWavesVariationEditor({
@@ -75,16 +160,16 @@ export function MountainWavesVariationEditor({
   );
   const [parentSimulationId, setParentSimulationId] = useState(initialParentSimulationId);
   const [template, setTemplate] = useState<VariationTemplate | null>(null);
-  const [configuration, setConfiguration] = useState<MountainWavesConfiguration | null>(null);
+  const [controls, setControls] = useState<RecipeControls | null>(null);
+  const [runProfileId, setRunProfileId] = useState("");
   const [simulationName, setSimulationName] = useState("");
   const [userQuestion, setUserQuestion] = useState("");
-  const [windMultiplier, setWindMultiplier] = useState(1);
-  const [windOffset, setWindOffset] = useState(0);
-  const [moistureMultiplier, setMoistureMultiplier] = useState(1);
   const [preview, setPreview] = useState<VariationPreview | null>(null);
+  const [packaged, setPackaged] = useState<VariationPackage | null>(null);
   const [loading, setLoading] = useState(true);
   const [previewing, setPreviewing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [queueing, setQueueing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const previewSequence = useRef(0);
@@ -98,6 +183,7 @@ export function MountainWavesVariationEditor({
     setLoading(true);
     setError(null);
     setStatus(null);
+    setPackaged(null);
     void fetch(
       `/api/worlds/mountain-waves/variation-template?${new URLSearchParams({
         parent_simulation_id: parentSimulationId,
@@ -112,15 +198,13 @@ export function MountainWavesVariationEditor({
       .then((payload) => {
         if (!active) return;
         setTemplate(payload);
-        setConfiguration(cloneConfiguration(payload.configuration));
-        setWindMultiplier(1);
-        setWindOffset(0);
-        setMoistureMultiplier(1);
+        setControls(cloneControls(payload.controls));
+        setRunProfileId(payload.default_run_profile_id);
       })
       .catch((caught) => {
         if (!active) return;
         setTemplate(null);
-        setConfiguration(null);
+        setControls(null);
         setError(
           caught instanceof Error ? caught.message : "Unable to load the parent Simulation.",
         );
@@ -134,8 +218,8 @@ export function MountainWavesVariationEditor({
   }, [parentSimulationId]);
 
   useEffect(() => {
-    if (!configuration || !template?.can_create_variation) {
-      setPreview(null);
+    if (!controls || !template?.can_create_variation || !runProfileId || packaged) {
+      if (!packaged) setPreview(null);
       return;
     }
     const sequence = previewSequence.current + 1;
@@ -146,12 +230,14 @@ export function MountainWavesVariationEditor({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
-          requestPayload(
+          requestPayload({
             parentSimulationId,
-            simulationName.trim() || "Untitled Mountain Waves variation",
+            simulationName: simulationName.trim() || "Untitled Mountain Waves variation",
             userQuestion,
-            configuration,
-          ),
+            recipeId: template.recipe_id,
+            runProfileId,
+            controls,
+          }),
         ),
       })
         .then(async (response) => {
@@ -177,140 +263,133 @@ export function MountainWavesVariationEditor({
         .finally(() => {
           if (sequence === previewSequence.current) setPreviewing(false);
         });
-    }, 300);
+    }, 250);
     return () => window.clearTimeout(timer);
-  }, [configuration, parentSimulationId, simulationName, template, userQuestion]);
+  }, [
+    controls,
+    packaged,
+    parentSimulationId,
+    runProfileId,
+    simulationName,
+    template,
+    userQuestion,
+  ]);
 
-  function updateTerrain(field: keyof TerrainConfiguration, value: number) {
-    setConfiguration((current) =>
-      current ? { ...current, terrain: { ...current.terrain, [field]: value } } : current,
-    );
-  }
+  const selectedProfile = template?.run_profiles.find(
+    (estimate) => estimate.profile.profile_id === runProfileId,
+  );
+  const differenceCount = preview
+    ? Object.values(preview.differences).reduce((total, group) => total + group.length, 0)
+    : 0;
+  const canPackage =
+    Boolean(simulationName.trim()) &&
+    Boolean(preview) &&
+    preview?.blocking_errors.length === 0 &&
+    preview?.cost_estimate.disposition === "passes" &&
+    !submitting;
 
-  function updateLevel(index: number, field: "u_m_s" | "qv_g_kg" | "theta_k", value: number) {
-    setConfiguration((current) => {
-      if (!current) return current;
-      const sounding = current.sounding.map((level, levelIndex) =>
-        levelIndex === index ? { ...level, [field]: value } : level,
-      );
-      return { ...current, sounding };
-    });
-  }
-
-  function applyWindTransform() {
-    if (!template) return;
-    setConfiguration((current) =>
-      current
-        ? {
-            ...current,
-            sounding: current.sounding.map((level, index) => ({
-              ...level,
-              u_m_s: template.configuration.sounding[index].u_m_s * windMultiplier + windOffset,
-            })),
-          }
+  function updateDry<K extends keyof DryRidgeControls>(key: K, value: DryRidgeControls[K]) {
+    setControls((current) =>
+      current?.dry_ridge
+        ? { ...current, dry_ridge: { ...current.dry_ridge, [key]: value } }
         : current,
     );
   }
 
-  function applyMoistureTransform(multiplier: number) {
-    if (!template) return;
-    setMoistureMultiplier(multiplier);
-    setConfiguration((current) =>
-      current
-        ? {
-            ...current,
-            sounding: current.sounding.map((level, index) => ({
-              ...level,
-              qv_g_kg: template.configuration.sounding[index].qv_g_kg * multiplier,
-            })),
-          }
+  function updateBoulder<K extends keyof BoulderMoistControls>(
+    key: K,
+    value: BoulderMoistControls[K],
+  ) {
+    setControls((current) =>
+      current?.boulder_moist
+        ? { ...current, boulder_moist: { ...current.boulder_moist, [key]: value } }
         : current,
     );
   }
 
   function restoreParent() {
     if (!template) return;
-    setConfiguration(cloneConfiguration(template.configuration));
-    setWindMultiplier(1);
-    setWindOffset(0);
-    setMoistureMultiplier(1);
-    setStatus("Parent configuration restored.");
+    setControls(cloneControls(template.controls));
+    setRunProfileId(template.default_run_profile_id);
+    setPackaged(null);
+    setStatus("Parent Recipe controls restored.");
   }
 
-  async function createAndQueue() {
-    if (!configuration || !simulationName.trim()) return;
+  async function packageVariation() {
+    if (!controls || !template || !simulationName.trim()) return;
     setSubmitting(true);
     setError(null);
-    setStatus("Packaging the variation...");
+    setStatus("Writing the exact package and launch review...");
     try {
-      const packageResponse = await fetch("/api/worlds/mountain-waves/variations", {
+      const response = await fetch("/api/worlds/mountain-waves/variations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
-          requestPayload(parentSimulationId, simulationName.trim(), userQuestion, configuration),
+          requestPayload({
+            parentSimulationId,
+            simulationName: simulationName.trim(),
+            userQuestion,
+            recipeId: template.recipe_id,
+            runProfileId,
+            controls,
+          }),
         ),
       });
-      if (!packageResponse.ok) {
-        throw new Error(
-          await responseMessage(packageResponse, "Unable to package this variation."),
-        );
+      if (!response.ok) {
+        throw new Error(await responseMessage(response, "Unable to package this variation."));
       }
-      const packageResult = (await packageResponse.json()) as VariationPackage;
-      setStatus(`Queueing ${simulationName.trim()}...`);
-      const queueResponse = await fetch("/api/runs/queue", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ manifest_path: packageResult.manifest_path }),
-      });
-      if (!queueResponse.ok) {
-        throw new Error(
-          await responseMessage(
-            queueResponse,
-            `The package was created, but ${simulationName.trim()} could not be queued.`,
-          ),
-        );
-      }
-      setStatus(`${simulationName.trim()} is queued as ${packageResult.run_id}.`);
-      await onCreated();
+      const payload = (await response.json()) as VariationPackage;
+      setPackaged(payload);
+      setStatus(`${simulationName.trim()} is packaged. It has not been queued.`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to create this variation.");
+      setError(caught instanceof Error ? caught.message : "Unable to package this variation.");
     } finally {
       setSubmitting(false);
     }
   }
 
-  if (loading) {
-    return <section className="lab-content status-panel">Loading parent configuration...</section>;
+  async function queuePackage() {
+    if (!packaged) return;
+    setQueueing(true);
+    setError(null);
+    setStatus("Running the immediate launch gate and joining the queue...");
+    try {
+      const response = await fetch("/api/runs/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ manifest_path: packaged.manifest_path }),
+      });
+      if (!response.ok) {
+        throw new Error(
+          await responseMessage(
+            response,
+            "The package remains available, but it could not be queued.",
+          ),
+        );
+      }
+      setStatus(`${simulationName.trim()} is queued as ${packaged.run_id}.`);
+      await onCreated();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to queue this package.");
+    } finally {
+      setQueueing(false);
+    }
   }
 
-  if (!configuration || !template) {
+  if (loading) {
+    return <section className="lab-content status-panel">Loading Recipe controls...</section>;
+  }
+
+  if (!template || !controls) {
     return (
       <section className="lab-content world-load-failure">
-        <h3>Variation editor unavailable</h3>
-        <p role="alert">{error}</p>
+        <div>
+          <h3>Variation controls are unavailable</h3>
+          <p role="alert">{error}</p>
+        </div>
       </section>
     );
   }
-
-  const differenceCount = preview
-    ? Object.values(preview.differences).reduce(
-        (total, differences) => total + differences.length,
-        0,
-      )
-    : 0;
-  const maximumN2 = preview?.derived_stability_n2_s2.length
-    ? Math.max(...preview.derived_stability_n2_s2)
-    : null;
-  const minimumN2 = preview?.derived_stability_n2_s2.length
-    ? Math.min(...preview.derived_stability_n2_s2)
-    : null;
-  const canSubmit =
-    template.can_create_variation &&
-    Boolean(simulationName.trim()) &&
-    !previewing &&
-    !submitting &&
-    Boolean(preview) &&
-    preview!.blocking_errors.length === 0;
 
   return (
     <section
@@ -320,10 +399,10 @@ export function MountainWavesVariationEditor({
       <header className="variation-editor-header">
         <div>
           <p className="eyebrow">Create Variation</p>
-          <h3 id="variation-title">Change the terrain or upstream atmosphere</h3>
+          <h3 id="variation-title">Design a related Mountain Waves Simulation</h3>
           <p>
-            Start from an inspectable Simulation. Every native sounding level and exact change is
-            retained with the new run.
+            Change bounded Recipe controls, review the generated experiment, then package it before
+            deciding whether to queue a CM1 attempt.
           </p>
         </div>
         <button type="button" className="secondary-button" onClick={restoreParent}>
@@ -333,285 +412,311 @@ export function MountainWavesVariationEditor({
 
       <div className="variation-editor-grid">
         <div className="variation-editor-main">
-          <fieldset className="variation-section variation-identity-section">
-            <legend>Experiment</legend>
-            <label>
-              Parent Simulation
-              <select
-                value={parentSimulationId}
-                onChange={(event) => setParentSimulationId(event.target.value)}
-              >
-                {eligibleParents.map((parent) => (
-                  <option key={parent.simulation_id} value={parent.simulation_id}>
-                    {parent.display_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Variation name
-              <input
-                value={simulationName}
-                placeholder="e.g. Broader ridge, stronger wind"
-                onChange={(event) => setSimulationName(event.target.value)}
-              />
-            </label>
-            <label className="variation-question-field">
-              Question <span>optional</span>
-              <input
-                value={userQuestion}
-                placeholder="What are you trying to learn?"
-                onChange={(event) => setUserQuestion(event.target.value)}
-              />
-            </label>
-            <p className="variation-parent-source">
-              Parent source: {template.parent_configuration_source.replaceAll("_", " ")}
-            </p>
-          </fieldset>
-
-          <div className="variation-physical-grid">
-            <fieldset className="variation-section">
-              <legend>Terrain</legend>
-              <div className="compact-field-grid">
-                <NumberField
-                  label="Height"
-                  value={configuration.terrain.height_m}
-                  units="m"
-                  step={50}
-                  onChange={(value) => updateTerrain("height_m", value)}
-                />
-                <NumberField
-                  label="Half-width"
-                  value={configuration.terrain.half_width_m}
-                  units="m"
-                  step={100}
-                  onChange={(value) => updateTerrain("half_width_m", value)}
-                />
-                <NumberField
-                  label="Center"
-                  value={configuration.terrain.center_m}
-                  units="m"
-                  step={100}
-                  onChange={(value) => updateTerrain("center_m", value)}
-                />
+          <section className="variation-section variation-identity-section">
+            <div className="variation-section-title">
+              <span>1</span>
+              <div>
+                <h4>Simulation identity</h4>
+                <p>The Recipe follows the selected parent and cannot be silently changed.</p>
               </div>
-              <TerrainPreview profile={preview?.terrain_profile ?? []} />
-            </fieldset>
-
-            <fieldset className="variation-section variation-profile-transforms">
-              <legend>Upstream profile</legend>
-              <div className="profile-transform-row">
-                <NumberField
-                  label="Wind multiplier"
-                  value={windMultiplier}
-                  step={0.1}
-                  onChange={setWindMultiplier}
-                />
-                <NumberField
-                  label="Wind offset"
-                  value={windOffset}
-                  units="m/s"
-                  step={1}
-                  onChange={setWindOffset}
-                />
-                <button type="button" className="secondary-button" onClick={applyWindTransform}>
-                  Apply wind
-                </button>
-              </div>
-              <div className="profile-transform-row moisture-transform-row">
-                <NumberField
-                  label="Moisture multiplier"
-                  value={moistureMultiplier}
-                  step={0.1}
-                  onChange={setMoistureMultiplier}
-                />
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => applyMoistureTransform(moistureMultiplier)}
+            </div>
+            <div className="variation-identity-grid">
+              <label>
+                Parent Simulation
+                <select
+                  value={parentSimulationId}
+                  onChange={(event) => setParentSimulationId(event.target.value)}
+                  disabled={Boolean(packaged)}
                 >
-                  Apply moisture
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => applyMoistureTransform(0)}
+                  {eligibleParents.map((parent) => (
+                    <option key={parent.simulation_id} value={parent.simulation_id}>
+                      {parent.display_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="variation-recipe-identity">
+                <span>Recipe</span>
+                <strong>{template.recipe_name}</strong>
+                <small>Contract version {template.recipe_contract_version}</small>
+              </div>
+              <label>
+                Variation name
+                <input
+                  value={simulationName}
+                  placeholder="e.g. Broader ridge"
+                  maxLength={80}
+                  disabled={Boolean(packaged)}
+                  onChange={(event) => setSimulationName(event.target.value)}
+                />
+              </label>
+              <label>
+                Scientific question <span className="optional-label">optional</span>
+                <input
+                  value={userQuestion}
+                  placeholder="What are you trying to learn?"
+                  disabled={Boolean(packaged)}
+                  onChange={(event) => setUserQuestion(event.target.value)}
+                />
+              </label>
+            </div>
+            <p className="variation-parent-source">{template.parent_configuration_source}</p>
+          </section>
+
+          <section className="variation-section">
+            <div className="variation-section-title">
+              <span>2</span>
+              <div>
+                <h4>Atmosphere and terrain</h4>
+                <p>Controls are absolute transforms against the approved Recipe reference.</p>
+              </div>
+            </div>
+            {controls.dry_ridge ? (
+              <DryControls
+                controls={controls.dry_ridge}
+                update={updateDry}
+                disabled={Boolean(packaged)}
+              />
+            ) : controls.boulder_moist ? (
+              <BoulderControls
+                controls={controls.boulder_moist}
+                update={updateBoulder}
+                disabled={Boolean(packaged)}
+              />
+            ) : null}
+            <ScientificPreview preview={preview} />
+          </section>
+
+          <section className="variation-section">
+            <div className="variation-section-title">
+              <span>3</span>
+              <div>
+                <h4>Run profile</h4>
+                <p>Keep or change the numerical realization and observation plan explicitly.</p>
+              </div>
+            </div>
+            <div className="variation-profile-options" role="radiogroup" aria-label="Run profile">
+              {template.run_profiles.map((estimate) => (
+                <label
+                  key={estimate.profile.profile_id}
+                  className={
+                    runProfileId === estimate.profile.profile_id
+                      ? "variation-profile-option selected"
+                      : "variation-profile-option"
+                  }
                 >
-                  Make dry
-                </button>
+                  <input
+                    type="radio"
+                    name="mountain-wave-profile"
+                    value={estimate.profile.profile_id}
+                    checked={runProfileId === estimate.profile.profile_id}
+                    disabled={Boolean(packaged)}
+                    onChange={() => setRunProfileId(estimate.profile.profile_id)}
+                  />
+                  <span>
+                    <strong>{estimate.profile.role}</strong>
+                    <small>{shortProfileName(estimate.profile.profile_name)}</small>
+                  </span>
+                  <span
+                    className={
+                      estimate.disposition === "passes" ? "profile-cost" : "profile-cost blocked"
+                    }
+                  >
+                    {profileCost(estimate.profile)}
+                  </span>
+                </label>
+              ))}
+            </div>
+            {selectedProfile && (
+              <div className="variation-profile-detail">
+                <div>
+                  <span>Numerical realization</span>
+                  <strong>
+                    {preview?.numerical_realization.grid ??
+                      selectedProfile.profile.numerical_realization.grid}
+                  </strong>
+                  <small>
+                    {preview?.numerical_realization.spacing ??
+                      selectedProfile.profile.numerical_realization.spacing}
+                  </small>
+                </div>
+                <div>
+                  <span>Observation plan</span>
+                  <strong>
+                    {formatDuration(
+                      preview?.observation_plan.duration_seconds ??
+                        selectedProfile.profile.observation_plan.duration_seconds,
+                    )}
+                  </strong>
+                  <small>
+                    {preview?.observation_plan.expected_history_count ??
+                      selectedProfile.profile.observation_plan.expected_history_count ??
+                      "Generated"}{" "}
+                    saved outputs
+                  </small>
+                </div>
+                <div>
+                  <span>Expected local cost</span>
+                  <strong>
+                    {profileCost(preview?.cost_estimate.profile ?? selectedProfile.profile)}
+                  </strong>
+                  <small>
+                    {(
+                      preview?.cost_estimate.profile.estimate_basis ??
+                      selectedProfile.profile.estimate_basis
+                    ).replaceAll("_", " ")}
+                  </small>
+                </div>
               </div>
-              <p className="control-help">
-                Quick transforms start from the parent profile. Individual levels remain editable
-                below.
-              </p>
-              <div className="stability-summary" aria-label="Derived stability summary">
-                <span>Derived N²</span>
-                <strong>
-                  {minimumN2 === null || maximumN2 === null
-                    ? "Previewing..."
-                    : `${formatScientific(minimumN2)} to ${formatScientific(maximumN2)} s⁻²`}
-                </strong>
-              </div>
-            </fieldset>
-          </div>
-
-          <fieldset className="variation-section variation-time-section">
-            <legend>Time and output</legend>
-            <NumberField
-              label="Duration"
-              value={configuration.duration_seconds}
-              units="s"
-              step={300}
-              onChange={(value) =>
-                setConfiguration((current) =>
-                  current ? { ...current, duration_seconds: value } : current,
-                )
-              }
-            />
-            <NumberField
-              label="Saved-output cadence"
-              value={configuration.output_cadence_seconds}
-              units="s"
-              step={30}
-              onChange={(value) =>
-                setConfiguration((current) =>
-                  current ? { ...current, output_cadence_seconds: value } : current,
-                )
-              }
-            />
-            <span className="variation-output-count">
-              {Math.floor(configuration.duration_seconds / configuration.output_cadence_seconds) +
-                1}{" "}
-              saved frames
-            </span>
-          </fieldset>
-
-          <details className="variation-advanced">
-            <summary>Advanced sounding levels ({configuration.sounding.length})</summary>
-            <p>
-              Edit the exact cross-ridge wind, water vapor, or potential temperature at native
-              sounding levels. Heights and pressure remain tied to the parent grid.
-            </p>
-            <table>
-              <thead>
-                <tr>
-                  <th>Height (m)</th>
-                  <th>Pressure (Pa)</th>
-                  <th>u (m/s)</th>
-                  <th>qv (g/kg)</th>
-                  <th>Theta (K)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {configuration.sounding.map((level, index) => (
-                  <tr key={level.height_m}>
-                    <td>{formatNumber(level.height_m)}</td>
-                    <td>{formatNumber(level.pressure_pa)}</td>
-                    <td>
-                      <input
-                        aria-label={`u at ${level.height_m} m`}
-                        type="number"
-                        step="0.1"
-                        value={level.u_m_s}
-                        onChange={(event) =>
-                          updateLevel(index, "u_m_s", event.currentTarget.valueAsNumber)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        aria-label={`Water vapor at ${level.height_m} m`}
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={level.qv_g_kg}
-                        onChange={(event) =>
-                          updateLevel(index, "qv_g_kg", event.currentTarget.valueAsNumber)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        aria-label={`Potential temperature at ${level.height_m} m`}
-                        type="number"
-                        step="0.1"
-                        value={level.theta_k}
-                        onChange={(event) =>
-                          updateLevel(index, "theta_k", event.currentTarget.valueAsNumber)
-                        }
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </details>
+            )}
+          </section>
         </div>
 
-        <aside className="variation-preview" aria-label="Variation preview">
+        <aside className="variation-preview" aria-label="Variation review">
           <header>
             <div>
-              <p className="eyebrow">Change summary</p>
+              <p className="eyebrow">Review</p>
               <h3>
-                {previewing
-                  ? "Updating..."
-                  : `${differenceCount} exact ${differenceCount === 1 ? "change" : "changes"}`}
+                {previewing ? "Resolving experiment..." : `${differenceCount} material changes`}
               </h3>
             </div>
             {preview && preview.blocking_errors.length === 0 && (
-              <span className="technical-state available">Ready</span>
+              <span className="technical-state available">Ready to package</span>
             )}
           </header>
 
-          {preview?.blocking_errors.map((message) => (
-            <p key={message} className="variation-message variation-message-blocking" role="alert">
-              {message}
-            </p>
-          ))}
-          {preview?.warnings.map((message) => (
-            <p key={message} className="variation-message variation-message-warning">
-              {message}
-            </p>
-          ))}
+          {preview && (
+            <>
+              <section className="variation-review-summary">
+                <p className="variation-relationship">
+                  {relationshipLabel(preview.relationship_classification)}
+                </p>
+                <div className="variation-regime-labels">
+                  {preview.diagnostics.labels.map((label) => (
+                    <span key={label}>{label}</span>
+                  ))}
+                </div>
+                <dl className="variation-diagnostics">
+                  <div>
+                    <dt>Nh/U</dt>
+                    <dd>{preview.diagnostics.nondimensional_mountain_height.toFixed(2)}</dd>
+                  </div>
+                  <div>
+                    <dt>Na/U</dt>
+                    <dd>{preview.diagnostics.nonhydrostatic_width_parameter.toFixed(2)}</dd>
+                  </div>
+                  <div>
+                    <dt>Maximum slope</dt>
+                    <dd>{preview.diagnostics.maximum_terrain_slope.toFixed(2)}</dd>
+                  </div>
+                  <div>
+                    <dt>Terrain resolution</dt>
+                    <dd>{preview.diagnostics.terrain_resolution}</dd>
+                  </div>
+                  <div>
+                    <dt>Model top</dt>
+                    <dd>{formatDistance(preview.diagnostics.model_top_m)}</dd>
+                  </div>
+                  <div>
+                    <dt>Wrap margin</dt>
+                    <dd>{formatDuration(preview.diagnostics.periodic_wrap_time_seconds)}</dd>
+                  </div>
+                  {preview.recipe_id === "boulder_moist_wave" &&
+                    preview.resolved_controls.dry_air_counterpart !== true && (
+                      <div>
+                        <dt>Resolved layer RH</dt>
+                        <dd>
+                          {formatRh(preview.resolved_controls.lower_layer_rh_percent)} /{" "}
+                          {formatRh(preview.resolved_controls.midlevel_rh_percent)}
+                        </dd>
+                      </div>
+                    )}
+                </dl>
+              </section>
 
-          <div className="variation-difference-groups">
-            {DIFFERENCE_GROUPS.map((group) => {
-              const differences = preview?.differences[group] ?? [];
-              return (
-                <section key={group}>
-                  <header>
-                    <strong>{differenceGroupLabel(group)}</strong>
-                    <span>{differences.length}</span>
-                  </header>
-                  {differences.length ? (
-                    <ul>
-                      {differences.slice(0, 8).map((difference, index) => (
-                        <li key={`${difference.label}-${index}`}>
-                          <span>{difference.label}</span>
-                          <strong>
-                            {displayDifferenceValue(difference.before)} →{" "}
-                            {displayDifferenceValue(difference.after)}
-                            {difference.units ? ` ${difference.units}` : ""}
-                          </strong>
-                        </li>
-                      ))}
-                      {differences.length > 8 && (
-                        <li>+ {differences.length - 8} more native levels</li>
-                      )}
-                    </ul>
-                  ) : (
-                    <p>Unchanged</p>
-                  )}
-                </section>
-              );
-            })}
-          </div>
+              {preview.blocking_errors.map((message) => (
+                <p
+                  key={message}
+                  className="variation-message variation-message-blocking"
+                  role="alert"
+                >
+                  {message}
+                </p>
+              ))}
+              {preview.warnings.map((message) => (
+                <p key={message} className="variation-message variation-message-warning">
+                  {message}
+                </p>
+              ))}
+
+              <div className="variation-difference-groups">
+                {DIFFERENCE_GROUPS.map((group) => {
+                  const differences = preview.differences[group] ?? [];
+                  if (!differences.length) return null;
+                  return (
+                    <section key={group}>
+                      <header>
+                        <strong>{differenceGroupLabel(group)}</strong>
+                        <span>{differences.length}</span>
+                      </header>
+                      <ul>
+                        {differences.map((difference, index) => (
+                          <li key={`${difference.label}-${index}`}>
+                            <span>{difference.label}</span>
+                            <strong>
+                              {displayDifferenceValue(difference.before)} →{" "}
+                              {displayDifferenceValue(difference.after)}
+                              {difference.units ? ` ${difference.units}` : ""}
+                            </strong>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  );
+                })}
+              </div>
+
+              <section className="variation-budget">
+                <div>
+                  <span>Resolved storage</span>
+                  <strong>{sizeRange(preview.cost_estimate.profile)}</strong>
+                </div>
+                <div>
+                  <span>Free after high estimate</span>
+                  <strong>{formatBytes(preview.cost_estimate.projected_free_space_bytes)}</strong>
+                </div>
+                <p className={preview.cost_estimate.disposition === "passes" ? "" : "blocked"}>
+                  {preview.cost_estimate.disposition_reason}
+                </p>
+              </section>
+            </>
+          )}
 
           <div className="variation-submit">
-            <button type="button" disabled={!canSubmit} onClick={() => void createAndQueue()}>
-              {submitting ? "Creating..." : "Create and queue"}
-            </button>
-            {!simulationName.trim() && <p>Name this variation to create it.</p>}
+            {!packaged ? (
+              <button type="button" disabled={!canPackage} onClick={() => void packageVariation()}>
+                {submitting ? "Packaging..." : "Package variation"}
+              </button>
+            ) : (
+              <section className="variation-packaged-state">
+                <p className="eyebrow">Packaged, not queued</p>
+                <h4>{simulationName}</h4>
+                <dl>
+                  <div>
+                    <dt>Simulation</dt>
+                    <dd>{packaged.simulation_id}</dd>
+                  </div>
+                  <div>
+                    <dt>Attempt</dt>
+                    <dd>{packaged.run_id}</dd>
+                  </div>
+                </dl>
+                <button type="button" disabled={queueing} onClick={() => void queuePackage()}>
+                  {queueing ? "Queueing..." : "Queue CM1 run"}
+                </button>
+              </section>
+            )}
+            {!simulationName.trim() && <p>Name this variation to package it.</p>}
             {status && <p role="status">{status}</p>}
             {error && <p role="alert">{error}</p>}
           </div>
@@ -621,110 +726,654 @@ export function MountainWavesVariationEditor({
   );
 }
 
-function NumberField({
+function DryControls({
+  controls,
+  update,
+  disabled,
+}: {
+  controls: DryRidgeControls;
+  update: <K extends keyof DryRidgeControls>(key: K, value: DryRidgeControls[K]) => void;
+  disabled: boolean;
+}) {
+  return (
+    <>
+      <div className="variation-control-groups">
+        <ControlGroup title="Terrain">
+          <RangeField
+            label="Ridge height"
+            value={controls.ridge_height_m}
+            min={100}
+            max={2500}
+            step={50}
+            units="m"
+            disabled={disabled}
+            onChange={(value) => update("ridge_height_m", value)}
+          />
+          <RangeField
+            label="Ridge half-width"
+            value={controls.ridge_half_width_m}
+            min={500}
+            max={20000}
+            step={100}
+            units="m"
+            disabled={disabled}
+            onChange={(value) => update("ridge_half_width_m", value)}
+          />
+        </ControlGroup>
+        <ControlGroup title="Upstream flow">
+          <RangeField
+            label="Cross-ridge wind"
+            value={controls.cross_ridge_wind_m_s}
+            min={5}
+            max={30}
+            step={1}
+            units="m/s"
+            disabled={disabled}
+            onChange={(value) => update("cross_ridge_wind_m_s", value)}
+          />
+          <RangeField
+            label="Dry stability N"
+            value={controls.dry_stability_n_s}
+            min={0.005}
+            max={0.02}
+            step={0.001}
+            units="s⁻¹"
+            disabled={disabled || controls.layered_stability}
+            onChange={(value) => update("dry_stability_n_s", value)}
+          />
+        </ControlGroup>
+      </div>
+      <details className="variation-advanced">
+        <summary>Advanced vertical structure</summary>
+        <div className="variation-control-groups">
+          <ControlGroup title="Wind shear">
+            <RangeField
+              label="Change through 10 km"
+              value={controls.wind_shear_through_10km_m_s}
+              min={-20}
+              max={20}
+              step={1}
+              units="m/s"
+              disabled={disabled}
+              onChange={(value) => update("wind_shear_through_10km_m_s", value)}
+            />
+          </ControlGroup>
+          <ControlGroup title="Layered stability">
+            <label className="variation-toggle">
+              <input
+                type="checkbox"
+                checked={controls.layered_stability}
+                disabled={disabled}
+                onChange={(event) => update("layered_stability", event.target.checked)}
+              />
+              Use lower and upper stability layers
+            </label>
+            {controls.layered_stability && (
+              <>
+                <RangeField
+                  label="Lower N"
+                  value={controls.lower_stability_n_s}
+                  min={0.005}
+                  max={0.02}
+                  step={0.001}
+                  units="s⁻¹"
+                  disabled={disabled}
+                  onChange={(value) => update("lower_stability_n_s", value)}
+                />
+                <RangeField
+                  label="Upper N"
+                  value={controls.upper_stability_n_s}
+                  min={0.005}
+                  max={0.02}
+                  step={0.001}
+                  units="s⁻¹"
+                  disabled={disabled}
+                  onChange={(value) => update("upper_stability_n_s", value)}
+                />
+                <RangeField
+                  label="Transition height"
+                  value={controls.stability_transition_height_m}
+                  min={2000}
+                  max={12000}
+                  step={500}
+                  units="m"
+                  disabled={disabled}
+                  onChange={(value) => update("stability_transition_height_m", value)}
+                />
+                <RangeField
+                  label="Transition width"
+                  value={controls.stability_transition_width_m}
+                  min={500}
+                  max={3000}
+                  step={250}
+                  units="m"
+                  disabled={disabled}
+                  onChange={(value) => update("stability_transition_width_m", value)}
+                />
+              </>
+            )}
+          </ControlGroup>
+        </div>
+      </details>
+    </>
+  );
+}
+
+function BoulderControls({
+  controls,
+  update,
+  disabled,
+}: {
+  controls: BoulderMoistControls;
+  update: <K extends keyof BoulderMoistControls>(key: K, value: BoulderMoistControls[K]) => void;
+  disabled: boolean;
+}) {
+  return (
+    <>
+      <div className="variation-control-groups">
+        <ControlGroup title="Terrain">
+          <RangeField
+            label="Ridge height"
+            value={controls.ridge_height_m}
+            min={500}
+            max={3500}
+            step={100}
+            units="m"
+            disabled={disabled}
+            onChange={(value) => update("ridge_height_m", value)}
+          />
+          <RangeField
+            label="Ridge half-width"
+            value={controls.ridge_half_width_m}
+            min={5000}
+            max={30000}
+            step={500}
+            units="m"
+            disabled={disabled}
+            onChange={(value) => update("ridge_half_width_m", value)}
+          />
+        </ControlGroup>
+        <ControlGroup title="Wind">
+          <RangeField
+            label="0–4 km mean wind"
+            value={controls.low_level_wind_m_s}
+            min={0}
+            max={50}
+            step={0.1}
+            units="m/s"
+            disabled={disabled}
+            onChange={(value) => update("low_level_wind_m_s", value)}
+          />
+          <RangeField
+            label="0–10 km shear"
+            value={controls.shear_through_10km_m_s}
+            min={-30}
+            max={50}
+            step={0.1}
+            units="m/s"
+            disabled={disabled}
+            onChange={(value) => update("shear_through_10km_m_s", value)}
+          />
+        </ControlGroup>
+        <ControlGroup title="Moisture">
+          <RangeField
+            label="0–4 km mean RH"
+            value={controls.lower_layer_rh_percent}
+            min={0}
+            max={100}
+            step={0.1}
+            units="%"
+            disabled={disabled || controls.dry_air_counterpart}
+            onChange={(value) => update("lower_layer_rh_percent", value)}
+          />
+          <RangeField
+            label="4–10 km mean RH"
+            value={controls.midlevel_rh_percent}
+            min={0}
+            max={100}
+            step={0.1}
+            units="%"
+            disabled={disabled || controls.dry_air_counterpart}
+            onChange={(value) => update("midlevel_rh_percent", value)}
+          />
+          <label className="variation-toggle">
+            <input
+              type="checkbox"
+              checked={controls.dry_air_counterpart}
+              disabled={disabled}
+              onChange={(event) => update("dry_air_counterpart", event.target.checked)}
+            />
+            Boulder dry-air counterpart
+          </label>
+        </ControlGroup>
+      </div>
+      <details className="variation-advanced">
+        <summary>Advanced stability structure</summary>
+        <div className="variation-control-groups three-up">
+          {(
+            [
+              ["lower_stability_factor", "Lower layer"],
+              ["midlevel_stability_factor", "Midlevel"],
+              ["upper_stability_factor", "Upper layer"],
+            ] as const
+          ).map(([key, label]) => (
+            <RangeField
+              key={key}
+              label={label}
+              value={controls[key]}
+              min={0.5}
+              max={1.5}
+              step={0.05}
+              units="×"
+              disabled={disabled}
+              onChange={(value) => update(key, value)}
+            />
+          ))}
+        </div>
+      </details>
+    </>
+  );
+}
+
+function ControlGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="variation-control-group">
+      <h5>{title}</h5>
+      {children}
+    </section>
+  );
+}
+
+function RangeField({
   label,
   value,
-  units,
+  min,
+  max,
   step,
+  units,
+  disabled,
   onChange,
 }: {
   label: string;
   value: number;
-  units?: string;
+  min: number;
+  max: number;
   step: number;
+  units: string;
+  disabled: boolean;
   onChange: (value: number) => void;
 }) {
   return (
-    <label className="number-field">
-      <span>{label}</span>
-      <span className="number-input-wrap">
-        <input
-          aria-label={label}
-          type="number"
-          value={value}
-          step={step}
-          onChange={(event) => onChange(event.currentTarget.valueAsNumber)}
-        />
-        {units && <small>{units}</small>}
+    <label className="variation-range-field">
+      <span>
+        <strong>{label}</strong>
+        <output>
+          {formatControlValue(value, step)} {units}
+        </output>
       </span>
+      <input
+        aria-label={label}
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.currentTarget.valueAsNumber)}
+      />
+      <small>
+        {formatControlValue(min, step)} to {formatControlValue(max, step)} {units}
+      </small>
     </label>
+  );
+}
+
+function ScientificPreview({ preview }: { preview: VariationPreview | null }) {
+  if (!preview) return <div className="scientific-preview-placeholder" />;
+  return (
+    <section className="variation-scientific-preview" aria-labelledby="scientific-preview-title">
+      <header>
+        <div>
+          <h5 id="scientific-preview-title">Resolved scientific profiles</h5>
+          <p>Complete generated atmosphere; height is shown in km.</p>
+        </div>
+        <span>{preview.recipe_name}</span>
+      </header>
+      <TerrainPreview profile={preview.terrain_profile} />
+      <div className="variation-atmosphere-profiles">
+        <VerticalProfilePlot
+          label="Cross-ridge wind"
+          symbol="u"
+          units="m/s"
+          profile={preview.wind_profile}
+          includeZero
+        />
+        <VerticalProfilePlot
+          label="Relative humidity"
+          symbol="RH"
+          units="%"
+          profile={preview.relative_humidity_profile ?? []}
+          domain={[0, 100]}
+        />
+        <VerticalProfilePlot
+          label="Water vapor"
+          symbol="qv"
+          units="g/kg"
+          profile={preview.moisture_profile}
+          domain={[0, Math.max(...preview.moisture_profile.map((point) => point.value), 1)]}
+        />
+        <VerticalProfilePlot
+          label="Potential temperature"
+          symbol="θ"
+          units="K"
+          profile={preview.theta_profile ?? []}
+        />
+        <VerticalProfilePlot
+          label="Static stability"
+          symbol="N"
+          units="s⁻¹"
+          profile={preview.stability_profile.map((point) => ({
+            height_m: point.height_m,
+            value: Math.sqrt(Math.max(point.n2_s2, 0)),
+          }))}
+          includeZero
+        />
+      </div>
+    </section>
   );
 }
 
 function TerrainPreview({ profile }: { profile: Array<{ x_m: number; height_m: number }> }) {
   if (!profile.length) return <div className="terrain-preview-placeholder" />;
-  const width = 420;
-  const height = 102;
+  const width = 720;
+  const height = 112;
   const maximum = Math.max(...profile.map((point) => point.height_m), 1);
   const path = profile
     .map((point, index) => {
       const x = (index / (profile.length - 1)) * width;
-      const y = height - 12 - (point.height_m / maximum) * (height - 24);
+      const y = height - 12 - (point.height_m / maximum) * (height - 28);
       return `${index ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
   return (
-    <svg
-      className="terrain-preview-svg"
-      viewBox={`0 0 ${width} ${height}`}
-      role="img"
-      aria-label="Terrain profile preview"
-    >
-      <path d={`${path} L${width},${height - 10} L0,${height - 10} Z`} />
-      <line x1="0" y1={height - 10} x2={width} y2={height - 10} />
-    </svg>
+    <figure className="variation-terrain-preview">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Generated terrain profile">
+        <path d={`${path} L${width},${height - 10} L0,${height - 10} Z`} />
+        <line x1="0" y1={height - 10} x2={width} y2={height - 10} />
+      </svg>
+      <figcaption>Generated ridge placement and domain extent</figcaption>
+    </figure>
   );
 }
 
-function requestPayload(
-  parentSimulationId: string,
-  simulationName: string,
-  userQuestion: string,
-  configuration: MountainWavesConfiguration,
-) {
+function VerticalProfilePlot({
+  label,
+  symbol,
+  units,
+  profile,
+  domain,
+  includeZero = false,
+}: {
+  label: string;
+  symbol: string;
+  units: string;
+  profile: Array<{ height_m: number; value: number }>;
+  domain?: [number, number];
+  includeZero?: boolean;
+}) {
+  if (!profile.length) {
+    return (
+      <figure className="variation-profile-plot profile-unavailable">
+        <figcaption>
+          <strong>{label}</strong>
+          <span>
+            {symbol} ({units})
+          </span>
+        </figcaption>
+        <p>Profile unavailable</p>
+      </figure>
+    );
+  }
+  const width = 160;
+  const height = 190;
+  const plot = { left: 28, right: 9, top: 10, bottom: 35 };
+  const values = profile.map((point) => point.value);
+  const heights = profile.map((point) => point.height_m);
+  const rawMinimum = domain?.[0] ?? Math.min(...values, includeZero ? 0 : Number.POSITIVE_INFINITY);
+  const rawMaximum = domain?.[1] ?? Math.max(...values, includeZero ? 0 : Number.NEGATIVE_INFINITY);
+  const valuePadding = rawMaximum === rawMinimum ? Math.max(Math.abs(rawMaximum) * 0.08, 1) : 0;
+  const minimum = rawMinimum - valuePadding;
+  const maximum = rawMaximum + valuePadding;
+  const maximumHeight = Math.max(...heights, 1);
+  const x = (value: number) =>
+    plot.left +
+    ((value - minimum) / Math.max(maximum - minimum, Number.EPSILON)) *
+      (width - plot.left - plot.right);
+  const y = (heightM: number) =>
+    height - plot.bottom - (heightM / maximumHeight) * (height - plot.top - plot.bottom);
+  const path = profile
+    .map(
+      (point, index) =>
+        `${index ? "L" : "M"}${x(point.value).toFixed(1)},${y(point.height_m).toFixed(1)}`,
+    )
+    .join(" ");
+  const zeroX = minimum <= 0 && maximum >= 0 ? x(0) : null;
+
+  return (
+    <figure className="variation-profile-plot">
+      <figcaption>
+        <strong>{label}</strong>
+        <span>
+          {symbol} ({units})
+        </span>
+      </figcaption>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={`${label} profile from ${formatProfileValue(minimum)} to ${formatProfileValue(maximum)} ${units}`}
+      >
+        <line
+          className="profile-axis"
+          x1={plot.left}
+          y1={plot.top}
+          x2={plot.left}
+          y2={height - plot.bottom}
+        />
+        <line
+          className="profile-axis"
+          x1={plot.left}
+          y1={height - plot.bottom}
+          x2={width - plot.right}
+          y2={height - plot.bottom}
+        />
+        {zeroX !== null ? (
+          <line
+            className="profile-zero"
+            x1={zeroX}
+            y1={plot.top}
+            x2={zeroX}
+            y2={height - plot.bottom}
+          />
+        ) : null}
+        <path className="profile-line" d={path} />
+        <text x={plot.left - 5} y={plot.top + 4} textAnchor="end">
+          {(maximumHeight / 1000).toFixed(maximumHeight >= 10_000 ? 0 : 1)}
+        </text>
+        <text x={plot.left - 5} y={height - plot.bottom + 4} textAnchor="end">
+          0
+        </text>
+        <text x={plot.left} y={height - 12} textAnchor="start">
+          {formatProfileValue(minimum)}
+        </text>
+        <text x={width - plot.right} y={height - 12} textAnchor="end">
+          {formatProfileValue(maximum)}
+        </text>
+      </svg>
+    </figure>
+  );
+}
+
+function requestPayload({
+  parentSimulationId,
+  simulationName,
+  userQuestion,
+  recipeId,
+  runProfileId,
+  controls,
+}: {
+  parentSimulationId: string;
+  simulationName: string;
+  userQuestion: string;
+  recipeId: RecipeId;
+  runProfileId: string;
+  controls: RecipeControls;
+}) {
   return {
     parent_simulation_id: parentSimulationId,
     simulation_name: simulationName,
     user_question: userQuestion.trim() || null,
-    configuration,
+    recipe_id: recipeId,
+    run_profile_id: runProfileId,
+    controls,
   };
 }
 
-function cloneConfiguration(configuration: MountainWavesConfiguration): MountainWavesConfiguration {
+function cloneControls(controls: RecipeControls): RecipeControls {
   return {
-    ...configuration,
-    terrain: { ...configuration.terrain },
-    sounding: configuration.sounding.map((level) => ({ ...level })),
+    ...controls,
+    dry_ridge: controls.dry_ridge ? { ...controls.dry_ridge } : null,
+    boulder_moist: controls.boulder_moist ? { ...controls.boulder_moist } : null,
   };
 }
 
-function differenceGroupLabel(group: (typeof DIFFERENCE_GROUPS)[number]): string {
-  return {
-    terrain: "Terrain",
-    wind: "Wind",
-    moisture: "Moisture",
-    "stability/thermodynamics": "Stability and thermodynamics",
-    "numerics/time": "Time",
-    output: "Output",
-  }[group];
+function shortProfileName(value: string) {
+  return value.split("—")[1]?.trim() ?? value;
 }
 
-function displayDifferenceValue(value: unknown): string {
-  return typeof value === "number" ? formatNumber(value) : String(value);
+function profileCost(profile: RunCostProfile) {
+  if (
+    profile.expected_runtime_min_seconds === null ||
+    profile.expected_runtime_max_seconds === null ||
+    profile.expected_size_min_bytes === null ||
+    profile.expected_size_max_bytes === null
+  ) {
+    return "Not characterized";
+  }
+  return `${durationRange(profile.expected_runtime_min_seconds, profile.expected_runtime_max_seconds)} · ${sizeRange(profile)}`;
 }
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(value);
+function durationRange(minimum: number, maximum: number) {
+  return minimum === maximum
+    ? formatDuration(minimum)
+    : `${formatDuration(minimum)}–${formatDuration(maximum)}`;
 }
 
-function formatScientific(value: number): string {
-  return value.toExponential(2);
+function sizeRange(profile: RunCostProfile) {
+  if (profile.expected_size_min_bytes === null || profile.expected_size_max_bytes === null) {
+    return "Not characterized";
+  }
+  return `${formatBytes(profile.expected_size_min_bytes)}–${formatBytes(profile.expected_size_max_bytes)}`;
 }
 
-async function responseMessage(response: Response, fallback: string): Promise<string> {
+function formatBytes(value: number | null) {
+  if (value === null) return "Unknown";
+  const gib = value / 1024 ** 3;
+  if (gib >= 1) return `${gib.toFixed(gib >= 10 ? 0 : 2)} GB`;
+  return `${Math.round(value / 1024 ** 2)} MB`;
+}
+
+function formatDuration(value: number | null) {
+  if (value === null) return "Generated";
+  if (value >= 3600) {
+    const hours = Math.floor(value / 3600);
+    const minutes = Math.round((value % 3600) / 60);
+    return minutes ? `${hours} h ${minutes} min` : `${hours} h`;
+  }
+  if (value >= 60) return `${Math.round(value / 60)} min`;
+  return `${Math.round(value)} s`;
+}
+
+function formatDistance(value: number) {
+  return value >= 1000 ? `${(value / 1000).toFixed(1)} km` : `${Math.round(value)} m`;
+}
+
+function formatRh(value: number | boolean | undefined) {
+  return typeof value === "number" ? `${value.toFixed(2)}%` : "Unavailable";
+}
+
+function formatControlValue(value: number, step: number) {
+  if (step >= 1) return value.toLocaleString();
+  const digits = Math.max(1, Math.min(3, Math.ceil(-Math.log10(step))));
+  return value.toFixed(digits);
+}
+
+function relationshipLabel(value: string | null) {
+  if (!value) return "Change at least one control.";
+  return value.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+function differenceGroupLabel(group: string) {
+  return group.replace(/(^|[ /])\w/g, (value) => value.toUpperCase());
+}
+
+function displayDifferenceValue(value: unknown) {
+  if (typeof value === "number") {
+    return Number.isInteger(value)
+      ? value.toLocaleString()
+      : Number(value.toPrecision(4)).toString();
+  }
+  if (typeof value === "boolean") return value ? "On" : "Off";
+  if (value === null || value === undefined) return "Unknown";
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    if (typeof record.grid === "string") {
+      return [
+        record.grid,
+        typeof record.spacing === "string" ? record.spacing : null,
+        typeof record.domain === "string" ? record.domain : null,
+        typeof record.timestep_strategy === "string" ? record.timestep_strategy : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    }
+    if ("duration_seconds" in record || "output_cadence_seconds" in record) {
+      const duration =
+        typeof record.duration_seconds === "number"
+          ? `${record.duration_seconds.toLocaleString()} s`
+          : "generated duration";
+      const cadence =
+        typeof record.output_cadence_seconds === "number"
+          ? `${record.output_cadence_seconds.toLocaleString()} s cadence`
+          : "generated cadence";
+      const histories =
+        typeof record.expected_history_count === "number"
+          ? `${record.expected_history_count.toLocaleString()} saved outputs`
+          : "generated output count";
+      return `${duration} · ${cadence} · ${histories}`;
+    }
+    return JSON.stringify(record);
+  }
+  const text = String(value);
+  const profile = text.match(
+    /^mountain_waves_(?:dry|boulder)_(quick|standard|presentation|extended)_v1$/,
+  );
+  if (profile) {
+    return `${profile[1][0].toUpperCase()}${profile[1].slice(1)} profile`;
+  }
+  return text.replaceAll("_", " ");
+}
+
+function formatProfileValue(value: number) {
+  const magnitude = Math.abs(value);
+  if (magnitude > 0 && magnitude < 0.1) return value.toFixed(3);
+  if (magnitude >= 100) return Math.round(value).toLocaleString();
+  return Number(value.toPrecision(3)).toString();
+}
+
+async function responseMessage(response: Response, fallback: string) {
   try {
-    const payload = (await response.json()) as { detail?: unknown };
-    return typeof payload.detail === "string" ? payload.detail : fallback;
+    const payload = (await response.json()) as { detail?: string };
+    return payload.detail || fallback;
   } catch {
     return fallback;
   }

@@ -1,4 +1,4 @@
-"""Deterministic parent-based Mountain Waves variation packaging."""
+"""Durable Mountain Waves variation envelopes and deterministic packaging."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import re
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import numpy as np
@@ -26,14 +26,33 @@ from cloud_chamber.mountain_wave_case import (
     sha256_file,
     verified_clean_git_commit,
 )
-from cloud_chamber.mountain_wave_terrain_visualization import (
-    MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS,
+from cloud_chamber.mountain_waves_recipes import (
+    BOULDER_RECIPE_ID,
+    DRY_RECIPE_ID,
+    RECIPE_CONTRACT_VERSION,
+    RUN_COST_RECIPE_VERSION,
+    MountainWavesRecipeControls,
+    RecipeId,
+    RecipeSoundingLevel,
+    ResolvedMountainWavesRecipe,
+    default_controls,
+    normalize_recipe_controls,
+    recipe_name,
+    resolve_mountain_waves_recipe,
 )
 from cloud_chamber.mountain_waves_world import (
+    DRY_SIMULATION_ID,
     MOIST_SIMULATION_ID,
     WORLD_ID,
     MountainWavesSimulationRecord,
     mountain_waves_run_manifest,
+)
+from cloud_chamber.run_cost import (
+    RunCostEstimate,
+    create_launch_review_snapshot,
+    estimate_profile,
+    profile_by_id,
+    profiles,
 )
 from cloud_chamber.run_manifest import (
     AppMetadata,
@@ -50,64 +69,35 @@ from cloud_chamber.run_manifest import (
     write_run_manifest,
 )
 from cloud_chamber.settings import CloudChamberSettings
+from cloud_chamber.storage_policy import DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES
+from cloud_chamber.variation_envelope import (
+    AttemptRelationship,
+    VariationAttempt,
+    VariationDifference,
+    VariationEnvelope,
+    VariationValidationDecision,
+    canonical_payload_sha256,
+    classify_relationship,
+    grouped_differences,
+    immutable_layer,
+)
 
-VARIATION_CASE_ID = "mountain_waves_exploratory_variation_v1"
-VARIATION_SCHEMA_VERSION = "mountain_waves_variation_v1"
+VARIATION_CASE_ID = "mountain_waves_recipe_variation_v1"
+LEGACY_VARIATION_CASE_ID = "mountain_waves_exploratory_variation_v1"
+VARIATION_SCHEMA_VERSION = "mountain_waves_variation_v2"
 DIFFERENCE_GROUPS = (
     "terrain",
     "wind",
     "moisture",
     "stability/thermodynamics",
-    "numerics/time",
-    "output",
+    "forcing/initiation",
+    "numerical realization",
+    "observation plan",
 )
 
 
 class MountainWavesVariationError(RuntimeError):
-    """Raised when an exploratory variation cannot be represented or packaged honestly."""
-
-
-class TerrainConfiguration(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    height_m: float
-    half_width_m: float
-    center_m: float
-
-
-class SoundingLevel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    height_m: float
-    pressure_pa: float
-    theta_k: float
-    qv_g_kg: float
-    u_m_s: float
-    v_m_s: float = 0.0
-
-
-class MountainWavesConfiguration(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    terrain: TerrainConfiguration
-    sounding: list[SoundingLevel]
-    duration_seconds: int
-    output_cadence_seconds: int
-
-    @model_validator(mode="after")
-    def validate_shape(self) -> MountainWavesConfiguration:
-        if len(self.sounding) < 3:
-            raise ValueError("A Mountain Waves sounding needs at least three levels.")
-        heights = [level.height_m for level in self.sounding]
-        if heights[0] != 0.0 or any(
-            right <= left for left, right in zip(heights, heights[1:], strict=False)
-        ):
-            raise ValueError("Sounding heights must begin at 0 m and increase strictly.")
-        if any(level.v_m_s != 0.0 for level in self.sounding):
-            raise ValueError(
-                "The first Mountain Waves implementation preserves two-dimensional v=0 flow."
-            )
-        return self
+    """Raised when an approved Mountain Waves variation cannot be represented honestly."""
 
 
 class MountainWavesVariationRequest(BaseModel):
@@ -116,7 +106,15 @@ class MountainWavesVariationRequest(BaseModel):
     parent_simulation_id: str = MOIST_SIMULATION_ID
     simulation_name: str
     user_question: str | None = None
-    configuration: MountainWavesConfiguration
+    recipe_id: RecipeId
+    run_profile_id: str
+    controls: MountainWavesRecipeControls
+
+    @model_validator(mode="after")
+    def validate_recipe_identity(self) -> MountainWavesVariationRequest:
+        if self.controls.recipe_id != self.recipe_id:
+            raise ValueError("Request Recipe and control payload Recipe must match.")
+        return self
 
 
 class MountainWavesVariationTemplate(BaseModel):
@@ -126,8 +124,13 @@ class MountainWavesVariationTemplate(BaseModel):
     parent_run_id: str
     parent_display_name: str
     parent_configuration_source: str
-    reference_simulation_id: str = MOIST_SIMULATION_ID
-    configuration: MountainWavesConfiguration
+    reference_simulation_id: str
+    recipe_id: RecipeId
+    recipe_name: str
+    recipe_contract_version: str = RECIPE_CONTRACT_VERSION
+    controls: MountainWavesRecipeControls
+    run_profiles: list[RunCostEstimate]
+    default_run_profile_id: str
     can_create_variation: bool
     unavailable_reason: str | None = None
 
@@ -135,11 +138,23 @@ class MountainWavesVariationTemplate(BaseModel):
 class MountainWavesVariationPreview(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    recipe_id: RecipeId
+    recipe_name: str
+    resolved_controls: dict[str, Any]
     differences: dict[str, list[dict[str, Any]]]
+    relationship_classification: str | None
     warnings: list[str]
     blocking_errors: list[str]
-    derived_stability_n2_s2: list[float]
+    diagnostics: dict[str, Any]
     terrain_profile: list[dict[str, float]]
+    wind_profile: list[dict[str, float]]
+    moisture_profile: list[dict[str, float]]
+    relative_humidity_profile: list[dict[str, float]]
+    theta_profile: list[dict[str, float]]
+    stability_profile: list[dict[str, float]]
+    numerical_realization: dict[str, Any]
+    observation_plan: dict[str, Any]
+    cost_estimate: RunCostEstimate
 
 
 class MountainWavesVariationPackage(BaseModel):
@@ -149,130 +164,114 @@ class MountainWavesVariationPackage(BaseModel):
     run_id: str
     manifest_path: str
     package_dir: str
+    envelope: VariationEnvelope
     differences: dict[str, list[dict[str, Any]]]
     warnings: list[str]
     preflight: dict[str, Any]
+    launch_review_snapshot_id: str
+
+
+class _VariationContext(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    template: MountainWavesVariationTemplate
+    parent: MountainWavesSimulationRecord
+    parent_manifest: RunManifest
+    parent_manifest_path: Path
+    reference_controls: MountainWavesRecipeControls
+    parent_controls: MountainWavesRecipeControls
+    reference_sounding: list[RecipeSoundingLevel]
+    parent_profile_id: str
+    parent_numerical_realization: dict[str, Any]
+    parent_observation_plan: dict[str, Any]
 
 
 def mountain_waves_variation_template(
     settings: CloudChamberSettings, parent_simulation_id: str
 ) -> MountainWavesVariationTemplate:
-    template, _parent, _manifest, _manifest_path = _variation_template_context(
-        settings, parent_simulation_id
-    )
-    return template
-
-
-def _variation_template_context(
-    settings: CloudChamberSettings, parent_simulation_id: str
-) -> tuple[MountainWavesVariationTemplate, MountainWavesSimulationRecord, RunManifest, Path]:
-    parent, manifest, manifest_path = mountain_waves_run_manifest(settings, parent_simulation_id)
-    if not parent.can_create_variation:
-        unavailable_reason = (
-            "Dry Ridge preserves a source-defined analytic atmosphere and terrain setup "
-            "that this variation package cannot inherit exactly; it remains inspectable "
-            "but is not an editable parent."
-            if not parent.moist_fields_available
-            else "This Simulation does not retain an exact editable configuration."
-        )
-        return (
-            MountainWavesVariationTemplate(
-                parent_simulation_id=parent.simulation_id,
-                parent_run_id=parent.run_id,
-                parent_display_name=parent.display_name,
-                parent_configuration_source="unavailable",
-                configuration=_fallback_configuration(parent, manifest),
-                can_create_variation=False,
-                unavailable_reason=unavailable_reason,
-            ),
-            parent,
-            manifest,
-            manifest_path,
-        )
-    configuration = _configuration_from_parent(parent, manifest, manifest_path)
-    return (
-        MountainWavesVariationTemplate(
-            parent_simulation_id=parent.simulation_id,
-            parent_run_id=parent.run_id,
-            parent_display_name=parent.display_name,
-            parent_configuration_source=_parent_configuration_source(parent),
-            configuration=configuration,
-            can_create_variation=True,
-        ),
-        parent,
-        manifest,
-        manifest_path,
-    )
+    return _variation_context(settings, parent_simulation_id).template
 
 
 def preview_mountain_waves_variation(
     settings: CloudChamberSettings, request: MountainWavesVariationRequest
 ) -> MountainWavesVariationPreview:
-    template, _parent, parent_manifest, _manifest_path = _variation_template_context(
-        settings, request.parent_simulation_id
-    )
-    return _preview_mountain_waves_variation(request, template, parent_manifest)
-
-
-def _preview_mountain_waves_variation(
-    request: MountainWavesVariationRequest,
-    template: MountainWavesVariationTemplate,
-    parent_manifest: RunManifest,
-) -> MountainWavesVariationPreview:
-    if not template.can_create_variation:
-        return MountainWavesVariationPreview(
-            differences=_empty_differences(),
-            warnings=[],
-            blocking_errors=[template.unavailable_reason or "The selected parent is unavailable."],
-            derived_stability_n2_s2=[],
-            terrain_profile=[],
-        )
-    differences = configuration_differences(template.configuration, request.configuration)
-    blocking = _configuration_errors(
-        request,
-        parent=template.configuration,
-        inherited_domain=parent_manifest.run_configuration.get("domain"),
-        required_top_m=template.configuration.sounding[-1].height_m,
-    )
-    if not any(differences.values()):
-        blocking.append(
-            "Change at least one editable setting; an unchanged technical rerun is a "
-            "separate action."
-        )
-    warnings = configuration_warnings(request.configuration, differences)
+    context = _variation_context(settings, request.parent_simulation_id)
+    resolved, differences = _resolve_request(settings, request, context)
+    errors = _request_errors(request, context, resolved, differences)
+    relationship = _relationship(differences)
     return MountainWavesVariationPreview(
-        differences=differences,
-        warnings=warnings,
-        blocking_errors=blocking,
-        derived_stability_n2_s2=_stability_profile(request.configuration.sounding),
-        terrain_profile=_terrain_preview(request.configuration, points=121),
+        recipe_id=request.recipe_id,
+        recipe_name=resolved.recipe_name,
+        resolved_controls=resolved.achieved_controls,
+        differences=grouped_differences(differences),
+        relationship_classification=relationship,
+        warnings=_dedupe(resolved.warnings),
+        blocking_errors=_dedupe(errors),
+        diagnostics=resolved.diagnostics.model_dump(mode="json"),
+        terrain_profile=resolved.terrain_profile,
+        wind_profile=resolved.wind_profile,
+        moisture_profile=resolved.moisture_profile,
+        relative_humidity_profile=resolved.relative_humidity_profile,
+        theta_profile=resolved.theta_profile,
+        stability_profile=resolved.stability_profile,
+        numerical_realization=resolved.numerical_realization.model_dump(mode="json"),
+        observation_plan=resolved.observation_plan.model_dump(mode="json"),
+        cost_estimate=estimate_profile(settings, resolved.resolved_cost_profile),
     )
 
 
 def create_mountain_waves_variation(
     settings: CloudChamberSettings, request: MountainWavesVariationRequest
 ) -> MountainWavesVariationPackage:
-    template, parent, parent_manifest, parent_manifest_path = _variation_template_context(
-        settings, request.parent_simulation_id
-    )
-    preview = _preview_mountain_waves_variation(request, template, parent_manifest)
-    if preview.blocking_errors:
-        raise MountainWavesVariationError(" ".join(preview.blocking_errors))
-    if not template.can_create_variation:
-        raise MountainWavesVariationError(template.unavailable_reason or "Parent is unavailable.")
-
+    context = _variation_context(settings, request.parent_simulation_id)
+    resolved, differences = _resolve_request(settings, request, context)
+    errors = _request_errors(request, context, resolved, differences)
+    if errors:
+        raise MountainWavesVariationError(" ".join(_dedupe(errors)))
     implementation_commit = verified_clean_git_commit()
     provenance = collect_cm1_provenance(settings)
-    identity_suffix = uuid4().hex[:8]
+    resolved_controls = MountainWavesRecipeControls.model_validate(
+        {
+            "recipe_id": request.recipe_id,
+            "dry_ridge": resolved.controls if request.recipe_id == DRY_RECIPE_ID else None,
+            "boulder_moist": resolved.controls if request.recipe_id == BOULDER_RECIPE_ID else None,
+        }
+    )
+
+    scientific_design: dict[str, Any] = {
+        "world_id": WORLD_ID,
+        "recipe_id": request.recipe_id,
+        "recipe_contract_version": RECIPE_CONTRACT_VERSION,
+        "reference_simulation_id": context.template.reference_simulation_id,
+        "controls": resolved_controls.model_dump(mode="json"),
+        "achieved_controls": resolved.achieved_controls,
+        "fixed_assumptions": {
+            "native_geometry": "two-dimensional x-z with singleton y",
+            "terrain_shape": "authored bell ridge",
+            "v_wind_m_s": 0.0,
+            "recipe_reference_transform": True,
+        },
+    }
+    numerical_payload = resolved.numerical_realization.model_dump(mode="json")
+    observation_payload = resolved.observation_plan.model_dump(mode="json")
+    identity_payload = {
+        "scientific_design": scientific_design,
+        "numerical_realization": numerical_payload,
+    }
+    identity = canonical_payload_sha256(identity_payload)
     slug = _slug(request.simulation_name)
-    simulation_id = f"mountain_waves_{slug}_{identity_suffix}"
+    simulation_id = f"mountain_waves_{slug}_{identity[:8]}"
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    run_id = f"mw-{slug}-{timestamp}-{identity_suffix[:4]}"
+    attempt_suffix = uuid4().hex[:4]
+    run_id = f"mw-{slug}-{timestamp}-{attempt_suffix}"
+    existing_attempts = _existing_variation_attempts(settings, simulation_id)
+    attempt_relationship: AttemptRelationship = (
+        "unchanged_retry" if existing_attempts else "initial"
+    )
     package_dir = settings.runtime_home.expanduser() / "runs" / run_id
     if package_dir.exists():
         raise MountainWavesVariationError(f"Run package already exists: {run_id}")
     package_dir.mkdir(parents=True)
-
     paths = {
         "manifest": package_dir / "run_manifest.json",
         "case_manifest": package_dir / "case_manifest.json",
@@ -283,73 +282,151 @@ def create_mountain_waves_variation(
         "package_report": package_dir / "mountain_waves_variation.json",
     }
     try:
-        parent_run_dir = Path(parent_manifest.generated_inputs.run_directory).expanduser()
+        parent_run_dir = Path(context.parent_manifest.generated_inputs.run_directory).expanduser()
         parent_namelist = parent_run_dir / "namelist.input"
         if not parent_namelist.is_file():
             raise MountainWavesVariationError("The parent namelist is unavailable.")
-        namelist = _render_variation_namelist(parent_namelist.read_text(), request.configuration)
+        namelist = _render_variation_namelist(parent_namelist.read_text(), resolved)
         paths["namelist"].write_text(namelist)
-        paths["sounding"].write_text(_render_input_sounding(request.configuration.sounding))
-        terrain_audit = _write_terrain_file(paths["terrain"], namelist, request.configuration)
-        runtime_checklist = {
-            "status": "exact_variation_inputs_present",
-            "consumed_files": ["input_sounding", "perts.dat"],
-            "required_files": [],
-            "source_candidates": {},
-        }
-        _write_json(paths["runtime_checklist"], runtime_checklist)
+        paths["sounding"].write_text(_render_input_sounding(resolved.sounding))
+        terrain_audit = _write_terrain_file(paths["terrain"], namelist, resolved.terrain)
+        _write_json(
+            paths["runtime_checklist"],
+            {
+                "status": "exact_recipe_inputs_present",
+                "consumed_files": ["input_sounding", "perts.dat"],
+                "required_files": [],
+                "source_candidates": {},
+            },
+        )
         generated_hashes = {
             path.name: sha256_file(path)
             for key, path in paths.items()
-            if key not in {"manifest", "case_manifest", "package_report"}
+            if key in {"namelist", "sounding", "terrain", "runtime_checklist"}
         }
+        package_identity = canonical_payload_sha256(
+            {
+                "simulation_identity_sha256": identity,
+                "observation_plan": observation_payload,
+                "generated_input_sha256": generated_hashes,
+                "implementation_commit": implementation_commit,
+            }
+        )
         now = datetime.now(UTC)
-        configuration_payload = request.configuration.model_dump(mode="json")
+        relationship = classify_relationship(differences)
+        cost_estimate = estimate_profile(settings, resolved.resolved_cost_profile)
+        reference_simulation_id = context.template.reference_simulation_id
+        envelope = VariationEnvelope(
+            world_id=WORLD_ID,
+            recipe_id=request.recipe_id,
+            recipe_contract_version=RECIPE_CONTRACT_VERSION,
+            simulation_id=simulation_id,
+            parent_simulation_id=context.parent.simulation_id,
+            reference_simulation_id=reference_simulation_id,
+            display_name=request.simulation_name.strip(),
+            question=_optional_text(request.user_question),
+            scientific_design=immutable_layer(scientific_design),
+            numerical_realization=immutable_layer(numerical_payload),
+            observation_plan=immutable_layer(observation_payload),
+            world_payload={
+                "controls": resolved_controls.model_dump(mode="json"),
+                "achieved_controls": resolved.achieved_controls,
+                "terrain": resolved.terrain,
+                "sounding_generator": (
+                    "dry_ridge_analytic_v1"
+                    if request.recipe_id == DRY_RECIPE_ID
+                    else "boulder_source_backed_transform_v1"
+                ),
+                "diagnostics": resolved.diagnostics.model_dump(mode="json"),
+            },
+            differences=differences,
+            relationship_classification=relationship,
+            run_profile_id=request.run_profile_id,
+            run_profile_contract=resolved.resolved_cost_profile.model_dump(mode="json"),
+            cost_estimate=cost_estimate.model_dump(mode="json"),
+            package_identity_sha256=package_identity,
+            attempts=[
+                *existing_attempts,
+                VariationAttempt(
+                    attempt_id=run_id,
+                    run_id=run_id,
+                    relationship=attempt_relationship,
+                    package_identity_sha256=package_identity,
+                    accepted_backing=False,
+                ),
+            ],
+            validation_decisions=[
+                VariationValidationDecision(
+                    stage="specification",
+                    disposition="passed",
+                    reason="Controls and generated design are inside Recipe contract version 1.",
+                ),
+                VariationValidationDecision(
+                    stage="package",
+                    disposition="pending",
+                    reason="Exact generated-input hashes are verified after package write.",
+                ),
+                VariationValidationDecision(
+                    stage="availability",
+                    disposition="pending",
+                    reason="Availability requires complete inspectable native output.",
+                ),
+                VariationValidationDecision(
+                    stage="parent_eligibility",
+                    disposition="pending",
+                    reason="Parent eligibility is distinct from availability.",
+                ),
+            ],
+            availability_state="packaged",
+        )
+        launch_specification = {
+            "world_id": WORLD_ID,
+            "recipe_id": request.recipe_id,
+            "recipe_version": RUN_COST_RECIPE_VERSION,
+            "profile_id": request.run_profile_id,
+            "numerical_realization": numerical_payload,
+            "observation_plan": observation_payload,
+        }
         run_configuration: dict[str, Any] = {
             "cloud_world_id": WORLD_ID,
             "simulation_id": simulation_id,
             "simulation_display_name": request.simulation_name.strip(),
-            "parent_simulation_id": parent.simulation_id,
-            "parent_run_id": parent.run_id,
-            "parent_configuration_source": template.parent_configuration_source,
-            "reference_simulation_id": MOIST_SIMULATION_ID,
+            "attempt_id": run_id,
+            "attempt_relationship": attempt_relationship,
+            "parent_simulation_id": context.parent.simulation_id,
+            "parent_run_id": context.parent.run_id,
+            "reference_simulation_id": reference_simulation_id,
             "user_question": _optional_text(request.user_question),
-            "mountain_waves_configuration": configuration_payload,
-            "configuration_difference": preview.differences,
-            "warnings": preview.warnings,
-            "duration_seconds": request.configuration.duration_seconds,
-            "output_cadence_seconds": request.configuration.output_cadence_seconds,
-            "expected_model_output_count": (
-                request.configuration.duration_seconds
-                // request.configuration.output_cadence_seconds
-                + 1
-            ),
+            "variation_envelope": envelope.model_dump(mode="json"),
+            "mountain_waves_configuration": {
+                "terrain": resolved.terrain,
+                "sounding": [level.model_dump(mode="json") for level in resolved.sounding],
+                "duration_seconds": resolved.observation_plan.duration_seconds,
+                "output_cadence_seconds": resolved.observation_plan.output_cadence_seconds,
+            },
+            "configuration_difference": grouped_differences(differences),
+            "warnings": resolved.warnings,
+            "duration_seconds": resolved.observation_plan.duration_seconds,
+            "output_cadence_seconds": resolved.observation_plan.output_cadence_seconds,
+            "expected_model_output_count": resolved.observation_plan.expected_history_count,
             "domain": _domain_record(namelist),
-            "terrain": request.configuration.terrain.model_dump(mode="json"),
+            "terrain": resolved.terrain,
             "terrain_audit": terrain_audit,
             "generated_input_sha256": generated_hashes,
-            "parent_manifest_path": str(parent_manifest_path),
+            "parent_manifest_path": str(context.parent_manifest_path),
             "cm1_provenance": provenance.report_record(),
+            "launch_specification": launch_specification,
         }
         manifest = RunManifest(
             run_id=run_id,
             scenario=ScenarioReference(
                 id=VARIATION_CASE_ID, schema_version=VARIATION_SCHEMA_VERSION
             ),
-            controls={
-                "terrain_height_m": request.configuration.terrain.height_m,
-                "terrain_half_width_m": request.configuration.terrain.half_width_m,
-                "terrain_center_m": request.configuration.terrain.center_m,
-                "duration_seconds": request.configuration.duration_seconds,
-                "output_cadence_seconds": request.configuration.output_cadence_seconds,
-            },
+            controls=_manifest_controls(resolved.controls),
             run_configuration=run_configuration,
             physical_question=(
                 _optional_text(request.user_question)
-                or (
-                    f"What happens when {request.simulation_name.strip()} changes "
-                    "the parent atmosphere and terrain?"
-                )
+                or f"How does {request.simulation_name.strip()} differ from its parent?"
             ),
             expected_diagnostics=[
                 "terrain_following_wave_structure",
@@ -381,33 +458,40 @@ def create_mountain_waves_variation(
                 name=request.simulation_name.strip(), notes=_optional_text(request.user_question)
             ),
             pre_run_validation_report={
-                "status": "caveated",
+                "status": "passed",
                 "blocking_errors": [],
-                "caveats": preview.warnings,
-                "configuration_difference": preview.differences,
-                "package_path": "existing_local_run_manager",
+                "caveats": resolved.warnings,
+                "relationship_classification": relationship,
+                "configuration_difference": grouped_differences(differences),
+                "package_path": "shared_variation_envelope_v1",
             },
-            required_output_fields=sorted(MOUNTAIN_WAVES_EXPLORE_REQUIRED_FIELDS),
-            input_source="mountain_waves_parent_external_sounding_and_terrain",
+            run_recipe=request.recipe_id,
+            run_recipe_display_name=resolved.recipe_name,
+            recipe_id=request.recipe_id,
+            recipe_display_name=resolved.recipe_name,
+            assumption_set_id=f"{request.recipe_id}_contract_v1",
+            assumption_mode="approved_recipe_contract",
+            recipe_assumptions=scientific_design["fixed_assumptions"],
+            required_output_fields=list(resolved.observation_plan.retained_field_inventory),
+            input_source=(
+                "sampled_dry_ridge_profile_without_approved_equivalence"
+                if request.recipe_id == DRY_RECIPE_ID
+                else "boulder_reference_source_backed_transform_v1"
+            ),
             expected_outputs=["native_numbered_cm1_model_netcdf", "cm1_stats_and_logs"],
-            run_caveats=preview.warnings,
-            manual_validation_status="exploratory_user_variation",
+            run_caveats=resolved.warnings,
+            manual_validation_status="approved_recipe_variation_packaged",
         )
         write_run_manifest(paths["manifest"], manifest)
         case_manifest = {
             "schema_version": VARIATION_SCHEMA_VERSION,
-            "cloud_world_id": WORLD_ID,
-            "simulation_id": simulation_id,
-            "simulation_display_name": request.simulation_name.strip(),
-            "run_id": run_id,
+            "variation_envelope_authority": {
+                "manifest_path": str(paths["manifest"]),
+                "run_configuration_key": "variation_envelope",
+                "schema_version": envelope.schema_version,
+            },
             "implementation_commit": implementation_commit,
-            "parent_simulation_id": parent.simulation_id,
-            "parent_run_id": parent.run_id,
-            "parent_configuration_source": template.parent_configuration_source,
-            "reference_simulation_id": MOIST_SIMULATION_ID,
-            "exact_configuration": configuration_payload,
-            "configuration_difference": preview.differences,
-            "warnings": preview.warnings,
+            "run_id": run_id,
             "generated_input_sha256": generated_hashes,
             "terrain_audit": terrain_audit,
             "cm1_provenance": provenance.report_record(),
@@ -416,19 +500,62 @@ def create_mountain_waves_variation(
         _write_json(
             paths["package_report"],
             {
-                "status": "packaged_for_existing_local_run_manager",
+                "status": "packaged_not_queued",
                 **case_manifest,
             },
         )
         preflight = preflight_mountain_waves_variation(paths["manifest"])
+        envelope.validation_decisions[1] = VariationValidationDecision(
+            stage="package",
+            disposition="passed",
+            reason="Exact generated-input hashes and package preflight passed.",
+        )
+        manifest = load_run_manifest(paths["manifest"])
+        run_configuration["variation_envelope"] = envelope.model_dump(mode="json")
+        manifest.run_configuration = run_configuration
+        manifest.updated_at = datetime.now(UTC)
+        write_run_manifest(paths["manifest"], manifest)
+        _write_json(paths["case_manifest"], case_manifest)
+        _write_json(
+            paths["package_report"],
+            {
+                "status": "packaged_not_queued",
+                **case_manifest,
+            },
+        )
+        snapshot = create_launch_review_snapshot(
+            settings,
+            profile_id=request.run_profile_id,
+            warning_threshold_bytes=DEFAULT_STORAGE_WARNING_THRESHOLD_BYTES,
+            manifest=manifest,
+            resolved_profile=resolved.resolved_cost_profile,
+        )
+        snapshot_id = snapshot.snapshot.snapshot_id
+        envelope.launch_review_snapshot_id = snapshot_id
+        run_configuration["launch_review_snapshot_id"] = snapshot_id
+        run_configuration["variation_envelope"] = envelope.model_dump(mode="json")
+        manifest.run_configuration = run_configuration
+        manifest.updated_at = datetime.now(UTC)
+        write_run_manifest(paths["manifest"], manifest)
+        case_manifest["launch_review_snapshot_id"] = snapshot_id
+        _write_json(paths["case_manifest"], case_manifest)
+        _write_json(
+            paths["package_report"],
+            {
+                "status": "packaged_not_queued",
+                **case_manifest,
+            },
+        )
         return MountainWavesVariationPackage(
             simulation_id=simulation_id,
             run_id=run_id,
             manifest_path=str(paths["manifest"]),
             package_dir=str(package_dir),
-            differences=preview.differences,
-            warnings=preview.warnings,
+            envelope=envelope,
+            differences=grouped_differences(differences),
+            warnings=resolved.warnings,
             preflight=preflight,
+            launch_review_snapshot_id=snapshot_id,
         )
     except Exception:
         shutil.rmtree(package_dir, ignore_errors=True)
@@ -441,6 +568,7 @@ def preflight_mountain_waves_variation(manifest_path: Path) -> dict[str, Any]:
         raise MountainWavesVariationError("Variation preflight requires a packaged manifest.")
     if manifest.run_configuration.get("cloud_world_id") != WORLD_ID:
         raise MountainWavesVariationError("Variation manifest does not belong to Mountain Waves.")
+    envelope = _manifest_envelope(manifest)
     run_dir = Path(manifest.generated_inputs.run_directory).expanduser()
     required = [
         run_dir / "namelist.input",
@@ -458,10 +586,14 @@ def preflight_mountain_waves_variation(manifest_path: Path) -> dict[str, Any]:
     hash_checks = {name: True for name in verified_hashes}
     checks = {
         "packaged_manifest": True,
+        "shared_envelope": envelope.schema_version == "cloud_world_variation_v1",
         "required_inputs_present": not missing,
         "generated_hashes_match": bool(hash_checks) and all(hash_checks.values()),
         "no_existing_cm1_output": not outputs,
         "two_dimensional_v_zero": _configuration_v_is_zero(manifest.run_configuration),
+        "launch_specification_bound": isinstance(
+            manifest.run_configuration.get("launch_specification"), dict
+        ),
     }
     if not all(checks.values()):
         raise MountainWavesVariationError(
@@ -477,244 +609,333 @@ def preflight_mountain_waves_variation(manifest_path: Path) -> dict[str, Any]:
     }
 
 
-def configuration_differences(
-    parent: MountainWavesConfiguration, intended: MountainWavesConfiguration
-) -> dict[str, list[dict[str, Any]]]:
-    differences = _empty_differences()
-    for field_name, label, units in (
-        ("height_m", "Ridge height", "m"),
-        ("half_width_m", "Ridge half-width", "m"),
-        ("center_m", "Ridge center", "m"),
-    ):
-        before = getattr(parent.terrain, field_name)
-        after = getattr(intended.terrain, field_name)
-        if not math.isclose(before, after):
-            differences["terrain"].append(_difference(label, before, after, units))
-    paired_levels = zip(parent.sounding, intended.sounding, strict=False)
-    for index, (before, after) in enumerate(paired_levels):
-        level_label = f"{after.height_m:g} m"
-        if not math.isclose(before.u_m_s, after.u_m_s):
-            differences["wind"].append(
-                _difference(f"u at {level_label}", before.u_m_s, after.u_m_s, "m/s", index)
-            )
-        if not math.isclose(before.qv_g_kg, after.qv_g_kg):
-            differences["moisture"].append(
-                _difference(
-                    f"Water vapor at {level_label}",
-                    before.qv_g_kg,
-                    after.qv_g_kg,
-                    "g/kg",
-                    index,
-                )
-            )
-        if not math.isclose(before.theta_k, after.theta_k):
-            differences["stability/thermodynamics"].append(
-                _difference(
-                    f"Potential temperature at {level_label}",
-                    before.theta_k,
-                    after.theta_k,
-                    "K",
-                    index,
-                )
-            )
-    if len(parent.sounding) != len(intended.sounding):
-        differences["stability/thermodynamics"].append(
-            _difference("Sounding level count", len(parent.sounding), len(intended.sounding), None)
-        )
-    if parent.duration_seconds != intended.duration_seconds:
-        differences["numerics/time"].append(
-            _difference(
-                "Integration duration",
-                parent.duration_seconds,
-                intended.duration_seconds,
-                "s",
-            )
-        )
-    if parent.output_cadence_seconds != intended.output_cadence_seconds:
-        differences["output"].append(
-            _difference(
-                "Saved-output cadence",
-                parent.output_cadence_seconds,
-                intended.output_cadence_seconds,
-                "s",
-            )
-        )
-    return differences
-
-
-def configuration_warnings(
-    configuration: MountainWavesConfiguration,
-    differences: dict[str, list[dict[str, Any]]],
-) -> list[str]:
-    warnings: list[str] = []
-    saturated = [
-        level.height_m
-        for level in configuration.sounding
-        if _relative_humidity_percent(level) >= 100.0
+def _variation_context(
+    settings: CloudChamberSettings, parent_simulation_id: str
+) -> _VariationContext:
+    parent, manifest, manifest_path = mountain_waves_run_manifest(settings, parent_simulation_id)
+    recipe_id = _parent_recipe_id(parent, manifest)
+    reference_simulation_id = (
+        DRY_SIMULATION_ID if recipe_id == DRY_RECIPE_ID else MOIST_SIMULATION_ID
+    )
+    reference_controls = default_controls(recipe_id)
+    parent_controls = normalize_recipe_controls(
+        _parent_controls(manifest, recipe_id),
+        recipe_reference=reference_controls,
+    )
+    reference_sounding = _reference_sounding(settings, recipe_id)
+    parent_profile_id = _parent_profile_id(manifest, recipe_id)
+    recipe_profiles = [
+        profile
+        for profile in profiles()
+        if profile.world_id == WORLD_ID and profile.recipe_id == recipe_id
     ]
-    if saturated:
-        warnings.append(
-            "The initial sounding is saturated or supersaturated at "
-            f"{len(saturated)} level(s); cloud may exist at model start."
+    estimates = [estimate_profile(settings, profile) for profile in recipe_profiles]
+    try:
+        parent_catalog_profile = profile_by_id(parent_profile_id)
+        parent_resolved = resolve_mountain_waves_recipe(
+            controls=parent_controls,
+            reference_controls=reference_controls,
+            difference_reference_controls=parent_controls,
+            reference_sounding=reference_sounding,
+            catalog_profile=parent_catalog_profile,
         )
-    unstable = [value for value in _stability_profile(configuration.sounding) if value < 0.0]
-    if unstable:
-        warnings.append(
-            "The edited potential-temperature profile contains "
-            f"{len(unstable)} statically unstable layer(s)."
-        )
-    wind = [level.u_m_s for level in configuration.sounding]
-    if min(wind) < 0.0 < max(wind):
-        warnings.append("The cross-ridge wind profile reverses direction with height.")
-    if any(abs(right - left) >= 15.0 for left, right in zip(wind, wind[1:], strict=False)):
-        warnings.append(
-            "The edited wind profile contains a layer with at least 15 m/s shear "
-            "between sounding levels."
-        )
-    max_slope = (
-        9.0
-        * configuration.terrain.height_m
-        / (8.0 * math.sqrt(3.0) * configuration.terrain.half_width_m)
+    except (ValueError, MountainWavesVariationError) as exc:
+        raise MountainWavesVariationError(
+            f"The selected parent's resolved Recipe layers are unavailable: {exc}"
+        ) from exc
+    parent_numerical, parent_observation = _parent_resolved_layers(
+        manifest,
+        fallback_numerical=parent_resolved.numerical_realization.model_dump(mode="json"),
+        fallback_observation=parent_resolved.observation_plan.model_dump(mode="json"),
     )
-    if max_slope >= 0.35:
-        warnings.append(
-            "The idealized ridge has a steep analytic maximum slope "
-            f"({max_slope:.2f}); terrain-following grid compression may be strong."
+    can_create, reason = _parent_eligibility(parent, manifest, recipe_id)
+    available_profile_ids = {profile.profile_id for profile in recipe_profiles}
+    default_profile = (
+        parent_profile_id
+        if parent_profile_id in available_profile_ids
+        else next(
+            (profile.profile_id for profile in recipe_profiles if profile.role == "Standard"),
+            recipe_profiles[0].profile_id if recipe_profiles else "",
         )
-    if configuration.duration_seconds < 1_800:
-        warnings.append(
-            "The integration is short; a wave-cloud response may not have time to mature."
-        )
-    if configuration.output_cadence_seconds > 400:
-        warnings.append(
-            "The saved-output cadence is coarse and may hide rapid formation or "
-            "evaporation changes."
-        )
-    changed_groups = sum(bool(values) for values in differences.values())
-    if changed_groups > 1:
-        warnings.append(
-            "Multiple physical groups change together, so the result will not support "
-            "a one-factor causal interpretation."
-        )
-    return warnings
-
-
-def _configuration_from_parent(
-    parent: MountainWavesSimulationRecord, manifest: RunManifest, manifest_path: Path
-) -> MountainWavesConfiguration:
-    retained = manifest.run_configuration.get("mountain_waves_configuration")
-    if isinstance(retained, dict):
-        return MountainWavesConfiguration.model_validate(retained)
-    if parent.simulation_id != MOIST_SIMULATION_ID:
-        return _dry_source_configuration(parent, manifest)
-    run_dir = manifest_path.parent
-    levels = _read_parent_sounding(run_dir / "input_sounding", run_dir / "case_manifest.json")
-    return MountainWavesConfiguration(
-        terrain=TerrainConfiguration(height_m=2_000.0, half_width_m=10_000.0, center_m=500.0),
-        sounding=levels,
-        duration_seconds=int(manifest.run_configuration.get("duration_seconds", 4_000)),
-        output_cadence_seconds=int(manifest.run_configuration.get("output_cadence_seconds", 200)),
+    )
+    template = MountainWavesVariationTemplate(
+        parent_simulation_id=parent.simulation_id,
+        parent_run_id=parent.run_id,
+        parent_display_name=parent.display_name,
+        parent_configuration_source=_parent_configuration_source(parent, recipe_id),
+        reference_simulation_id=reference_simulation_id,
+        recipe_id=recipe_id,
+        recipe_name=recipe_name(recipe_id),
+        controls=parent_controls,
+        run_profiles=estimates,
+        default_run_profile_id=default_profile,
+        can_create_variation=can_create,
+        unavailable_reason=reason,
+    )
+    return _VariationContext(
+        template=template,
+        parent=parent,
+        parent_manifest=manifest,
+        parent_manifest_path=manifest_path,
+        reference_controls=reference_controls,
+        parent_controls=parent_controls,
+        reference_sounding=reference_sounding,
+        parent_profile_id=parent_profile_id,
+        parent_numerical_realization=parent_numerical,
+        parent_observation_plan=parent_observation,
     )
 
 
-def _fallback_configuration(
-    parent: MountainWavesSimulationRecord, manifest: RunManifest
-) -> MountainWavesConfiguration:
-    domain = manifest.run_configuration.get("domain")
-    active_top = 20_000.0
-    if isinstance(domain, dict):
-        configured_top = domain.get("active_top_m", domain.get("active_model_top_m"))
-        if isinstance(configured_top, int | float):
-            active_top = float(configured_top)
-    return MountainWavesConfiguration(
-        terrain=TerrainConfiguration(height_m=400.0, half_width_m=1_000.0, center_m=100.0),
-        sounding=[
-            SoundingLevel(
-                height_m=0.0, pressure_pa=100_000.0, theta_k=288.0, qv_g_kg=0.0, u_m_s=10.0
-            ),
-            SoundingLevel(
-                height_m=active_top / 2.0,
-                pressure_pa=25_000.0,
-                theta_k=320.0,
-                qv_g_kg=0.0,
-                u_m_s=10.0,
-            ),
-            SoundingLevel(
-                height_m=active_top + 1_000.0,
-                pressure_pa=5_000.0,
-                theta_k=390.0,
-                qv_g_kg=0.0,
-                u_m_s=10.0,
-            ),
-        ],
-        duration_seconds=int(manifest.run_configuration.get("duration_seconds", 2_160)),
-        output_cadence_seconds=int(manifest.run_configuration.get("output_cadence_seconds", 216)),
+def _resolve_request(
+    settings: CloudChamberSettings,
+    request: MountainWavesVariationRequest,
+    context: _VariationContext,
+) -> tuple[ResolvedMountainWavesRecipe, list[VariationDifference]]:
+    if request.recipe_id != context.template.recipe_id:
+        raise MountainWavesVariationError("The selected parent and requested Recipe do not match.")
+    try:
+        catalog_profile = profile_by_id(request.run_profile_id)
+    except ValueError as exc:
+        raise MountainWavesVariationError(str(exc)) from exc
+    effective_controls = normalize_recipe_controls(
+        request.controls,
+        recipe_reference=context.reference_controls,
     )
-
-
-def _dry_source_configuration(
-    parent: MountainWavesSimulationRecord, manifest: RunManifest
-) -> MountainWavesConfiguration:
-    """Sample the pinned CM1 isnd=9 source formula onto editable profile levels."""
-    domain = manifest.run_configuration.get("domain")
-    active_top_m = 20_000.0
-    dz_m = 200.0
-    if isinstance(domain, dict):
-        configured_top = domain.get("active_model_top_m", domain.get("active_top_m"))
-        configured_dz = domain.get("dz_m")
-        if isinstance(configured_top, int | float):
-            active_top_m = float(configured_top)
-        if isinstance(configured_dz, int | float):
-            dz_m = float(configured_dz)
-    heights = np.arange(0.0, active_top_m + dz_m + 0.1, dz_m)
-    ns_s2 = 0.0001
-    gravity_m_s2 = 9.81
-    cp_j_kg_k = 1004.0
-    rd_j_kg_k = 287.04
-    theta_surface_k = 288.0
-    theta = theta_surface_k * np.exp(ns_s2 * heights / gravity_m_s2)
-    exner = 1.0 + gravity_m_s2**2 / (cp_j_kg_k * ns_s2 * theta_surface_k) * (
-        np.exp(-ns_s2 * heights / gravity_m_s2) - 1.0
+    resolved = resolve_mountain_waves_recipe(
+        controls=effective_controls,
+        reference_controls=context.reference_controls,
+        difference_reference_controls=context.parent_controls,
+        reference_sounding=context.reference_sounding,
+        catalog_profile=catalog_profile,
     )
-    pressure = 100_000.0 * np.power(exner, cp_j_kg_k / rd_j_kg_k)
-    terrain = parent.configuration.get("terrain") if parent.configuration else None
-    terrain_configuration = TerrainConfiguration(
-        height_m=float(terrain.get("height_m", 400.0)) if isinstance(terrain, dict) else 400.0,
-        half_width_m=(
-            float(terrain.get("half_width_m", 1_000.0)) if isinstance(terrain, dict) else 1_000.0
-        ),
-        center_m=float(terrain.get("center_m", 100.0)) if isinstance(terrain, dict) else 100.0,
-    )
-    return MountainWavesConfiguration(
-        terrain=terrain_configuration,
-        sounding=[
-            SoundingLevel(
-                height_m=float(height),
-                pressure_pa=float(level_pressure),
-                theta_k=float(level_theta),
-                qv_g_kg=0.0,
-                u_m_s=10.0,
+    differences = list(resolved.differences)
+    numerical_payload = resolved.numerical_realization.model_dump(mode="json")
+    observation_payload = resolved.observation_plan.model_dump(mode="json")
+    if numerical_payload != context.parent_numerical_realization:
+        differences.append(
+            VariationDifference(
+                category="numerical_realization",
+                path="numerical_realization",
+                label="Numerical realization",
+                before=context.parent_numerical_realization,
+                after=numerical_payload,
             )
-            for height, level_pressure, level_theta in zip(heights, pressure, theta, strict=True)
-        ],
-        duration_seconds=int(manifest.run_configuration.get("duration_seconds", 2_160)),
-        output_cadence_seconds=int(manifest.run_configuration.get("output_cadence_seconds", 216)),
+        )
+    if observation_payload != context.parent_observation_plan:
+        differences.append(
+            VariationDifference(
+                category="observation_plan",
+                path="observation_plan",
+                label="Observation plan",
+                before=context.parent_observation_plan,
+                after=observation_payload,
+            )
+        )
+    return resolved, differences
+
+
+def _request_errors(
+    request: MountainWavesVariationRequest,
+    context: _VariationContext,
+    resolved: ResolvedMountainWavesRecipe,
+    differences: list[VariationDifference],
+) -> list[str]:
+    errors = list(resolved.blocking_errors)
+    if not context.template.can_create_variation:
+        errors.append(context.template.unavailable_reason or "The selected parent is not eligible.")
+    name = request.simulation_name.strip()
+    if not name:
+        errors.append("A Simulation name is required before packaging.")
+    elif len(name) > 80:
+        errors.append("Simulation names must be 80 characters or fewer.")
+    material_simulation_differences = [
+        difference
+        for difference in differences
+        if difference.material and difference.category != "observation_plan"
+    ]
+    if not material_simulation_differences:
+        if any(difference.category == "observation_plan" for difference in differences):
+            errors.append(
+                "Changing only saved-output cadence or retained output is another attempt "
+                "beneath the same Simulation, not a new Variation."
+            )
+        else:
+            errors.append("Change at least one effective Recipe control or numerical realization.")
+    return errors
+
+
+def _parent_resolved_layers(
+    manifest: RunManifest,
+    *,
+    fallback_numerical: dict[str, Any],
+    fallback_observation: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    try:
+        envelope = _manifest_envelope(manifest)
+    except MountainWavesVariationError:
+        return fallback_numerical, fallback_observation
+    return (
+        envelope.numerical_realization.payload,
+        envelope.observation_plan.payload,
     )
 
 
-def _parent_configuration_source(parent: MountainWavesSimulationRecord) -> str:
-    if parent.simulation_id == MOIST_SIMULATION_ID:
-        return "retained source-backed external sounding and terrain"
-    if parent.role == "variation":
-        return "retained exact parent variation configuration"
-    return "pinned CM1 isnd=9 source formula sampled at native vertical spacing"
+def _parent_recipe_id(parent: MountainWavesSimulationRecord, manifest: RunManifest) -> RecipeId:
+    envelope_payload = manifest.run_configuration.get("variation_envelope")
+    if isinstance(envelope_payload, dict):
+        recipe_id = envelope_payload.get("recipe_id")
+        if recipe_id in {DRY_RECIPE_ID, BOULDER_RECIPE_ID}:
+            return cast(RecipeId, recipe_id)
+    if parent.simulation_id == DRY_SIMULATION_ID:
+        return DRY_RECIPE_ID
+    return BOULDER_RECIPE_ID
 
 
-def _read_parent_sounding(sounding_path: Path, case_manifest_path: Path) -> list[SoundingLevel]:
+def _parent_controls(manifest: RunManifest, recipe_id: RecipeId) -> MountainWavesRecipeControls:
+    envelope_payload = manifest.run_configuration.get("variation_envelope")
+    if isinstance(envelope_payload, dict):
+        world_payload = envelope_payload.get("world_payload")
+        if isinstance(world_payload, dict) and isinstance(world_payload.get("controls"), dict):
+            try:
+                controls = MountainWavesRecipeControls.model_validate(world_payload["controls"])
+            except ValueError:
+                controls = None
+            if controls is not None and controls.recipe_id == recipe_id:
+                return controls
+    return default_controls(recipe_id)
+
+
+def _existing_variation_attempts(
+    settings: CloudChamberSettings,
+    simulation_id: str,
+) -> list[VariationAttempt]:
+    runs_dir = settings.runtime_home.expanduser() / "runs"
+    if not runs_dir.exists():
+        return []
+    attempts: dict[str, tuple[str, VariationAttempt]] = {}
+    for manifest_path in runs_dir.glob("*/run_manifest.json"):
+        try:
+            manifest = load_run_manifest(manifest_path)
+        except (OSError, ValueError):
+            continue
+        if (
+            manifest.run_configuration.get("cloud_world_id") != WORLD_ID
+            or manifest.run_configuration.get("simulation_id") != simulation_id
+        ):
+            continue
+        try:
+            envelope = _manifest_envelope(manifest)
+        except MountainWavesVariationError as exc:
+            raise MountainWavesVariationError(
+                f"Existing attempt {manifest.run_id} has an invalid variation envelope."
+            ) from exc
+        declared = next(
+            (item for item in envelope.attempts if item.run_id == manifest.run_id),
+            None,
+        )
+        attempt = declared or VariationAttempt(
+            attempt_id=manifest.run_id,
+            run_id=manifest.run_id,
+            relationship="initial" if not attempts else "unchanged_retry",
+            package_identity_sha256=envelope.package_identity_sha256
+            or canonical_payload_sha256(
+                {
+                    "scientific_design": envelope.scientific_design.payload,
+                    "numerical_realization": envelope.numerical_realization.payload,
+                }
+            ),
+            accepted_backing=False,
+        )
+        attempts[attempt.run_id] = (manifest.created_at.isoformat(), attempt)
+    ordered = [item for _created_at, item in sorted(attempts.values(), key=lambda item: item[0])]
+    accepted = [item.run_id for item in ordered if item.accepted_backing]
+    if len(accepted) > 1:
+        raise MountainWavesVariationError(
+            "Existing attempts contain conflicting accepted-backing claims: " + ", ".join(accepted)
+        )
+    return ordered
+
+
+def _reference_sounding(
+    settings: CloudChamberSettings, recipe_id: RecipeId
+) -> list[RecipeSoundingLevel]:
+    if recipe_id == DRY_RECIPE_ID:
+        return []
+    _record, manifest, manifest_path = mountain_waves_run_manifest(settings, MOIST_SIMULATION_ID)
+    return _read_parent_sounding(
+        manifest_path.parent / "input_sounding",
+        manifest_path.parent / "case_manifest.json",
+    )
+
+
+def _parent_profile_id(manifest: RunManifest, recipe_id: RecipeId) -> str:
+    envelope_payload = manifest.run_configuration.get("variation_envelope")
+    if isinstance(envelope_payload, dict):
+        profile_id = envelope_payload.get("run_profile_id")
+        if isinstance(profile_id, str):
+            return profile_id
+    return (
+        "mountain_waves_dry_presentation_v1"
+        if recipe_id == DRY_RECIPE_ID
+        else "mountain_waves_boulder_presentation_v1"
+    )
+
+
+def _parent_eligibility(
+    parent: MountainWavesSimulationRecord, manifest: RunManifest, recipe_id: RecipeId
+) -> tuple[bool, str | None]:
+    if not parent.inspectable:
+        return False, "Only an available, inspectable Simulation can be a variation parent."
+    if parent.role == "built_in":
+        if recipe_id == DRY_RECIPE_ID:
+            return (
+                False,
+                "Dry Ridge remains inspectable but cannot parent a variation until "
+                "source-defined analytic inheritance or bounded equivalence is approved.",
+            )
+        return True, None
+    try:
+        envelope = _manifest_envelope(manifest)
+    except MountainWavesVariationError:
+        return (
+            False,
+            "This remains an inspectable Legacy-contract Simulation, but it is not "
+            "eligible to parent a new Recipe variation.",
+        )
+    if envelope.recipe_id != recipe_id or not envelope.parent_eligible:
+        return (
+            False,
+            envelope.parent_eligibility_reason
+            or "This Simulation is available but not parent-eligible.",
+        )
+    return True, None
+
+
+def _manifest_envelope(manifest: RunManifest) -> VariationEnvelope:
+    payload = manifest.run_configuration.get("variation_envelope")
+    if not isinstance(payload, dict):
+        raise MountainWavesVariationError("This variation predates the shared Recipe envelope.")
+    try:
+        return VariationEnvelope.model_validate(payload)
+    except ValueError as exc:
+        raise MountainWavesVariationError("Variation envelope is invalid.") from exc
+
+
+def _parent_configuration_source(parent: MountainWavesSimulationRecord, recipe_id: RecipeId) -> str:
+    if recipe_id == DRY_RECIPE_ID:
+        return "retained source-defined Dry Ridge case; variation inheritance unavailable"
+    if parent.role == "built_in":
+        return "retained Boulder source-backed atmosphere and terrain"
+    return "retained Recipe controls resolved against the Boulder reference"
+
+
+def _read_parent_sounding(
+    sounding_path: Path, case_manifest_path: Path
+) -> list[RecipeSoundingLevel]:
     lines = [line.split() for line in sounding_path.read_text().splitlines() if line.strip()]
     if len(lines) < 3 or len(lines[0]) != 3:
         raise MountainWavesVariationError(
-            "Parent input_sounding does not match the CM1 external profile format."
+            "Reference input_sounding does not match the CM1 external profile format."
         )
     pressure_by_height: dict[int, float] = {}
     try:
@@ -727,7 +948,7 @@ def _read_parent_sounding(sounding_path: Path, case_manifest_path: Path) -> list
         pressure_by_height = {}
     surface_pressure_pa = float(lines[0][0]) * 100.0
     levels = [
-        SoundingLevel(
+        RecipeSoundingLevel(
             height_m=0.0,
             pressure_pa=surface_pressure_pa,
             theta_k=float(lines[0][1]),
@@ -737,13 +958,15 @@ def _read_parent_sounding(sounding_path: Path, case_manifest_path: Path) -> list
     ]
     for row in lines[1:]:
         if len(row) != 5:
-            raise MountainWavesVariationError("Parent sounding profile row is malformed.")
+            raise MountainWavesVariationError("Reference sounding profile row is malformed.")
         height = float(row[0])
+        if height <= levels[-1].height_m:
+            continue
         pressure = pressure_by_height.get(
             int(round(height)), surface_pressure_pa * math.exp(-height / 8_000.0)
         )
         levels.append(
-            SoundingLevel(
+            RecipeSoundingLevel(
                 height_m=height,
                 pressure_pa=pressure,
                 theta_k=float(row[1]),
@@ -755,96 +978,48 @@ def _read_parent_sounding(sounding_path: Path, case_manifest_path: Path) -> list
     return levels
 
 
-def _configuration_errors(
-    request: MountainWavesVariationRequest,
-    *,
-    parent: MountainWavesConfiguration,
-    inherited_domain: object,
-    required_top_m: float,
-) -> list[str]:
-    configuration = request.configuration
-    errors: list[str] = []
-    name = request.simulation_name.strip()
-    if not name:
-        errors.append("A Simulation name is required before packaging.")
-    elif len(name) > 80:
-        errors.append("Simulation names must be 80 characters or fewer.")
-    terrain = configuration.terrain
-    if not 1.0 <= terrain.height_m <= 6_000.0:
-        errors.append("Ridge height must be between 1 and 6,000 m.")
-    if not 500.0 <= terrain.half_width_m <= 50_000.0:
-        errors.append("Ridge half-width must be between 500 and 50,000 m.")
-    domain_bounds = _domain_x_bounds(inherited_domain)
-    if domain_bounds is None:
-        errors.append("The inherited parent domain is unavailable for ridge-center validation.")
-    elif not domain_bounds[0] <= terrain.center_m <= domain_bounds[1]:
-        errors.append(
-            "Ridge center must remain inside the inherited parent domain "
-            f"({domain_bounds[0]:g} to {domain_bounds[1]:g} m)."
-        )
-    if configuration.duration_seconds < 600 or configuration.duration_seconds > 14_400:
-        errors.append("Integration duration must be between 600 and 14,400 s.")
-    cadence = configuration.output_cadence_seconds
-    if cadence < 25 or cadence > configuration.duration_seconds:
-        errors.append("Saved-output cadence must be at least 25 s and no longer than the run.")
-    elif configuration.duration_seconds % cadence:
-        errors.append("Saved-output cadence must divide the integration duration exactly.")
-    if configuration.sounding[-1].height_m < required_top_m:
-        errors.append(
-            "The final sounding level must reach the parent profile top "
-            f"({required_top_m / 1_000.0:g} km)."
-        )
-    if len(configuration.sounding) != len(parent.sounding) or any(
-        not math.isclose(level.height_m, parent_level.height_m)
-        or not math.isclose(level.pressure_pa, parent_level.pressure_pa)
-        for level, parent_level in zip(configuration.sounding, parent.sounding, strict=False)
-    ):
-        errors.append(
-            "Sounding heights and pressures are inherited from the parent and cannot be changed."
-        )
-    for level in configuration.sounding:
-        if not 150.0 <= level.theta_k <= 800.0:
-            errors.append(f"Potential temperature at {level.height_m:g} m is outside 150-800 K.")
-        if not 0.0 <= level.qv_g_kg <= 30.0:
-            errors.append(f"Water vapor at {level.height_m:g} m is outside 0-30 g/kg.")
-        if not -100.0 <= level.u_m_s <= 100.0:
-            errors.append(f"Cross-ridge wind at {level.height_m:g} m is outside -100 to 100 m/s.")
-    return errors
-
-
-def _domain_x_bounds(domain: object) -> tuple[float, float] | None:
-    if not isinstance(domain, dict):
-        return None
-    nx = domain.get("nx")
-    dx_m = domain.get("dx_m")
-    if not isinstance(nx, int | float) or not isinstance(dx_m, int | float):
-        return None
-    if int(nx) < 2 or float(dx_m) <= 0.0:
-        return None
-    half_span = (int(nx) - 1) * float(dx_m) / 2.0
-    return -half_span, half_span
-
-
-def _render_variation_namelist(parent_text: str, configuration: MountainWavesConfiguration) -> str:
-    assignments = parse_namelist_assignments(parent_text)
+def _render_variation_namelist(parent_text: str, resolved: ResolvedMountainWavesRecipe) -> str:
+    numerical = resolved.numerical_realization
+    grid_match = re.fullmatch(r"(\d+) × 1 × (\d+)", numerical.grid)
+    spacing_match = re.fullmatch(r"([0-9.]+) × ([0-9.]+) m", numerical.spacing)
+    timestep_match = re.search(r"([0-9.]+)", numerical.timestep_strategy)
+    if not grid_match or not spacing_match or not timestep_match:
+        raise MountainWavesVariationError("Resolved numerical realization is malformed.")
+    nx, nz = (int(value) for value in grid_match.groups())
+    dx_m, dz_m = (float(value) for value in spacing_match.groups())
+    duration = resolved.observation_plan.duration_seconds
+    cadence = resolved.observation_plan.output_cadence_seconds
+    if duration is None or cadence is None:
+        raise MountainWavesVariationError("Resolved observation plan is incomplete.")
     replacements = {
-        "timax": f"{configuration.duration_seconds:.1f}",
-        "tapfrq": f"{configuration.output_cadence_seconds:.1f}",
+        "nx": str(nx),
+        "ny": "1",
+        "nz": str(nz),
+        "dx": f"{dx_m:g}",
+        "dy": f"{dx_m:g}",
+        "dz": f"{dz_m:g}",
+        "dtl": timestep_match.group(1),
+        "timax": f"{duration:g}",
+        "tapfrq": f"{cadence:g}",
         "itern": "4",
         "isnd": "7",
         "iwnd": "0",
-        "imoist": "1",
+        "imoist": "0" if resolved.recipe_id == DRY_RECIPE_ID else "1",
+        "zd": f"{resolved.diagnostics.damping_base_m:g}",
+        "ztop": f"{resolved.diagnostics.model_top_m:g}",
+        "stretch_z": "0",
         "output_zs": "1",
         "output_zh": "1",
         "output_th": "1",
         "output_prs": "1",
-        "output_qv": "1",
-        "output_q": "1",
         "output_uinterp": "1",
         "output_vinterp": "1",
         "output_winterp": "1",
         "output_w": "1",
     }
+    if resolved.recipe_id == BOULDER_RECIPE_ID:
+        replacements.update({"output_qv": "1", "output_q": "1"})
+    assignments = parse_namelist_assignments(parent_text)
     missing = sorted(set(replacements) - set(assignments))
     if missing:
         raise MountainWavesVariationError(f"Parent namelist lacks required assignments: {missing}")
@@ -855,7 +1030,7 @@ def _render_variation_namelist(parent_text: str, configuration: MountainWavesCon
     return rendered
 
 
-def _render_input_sounding(levels: list[SoundingLevel]) -> str:
+def _render_input_sounding(levels: list[RecipeSoundingLevel]) -> str:
     surface = levels[0]
     lines = [f"{surface.pressure_pa / 100.0:.4f} {surface.theta_k:.6f} {surface.qv_g_kg:.9f}"]
     for level in levels[1:]:
@@ -867,7 +1042,7 @@ def _render_input_sounding(levels: list[SoundingLevel]) -> str:
 
 
 def _write_terrain_file(
-    path: Path, namelist: str, configuration: MountainWavesConfiguration
+    path: Path, namelist: str, terrain_configuration: dict[str, float]
 ) -> dict[str, Any]:
     assignments = parse_namelist_assignments(namelist)
     nx = int(float(assignments["nx"]))
@@ -876,9 +1051,10 @@ def _write_terrain_file(
     if ny != 1:
         raise MountainWavesVariationError("Mountain Waves variations require native ny=1.")
     x = (np.arange(nx, dtype=np.float64) - (nx - 1) / 2.0) * dx_m
-    terrain = configuration.terrain.height_m / (
-        1.0 + ((x - configuration.terrain.center_m) / configuration.terrain.half_width_m) ** 2
-    )
+    height_m = terrain_configuration["height_m"]
+    half_width_m = terrain_configuration["half_width_m"]
+    center_m = terrain_configuration["center_m"]
+    terrain = height_m / (1.0 + ((x - center_m) / half_width_m) ** 2)
     encoded = np.asarray(terrain[None, :], dtype="<f4")
     path.write_bytes(encoded.tobytes(order="C"))
     decoded = np.fromfile(path, dtype="<f4").reshape((ny, nx))
@@ -890,9 +1066,7 @@ def _write_terrain_file(
         "sha256": sha256_file(path),
         "crest_x_m": float(x[crest]),
         "crest_height_m": float(decoded[0, crest]),
-        "maximum_slope": 9.0
-        * configuration.terrain.height_m
-        / (8.0 * math.sqrt(3.0) * configuration.terrain.half_width_m),
+        "maximum_slope": 9.0 * height_m / (8.0 * math.sqrt(3.0) * half_width_m),
         "all_values_finite": bool(np.isfinite(decoded).all()),
     }
 
@@ -912,43 +1086,6 @@ def _domain_record(namelist: str) -> dict[str, Any]:
     }
 
 
-def _terrain_preview(
-    configuration: MountainWavesConfiguration, *, points: int
-) -> list[dict[str, float]]:
-    extent = max(60_000.0, configuration.terrain.half_width_m * 6.0)
-    x_values = np.linspace(-extent, extent, points)
-    heights = configuration.terrain.height_m / (
-        1.0
-        + ((x_values - configuration.terrain.center_m) / configuration.terrain.half_width_m) ** 2
-    )
-    return [
-        {"x_m": float(x_value), "height_m": float(height)}
-        for x_value, height in zip(x_values, heights, strict=True)
-    ]
-
-
-def _relative_humidity_percent(level: SoundingLevel) -> float:
-    pressure = level.pressure_pa
-    temperature = level.theta_k * (pressure / 100_000.0) ** (287.05 / 1004.0)
-    saturation_vapor_pressure = 611.2 * math.exp(
-        17.67 * (temperature - 273.15) / (temperature - 29.65)
-    )
-    saturation_mixing_ratio = (
-        0.622 * saturation_vapor_pressure / max(1.0, pressure - saturation_vapor_pressure)
-    )
-    return 100.0 * (level.qv_g_kg / 1_000.0) / max(1.0e-12, saturation_mixing_ratio)
-
-
-def _stability_profile(levels: list[SoundingLevel]) -> list[float]:
-    gravity = 9.80665
-    values: list[float] = []
-    for lower, upper in zip(levels, levels[1:], strict=False):
-        dz = upper.height_m - lower.height_m
-        mean_theta = 0.5 * (lower.theta_k + upper.theta_k)
-        values.append(gravity / mean_theta * (upper.theta_k - lower.theta_k) / dz)
-    return values
-
-
 def _configuration_v_is_zero(run_configuration: dict[str, Any]) -> bool:
     configuration = run_configuration.get("mountain_waves_configuration")
     if not isinstance(configuration, dict):
@@ -959,33 +1096,32 @@ def _configuration_v_is_zero(run_configuration: dict[str, Any]) -> bool:
     )
 
 
-def _empty_differences() -> dict[str, list[dict[str, Any]]]:
-    return {group: [] for group in DIFFERENCE_GROUPS}
+def _relationship(differences: list[VariationDifference]) -> str | None:
+    try:
+        return classify_relationship(differences)
+    except ValueError:
+        return None
 
 
-def _difference(
-    label: str, before: object, after: object, units: str | None, level_index: int | None = None
-) -> dict[str, Any]:
+def _manifest_controls(controls: dict[str, Any]) -> dict[str, str | float | bool]:
     return {
-        "label": label,
-        "before": before,
-        "after": after,
-        "units": units,
-        "level_index": level_index,
+        key: value for key, value in controls.items() if isinstance(value, str | float | int | bool)
     }
 
 
 def _slug(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
-    return (slug or "variation")[:40]
+    normalized = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+    return normalized[:48] or "variation"
 
 
 def _optional_text(value: str | None) -> str | None:
-    if value is None:
-        return None
-    stripped = value.strip()
+    stripped = value.strip() if value else ""
     return stripped or None
 
 
+def _dedupe(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
+
+
 def _write_json(path: Path, payload: object) -> None:
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n")
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")

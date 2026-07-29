@@ -53,6 +53,8 @@ class ProcessHandle(Protocol):
 
     def terminate(self) -> None: ...
 
+    def kill(self) -> None: ...
+
 
 class ProcessFactory(Protocol):
     def __call__(
@@ -110,6 +112,27 @@ def default_process_factory(
         text=True,
         start_new_session=True,
     )
+
+
+def _terminate_and_reap(process: ProcessHandle, *, timeout: float = 10) -> None:
+    termination_error: Exception | None = None
+    try:
+        process.terminate()
+    except Exception as exc:
+        termination_error = exc
+    try:
+        process.wait(timeout=timeout)
+        return
+    except Exception as exc:
+        termination_error = exc
+    try:
+        process.kill()
+        process.wait(timeout=timeout)
+    except Exception as exc:
+        detail = f"unable to terminate and reap the started process: {exc}"
+        if termination_error is not None:
+            detail += f"; graceful cleanup failed first: {termination_error}"
+        raise LocalRunManagerError(detail) from exc
 
 
 class LocalRunManager:
@@ -214,13 +237,9 @@ class LocalRunManager:
         except Exception as exc:
             stdout_handle.close()
             stderr_handle.close()
-            failed = self._with_state(
-                queued,
-                state=LifecycleState.FAILED,
-                product_state=ProductState.FAILED_CANCELED_CM1_RUN,
-                exit_code=None,
-            )
-            write_run_manifest(manifest_path, failed)
+            # No CM1 process started. Preserve the immutable package so corrected
+            # local settings can retry the same reviewed attempt.
+            write_run_manifest(manifest_path, manifest)
             raise LocalRunManagerError(f"Failed to launch CM1 process: {exc}") from exc
 
         running = self._with_state(
@@ -229,8 +248,33 @@ class LocalRunManager:
             product_state=ProductState.QUEUED_RUNNING_CM1_PROCESS,
             process_id=getattr(process, "pid", None),
         )
-        write_run_manifest(manifest_path, running)
         self._active = _ActiveRun(manifest_path, process, stdout_handle, stderr_handle)
+        try:
+            write_run_manifest(manifest_path, running)
+        except Exception as exc:
+            try:
+                _terminate_and_reap(process)
+            except LocalRunManagerError:
+                try:
+                    write_run_manifest(manifest_path, running)
+                except Exception as tracking_exc:
+                    raise LocalRunManagerError(
+                        "CM1 started, but neither process cleanup nor durable Running-state "
+                        f"tracking succeeded: {tracking_exc}"
+                    ) from exc
+                return _status_from_manifest(running, manifest_path)
+            self._close_active()
+            try:
+                write_run_manifest(manifest_path, manifest)
+            except Exception as restore_exc:
+                raise LocalRunManagerError(
+                    "CM1 started, but durable Running-state tracking failed and the packaged "
+                    f"manifest could not be restored: {restore_exc}"
+                ) from exc
+            raise LocalRunManagerError(
+                "CM1 started, but durable Running-state tracking failed; the process was "
+                "terminated and the package remains retryable."
+            ) from exc
         return _status_from_manifest(running, manifest_path)
 
     def status(self, manifest_path: Path) -> RunStatus:

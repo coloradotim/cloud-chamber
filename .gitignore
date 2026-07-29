@@ -29,6 +29,7 @@ app/frontend/playwright-report/
 app/frontend/test-results/
 app/frontend/blob-report/
 app/frontend/e2e/.auth/
+.artifacts/
 
 # CM1 runtime and generated output
 cm1.exe

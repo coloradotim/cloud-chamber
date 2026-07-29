@@ -5,9 +5,11 @@ import pytest
 
 from cloud_chamber.run_cost import (
     LaunchBudgetError,
+    consume_manifest_launch_budget,
     create_launch_review_snapshot,
     estimate_profile,
     immediate_prelaunch_disk_gate,
+    preflight_manifest_launch_budget,
     profile_by_id,
     run_cost_catalog,
     validate_manifest_launch_budget,
@@ -105,8 +107,8 @@ def test_catalog_has_measured_scaled_and_uncharacterized_world_profiles(tmp_path
         "zhval",
         "th",
         "prs",
-        "u",
-        "v",
+        "uinterp",
+        "winterp",
         "w",
     )
     assert "ql" in inventories["mountain_waves_boulder_standard_v1"]
@@ -275,6 +277,132 @@ def test_manifest_gate_rejects_package_mismatch_and_successful_reuse(
             manifest=manifest,
             snapshot_id=review.snapshot.snapshot_id,
         )
+
+
+def test_manifest_preflight_does_not_consume_authorization_until_confirmed_start(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = fake_settings(tmp_path)
+    profile = profile_by_id("trade_cumulus_quick_v1")
+    manifest = bound_manifest(tmp_path, profile_id=profile.profile_id)
+    high = profile.expected_size_max_bytes
+    assert high is not None
+    monkeypatch.setattr(
+        "cloud_chamber.run_cost.shutil.disk_usage",
+        lambda _path: type(
+            "Usage",
+            (),
+            {"free": high + profile.required_post_run_reserve_bytes + 1},
+        )(),
+    )
+    review = create_launch_review_snapshot(
+        settings,
+        profile_id=profile.profile_id,
+        warning_threshold_bytes=50 * 1024**3,
+        manifest=manifest,
+    )
+
+    first = preflight_manifest_launch_budget(
+        settings,
+        manifest=manifest,
+        snapshot_id=review.snapshot.snapshot_id,
+    )
+    second = preflight_manifest_launch_budget(
+        settings,
+        manifest=manifest,
+        snapshot_id=review.snapshot.snapshot_id,
+    )
+
+    assert first is not None
+    assert second is not None
+    assert first.check_kind == second.check_kind == "launch_preflight"
+    consumed = consume_manifest_launch_budget(
+        settings,
+        manifest=manifest,
+        snapshot_id=review.snapshot.snapshot_id,
+        preflight_check=second,
+    )
+    assert consumed is not None
+    assert consumed.check_kind == "launch"
+    with pytest.raises(LaunchBudgetError, match="already been consumed"):
+        preflight_manifest_launch_budget(
+            settings,
+            manifest=manifest,
+            snapshot_id=review.snapshot.snapshot_id,
+        )
+
+
+def test_mountain_waves_snapshot_binds_the_resolved_recipe_realization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = fake_settings(tmp_path)
+    catalog = profile_by_id("mountain_waves_boulder_standard_v1")
+    resolved = catalog.model_copy(
+        update={
+            "numerical_realization": catalog.numerical_realization.model_copy(
+                update={
+                    "domain": "Generated 180 km domain",
+                    "grid": "360 × 1 × 250",
+                }
+            ),
+            "observation_plan": catalog.observation_plan.model_copy(
+                update={
+                    "duration_seconds": 6_000,
+                    "expected_history_count": 101,
+                }
+            ),
+            "expected_size_min_bytes": 400 * 1024**2,
+            "expected_size_max_bytes": 600 * 1024**2,
+        }
+    )
+    manifest = bound_manifest(tmp_path, profile_id=catalog.profile_id)
+    launch_specification = {
+        "world_id": resolved.world_id,
+        "recipe_id": resolved.recipe_id,
+        "recipe_version": resolved.recipe_version,
+        "profile_id": resolved.profile_id,
+        "numerical_realization": resolved.numerical_realization.model_dump(mode="json"),
+        "observation_plan": resolved.observation_plan.model_dump(mode="json"),
+    }
+    manifest = manifest.model_copy(
+        update={
+            "run_configuration": {
+                **manifest.run_configuration,
+                "launch_specification": launch_specification,
+            }
+        }
+    )
+    high = resolved.expected_size_max_bytes
+    assert high is not None
+    monkeypatch.setattr(
+        "cloud_chamber.run_cost.shutil.disk_usage",
+        lambda _path: type(
+            "Usage",
+            (),
+            {"free": high + resolved.required_post_run_reserve_bytes + 1},
+        )(),
+    )
+
+    review = create_launch_review_snapshot(
+        settings,
+        profile_id=catalog.profile_id,
+        warning_threshold_bytes=50 * 1024**3,
+        manifest=manifest,
+        resolved_profile=resolved,
+    )
+    check = validate_manifest_launch_budget(
+        settings,
+        manifest=manifest,
+        snapshot_id=review.snapshot.snapshot_id,
+    )
+
+    assert review.snapshot.estimate.profile == resolved
+    assert review.snapshot.manifest_binding is not None
+    assert review.snapshot.manifest_binding.numerical_realization.grid == "360 × 1 × 250"
+    assert check is not None
+    assert check.disposition == "passes"
 
 
 def test_manifest_gate_remains_opt_in_for_legacy_packages(tmp_path: Path) -> None:

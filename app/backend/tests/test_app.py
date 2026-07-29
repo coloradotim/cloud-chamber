@@ -20,6 +20,12 @@ from cloud_chamber.igra_catalog import (
 from cloud_chamber.lifecycle import LifecycleProjection
 from cloud_chamber.local_run_manager import LocalRunManagerError, RunStatus
 from cloud_chamber.local_run_queue import RunQueueEntry, RunQueueState
+from cloud_chamber.mountain_wave_case import MountainWaveCaseError
+from cloud_chamber.mountain_waves_recipes import (
+    BOULDER_RECIPE_ID,
+    MountainWavesRecipeControls,
+    default_controls,
+)
 from cloud_chamber.observed_sounding import parse_igra_station_text
 from cloud_chamber.run_manifest import (
     ExecutionMetadata,
@@ -41,6 +47,39 @@ from cloud_chamber.trade_cumulus_comparison_story import (
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BASELINE_TEMPLATE = REPO_ROOT / "scenarios/lower-atmosphere/baseline-shallow-cumulus.json"
+
+
+def test_mountain_waves_package_reports_clean_worktree_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cloud_chamber.app.create_mountain_waves_variation",
+        lambda _settings, _request: (_ for _ in ()).throw(
+            MountainWaveCaseError(
+                "Mountain-wave evidence generation requires a clean Git worktree."
+            )
+        ),
+    )
+    monkeypatch.setattr("cloud_chamber.app.load_settings", lambda: SimpleNamespace())
+
+    response = TestClient(app).post(
+        "/api/worlds/mountain-waves/variations",
+        json={
+            "parent_simulation_id": "mountain_waves_boulder_moist_reference",
+            "simulation_name": "Narrower mountain",
+            "user_question": None,
+            "recipe_id": BOULDER_RECIPE_ID,
+            "run_profile_id": "mountain_waves_boulder_presentation_v1",
+            "controls": MountainWavesRecipeControls.model_validate(
+                default_controls(BOULDER_RECIPE_ID)
+            ).model_dump(mode="json"),
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Mountain-wave evidence generation requires a clean Git worktree."
+    }
 
 
 @pytest.mark.parametrize(

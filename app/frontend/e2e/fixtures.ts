@@ -2526,6 +2526,11 @@ const mountainWavesReference = {
   parent_run_id: null,
   reference_simulation_id: "mountain_waves_boulder_moist_reference",
   user_question: null,
+  recipe_id: "boulder_moist_wave",
+  recipe_contract_version: "1",
+  relationship_classification: null,
+  legacy_contract: false,
+  parent_eligibility_reason: null,
   state: "available",
   state_message: "Exact preserved output is available for terrain-aware inspection.",
   inspectable: true,
@@ -2551,8 +2556,43 @@ const mountainWavesDry = {
   case_id: "dry-reference-case",
   moist: false,
   moist_fields_available: false,
-  can_create_variation: false,
+  can_create_variation: true,
+  recipe_id: "dry_ridge_mechanics",
   purpose: "Inspect terrain-forced wave mechanics without moisture.",
+};
+
+const mountainWavesBoulderControls = {
+  recipe_id: "boulder_moist_wave",
+  dry_ridge: null,
+  boulder_moist: {
+    ridge_height_m: 2000,
+    ridge_half_width_m: 10000,
+    low_level_wind_m_s: 14.1,
+    shear_through_10km_m_s: 23.8,
+    lower_layer_rh_percent: 66,
+    midlevel_rh_percent: 34.5,
+    dry_air_counterpart: false,
+    lower_stability_factor: 1,
+    midlevel_stability_factor: 1,
+    upper_stability_factor: 1,
+  },
+};
+
+const mountainWavesDryControls = {
+  recipe_id: "dry_ridge_mechanics",
+  dry_ridge: {
+    ridge_height_m: 400,
+    ridge_half_width_m: 1000,
+    cross_ridge_wind_m_s: 10,
+    dry_stability_n_s: 0.01,
+    wind_shear_through_10km_m_s: 0,
+    layered_stability: false,
+    lower_stability_n_s: 0.01,
+    upper_stability_n_s: 0.01,
+    stability_transition_height_m: 6000,
+    stability_transition_width_m: 1000,
+  },
+  boulder_moist: null,
 };
 
 const mountainWavesFrame = {
@@ -2686,11 +2726,101 @@ const mountainWavesFrame = {
   },
 };
 
+function mountainWavesProfile(
+  recipeId: "dry_ridge_mechanics" | "boulder_moist_wave",
+  role: "Quick" | "Standard" | "Presentation" | "Extended",
+) {
+  const dry = recipeId === "dry_ridge_mechanics";
+  const profileId = `mountain_waves_${dry ? "dry" : "boulder"}_${role.toLowerCase()}_v1`;
+  const characterized = role !== "Extended";
+  const histories = role === "Quick" ? 21 : role === "Standard" ? 61 : 241;
+  const sizeHigh = dry ? 105 * 1024 ** 2 : 1.35 * 1024 ** 3;
+  return {
+    profile: {
+      profile_id: profileId,
+      profile_name: `${role} — ${
+        dry
+          ? role === "Quick"
+            ? "Mechanics check"
+            : role === "Standard"
+              ? "Wave evolution"
+              : role === "Presentation"
+                ? "Smooth wave evolution"
+                : "Long wave evolution"
+          : role === "Quick"
+            ? "Wave/cloud response"
+            : role === "Standard"
+              ? "Full Boulder experiment"
+              : role === "Presentation"
+                ? "Detailed evolution"
+                : "Long adjustment"
+      }`,
+      role,
+      recipe_id: recipeId,
+      numerical_realization: {
+        domain: "Generated from exact Recipe controls",
+        grid: dry ? "293 × 1 × 180" : "642 × 1 × 250",
+        spacing: dry ? "100 × 100 m" : "500 × 100 m",
+        timestep_strategy: "CM1 adaptive timestep",
+        physics_source: "Recipe contract version 1",
+      },
+      observation_plan: {
+        duration_seconds: dry ? 2160 : 7200,
+        output_cadence_seconds: role === "Presentation" ? 30 : 120,
+        expected_history_count: histories,
+        retained_field_inventory: dry
+          ? ["zs", "zhval", "th", "prs", "uinterp", "winterp", "w"]
+          : ["zs", "zhval", "th", "prs", "qv", "ql", "uinterp", "winterp", "w"],
+      },
+      expected_runtime_min_seconds: characterized ? (dry ? 60 : 1440) : null,
+      expected_runtime_max_seconds: characterized ? (dry ? 120 : 1680) : null,
+      expected_size_min_bytes: characterized ? Math.round(sizeHigh * 0.85) : null,
+      expected_size_max_bytes: characterized ? Math.round(sizeHigh) : null,
+      estimate_basis: characterized ? "measured" : "uncharacterized",
+      confidence: characterized ? "high" : "none",
+      scientific_limitations: characterized ? [] : ["Not characterized for launch."],
+    },
+    current_free_space_bytes: 100 * 1024 ** 3,
+    projected_free_space_bytes: characterized ? 98 * 1024 ** 3 : null,
+    required_free_space_bytes: characterized ? Math.round(sizeHigh + 2 * 1024 ** 3) : null,
+    disposition: characterized ? "passes" : "blocked",
+    disposition_reason: characterized
+      ? "The high retained-size estimate fits while preserving the required safety margin."
+      : "This profile is uncharacterized.",
+  };
+}
+
+function mountainWavesVariationTemplate(parent: typeof mountainWavesReference) {
+  const dry = parent.simulation_id === mountainWavesDry.simulation_id;
+  const recipeId = dry ? "dry_ridge_mechanics" : "boulder_moist_wave";
+  return {
+    parent_simulation_id: parent.simulation_id,
+    parent_run_id: parent.run_id,
+    parent_display_name: parent.display_name,
+    parent_configuration_source: dry
+      ? "hash-locked Dry Ridge analytic Recipe generator"
+      : "retained Boulder source-backed atmosphere and terrain",
+    reference_simulation_id: dry
+      ? mountainWavesDry.simulation_id
+      : mountainWavesReference.simulation_id,
+    recipe_id: recipeId,
+    recipe_name: dry ? "Dry Ridge Mechanics" : "Boulder Moist Wave",
+    recipe_contract_version: "1",
+    controls: dry ? mountainWavesDryControls : mountainWavesBoulderControls,
+    run_profiles: (["Quick", "Standard", "Presentation", "Extended"] as const).map((role) =>
+      mountainWavesProfile(recipeId, role),
+    ),
+    default_run_profile_id: `mountain_waves_${dry ? "dry" : "boulder"}_presentation_v1`,
+    can_create_variation: true,
+    unavailable_reason: null,
+  };
+}
+
 export async function mockMountainWavesProductPath(
   page: Page,
   options: { failPackage?: boolean } = {},
 ) {
-  type Stage = "idle" | "queued" | "running" | "completed";
+  type Stage = "idle" | "packaged" | "queued" | "running" | "completed";
   let stage: Stage = "idle";
   const variation = {
     ...mountainWavesReference,
@@ -2701,6 +2831,11 @@ export async function mockMountainWavesProductPath(
     case_id: "mountain_waves_exploratory_variation_v1",
     parent_simulation_id: mountainWavesReference.simulation_id,
     parent_run_id: mountainWavesReference.run_id,
+    recipe_id: "boulder_moist_wave",
+    recipe_contract_version: "1",
+    relationship_classification: "controlled_physical_variation",
+    legacy_contract: false,
+    parent_eligibility_reason: null,
     configuration: {
       ...mountainWavesConfiguration,
       terrain: { ...mountainWavesConfiguration.terrain, half_width_m: 11000 },
@@ -2711,16 +2846,18 @@ export async function mockMountainWavesProductPath(
     manifest_path: "/mock/variation/run_manifest.json",
   };
   const worldPayload = (current: Stage) => {
-    const active = current === "queued" || current === "running";
+    const active = current === "packaged" || current === "queued" || current === "running";
     const completed = current === "completed";
     const attempt = {
       ...variation,
       state: completed ? "available" : current,
       state_message: completed
         ? "CM1 completed normally with 21 exact native histories ready for inspection."
-        : current === "running"
-          ? "CM1 is running locally."
-          : "Waiting for the local CM1 runner.",
+        : current === "packaged"
+          ? "The exact package is ready and has not been queued."
+          : current === "running"
+            ? "CM1 is running locally."
+            : "Waiting for the local CM1 runner.",
       inspectable: completed,
       can_create_variation: completed,
     };
@@ -2735,8 +2872,8 @@ export async function mockMountainWavesProductPath(
       activity: active ? [attempt] : [],
       history: current === "idle" ? [] : [attempt],
       lab_summary: {
-        active_run_count: active ? 1 : 0,
-        packaged_run_count: 0,
+        active_run_count: current === "queued" || current === "running" ? 1 : 0,
+        packaged_run_count: current === "packaged" ? 1 : 0,
         completed_simulation_count: completed ? 1 : 0,
         failed_run_count: 0,
         total_variation_count: current === "idle" ? 0 : 1,
@@ -2744,6 +2881,75 @@ export async function mockMountainWavesProductPath(
       caveats: ["The dry and moist built-ins are not a controlled pair."],
     };
   };
+  const compareSimulation = (simulation: typeof mountainWavesReference | typeof variation) => ({
+    simulation_id: simulation.simulation_id,
+    display_name: simulation.display_name,
+    world_id: "mountain_waves",
+    role: simulation.role,
+    run_id: simulation.run_id,
+    result_id: null,
+    case_id: simulation.case_id,
+    parent_simulation_id: simulation.parent_simulation_id,
+    reference_simulation_id: simulation.reference_simulation_id,
+    lineage_state: simulation.parent_simulation_id ? "retained_variation" : "known",
+    availability_state: "available",
+    availability_message: "Exact preserved output is available for terrain-aware inspection.",
+    inspectable: true,
+    grid: {
+      topology: "native_2d_xz",
+      nx: 440,
+      ny: 1,
+      nz: 250,
+      dx_m: 500,
+      dy_m: 500,
+      dz_m: 100,
+      x_extent_km: [-110, 110],
+      y_extent_km: null,
+      z_extent_km: [0, 25],
+    },
+    time: {
+      times_seconds: [0, 200],
+      start_seconds: 0,
+      end_seconds: 200,
+      cadence_seconds: 200,
+      saved_output_count: 2,
+      interpolation_allowed: false,
+    },
+    available_field_ids: ["w", "theta_perturbation", "cloud_liquid", "relative_humidity"],
+    available_view_ids: ["field", "wave_structure", "wave_cloud"],
+    fixed_scale_ids: [
+      "mountain_waves_vertical_velocity_v1",
+      "mountain_waves_theta_perturbation_v1",
+      "mountain_waves_cloud_liquid_v1",
+      "mountain_waves_relative_humidity_v1",
+    ],
+    plane_orientations: [],
+    camera_mapping: "native_2d_xz",
+    initial_state: {
+      state_version: 1,
+      model_time_seconds: 200,
+      context_collapsed: false,
+      secondary_section: "science",
+      selected_point: null,
+      world_id: "mountain_waves",
+      view_id: "wave_cloud",
+      field_id: "w",
+      fixed_scale_id: "mountain_waves_vertical_velocity_v1",
+      viewport_id: "focus",
+      geometry_id: "expanded",
+      overlays: {
+        cloud_points: true,
+        cloud_boundary: true,
+        saturation_contour: true,
+        horizontal_wind: true,
+        potential_temperature_contours: false,
+      },
+      cloud_opacity: 0.68,
+      cloud_point_size_px: 11,
+      playback_speed: 1,
+    },
+    caveats: [],
+  });
 
   await page.unroute("**/api/worlds");
   await page.route("**/api/worlds", (route) =>
@@ -2771,61 +2977,173 @@ export async function mockMountainWavesProductPath(
     else if (stage === "running") stage = "completed";
     return json(route, worldPayload(current));
   });
+  await page.route("**/api/worlds/mountain-waves/compare**", (route) => {
+    const search = new URL(route.request().url()).searchParams;
+    const leftId = search.get("left_simulation_id") ?? variation.simulation_id;
+    const rightId = search.get("right_simulation_id") ?? mountainWavesReference.simulation_id;
+    const left = leftId === variation.simulation_id ? variation : mountainWavesReference;
+    const right = rightId === variation.simulation_id ? variation : mountainWavesReference;
+    const variationIsLeft = left.simulation_id === variation.simulation_id;
+    return json(route, {
+      schema_version: "world_compare_v1",
+      world_id: "mountain_waves",
+      display_name: "Mountain Waves",
+      simulations: [mountainWavesReference, variation].map(compareSimulation),
+      default_left_simulation_id: variation.simulation_id,
+      default_right_simulation_id: mountainWavesReference.simulation_id,
+      selected_left_simulation_id: left.simulation_id,
+      selected_right_simulation_id: right.simulation_id,
+      material_differences: [
+        {
+          path: "controls.ridge_half_width_m",
+          label: "Ridge half-width",
+          category: "atmospheric",
+          left_value: variationIsLeft ? 11000 : 10000,
+          right_value: variationIsLeft ? 10000 : 11000,
+          left_known: true,
+          right_known: true,
+          units: "m",
+          material: true,
+        },
+      ],
+      compatibility: {
+        same_world: true,
+        both_inspectable: true,
+        relationship:
+          "Broader Ridge is a controlled physical variation of Boulder Windstorm — Moist Reference.",
+        controlled_pair: true,
+        controlled_pair_message:
+          "The shared variation envelope records one material physical change and matched numerical and observation layers.",
+        shared_field_ids: ["w", "theta_perturbation", "cloud_liquid", "relative_humidity"],
+        shared_view_ids: ["field", "wave_structure", "wave_cloud"],
+        shared_fixed_scale_ids: [
+          "mountain_waves_vertical_velocity_v1",
+          "mountain_waves_theta_perturbation_v1",
+          "mountain_waves_cloud_liquid_v1",
+          "mountain_waves_relative_humidity_v1",
+        ],
+        exact_time_link_available: true,
+        nearest_time_link_available: true,
+        time_tolerance_seconds: 100,
+        physical_plane_link_available: false,
+        camera_link_available: false,
+        selection_link_available: true,
+        blockers: [],
+      },
+      no_second_simulation_message: null,
+      persistence: "transient_only",
+    });
+  });
   await page.route("**/api/worlds/mountain-waves/variation-template**", (route) => {
     const parentId = new URL(route.request().url()).searchParams.get("parent_simulation_id");
-    const parent = parentId === variation.simulation_id ? variation : mountainWavesReference;
-    return json(route, {
-      parent_simulation_id: parent.simulation_id,
-      parent_run_id: parent.run_id,
-      parent_display_name: parent.display_name,
-      parent_configuration_source: "retained exact parent variation configuration",
-      reference_simulation_id: mountainWavesReference.simulation_id,
-      configuration: parent.configuration,
-      can_create_variation: true,
-      unavailable_reason: null,
-    });
+    const parent =
+      parentId === mountainWavesDry.simulation_id
+        ? mountainWavesDry
+        : parentId === variation.simulation_id
+          ? variation
+          : mountainWavesReference;
+    return json(route, mountainWavesVariationTemplate(parent));
   });
   await page.route("**/api/worlds/mountain-waves/variations/preview", async (route) => {
     const request = route.request().postDataJSON() as {
-      configuration: typeof mountainWavesConfiguration;
+      recipe_id: "dry_ridge_mechanics" | "boulder_moist_wave";
+      run_profile_id: string;
+      controls: typeof mountainWavesBoulderControls | typeof mountainWavesDryControls;
     };
-    const changed = request.configuration.terrain.half_width_m !== 10000;
+    const dry = request.recipe_id === "dry_ridge_mechanics";
+    const halfWidth = dry
+      ? request.controls.dry_ridge?.ridge_half_width_m
+      : request.controls.boulder_moist?.ridge_half_width_m;
+    const referenceHalfWidth = dry ? 1000 : 10000;
+    const changed = halfWidth !== referenceHalfWidth;
+    const estimate = mountainWavesProfile(
+      request.recipe_id,
+      request.run_profile_id.includes("presentation") ? "Presentation" : "Standard",
+    );
     return json(route, {
+      recipe_id: request.recipe_id,
+      recipe_name: dry ? "Dry Ridge Mechanics" : "Boulder Moist Wave",
+      resolved_controls: dry
+        ? request.controls.dry_ridge
+        : request.controls.boulder_moist,
       differences: {
         terrain: changed
           ? [
               {
+                path: "terrain.ridge_half_width_m",
                 label: "Ridge half-width",
-                before: 10000,
-                after: request.configuration.terrain.half_width_m,
+                before: referenceHalfWidth,
+                after: halfWidth,
                 units: "m",
+                material: true,
               },
             ]
           : [],
         wind: [],
         moisture: [],
         "stability/thermodynamics": [],
-        "numerics/time": [],
-        output: [],
+        "forcing/initiation": [],
+        "numerical realization": [],
+        "observation plan": [],
       },
+      relationship_classification: changed ? "controlled_physical_variation" : null,
       warnings: [],
-      blocking_errors: changed ? [] : ["Change at least one editable setting."],
-      derived_stability_n2_s2: [0.0001, 0.0001],
-      terrain_profile: [],
+      blocking_errors: changed
+        ? []
+        : ["Change at least one Recipe control or explicitly select a different run profile."],
+      diagnostics: {
+        maximum_terrain_slope: 0.2,
+        cells_per_half_width: 20,
+        nondimensional_mountain_height: dry ? 0.4 : 2.1,
+        nonhydrostatic_width_parameter: dry ? 1 : 10,
+        critical_levels_m: [],
+        terrain_resolution: "20 cells per half-width",
+        upstream_clearance_km: 50,
+        downstream_clearance_km: 80,
+        advective_time_seconds: 3600,
+        periodic_wrap_time_seconds: 10800,
+        model_top_m: dry ? 18000 : 25000,
+        damping_base_m: dry ? 14000 : 20000,
+        labels: [dry ? "linear / weakly nonlinear" : "trapped / ducted structure possible"],
+      },
+      terrain_profile: [
+        { x_m: -10000, height_m: 0 },
+        { x_m: 0, height_m: dry ? 400 : 2000 },
+        { x_m: 10000, height_m: 0 },
+      ],
+      wind_profile: [{ height_m: 0, value: dry ? 10 : 12 }],
+      moisture_profile: [{ height_m: 0, value: dry ? 0 : 8 }],
+      relative_humidity_profile: [{ height_m: 0, value: dry ? 0 : 72 }],
+      theta_profile: [{ height_m: 0, value: 288 }],
+      stability_profile: [{ height_m: 0, n2_s2: 0.0001 }],
+      numerical_realization: estimate.profile.numerical_realization,
+      observation_plan: estimate.profile.observation_plan,
+      cost_estimate: estimate,
     });
   });
   await page.route("**/api/worlds/mountain-waves/variations", (route) => {
     if (options.failPackage)
       return json(route, { detail: "Variation package preflight failed." }, 400);
-    stage = "queued";
+    stage = "packaged";
     return json(route, {
       simulation_id: variation.simulation_id,
       run_id: variation.run_id,
       manifest_path: variation.manifest_path,
       package_dir: "/mock/variation",
-      differences: variation.differences,
+      launch_review_snapshot_id: "mock-launch-review",
       warnings: [],
-      preflight: { passed: true },
+    });
+  });
+  await page.unroute("**/api/runs/queue");
+  await page.route("**/api/runs/queue", (route) => {
+    if (route.request().method() === "POST") {
+      stage = "completed";
+    }
+    return json(route, {
+      entries: [],
+      active_run_id: null,
+      queued_count: stage === "queued" ? 1 : 0,
+      updated_at: "2026-07-22T01:00:00Z",
     });
   });
   await page.route("**/api/worlds/mountain-waves/simulations/*/frame**", (route) =>
