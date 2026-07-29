@@ -191,19 +191,23 @@ def _trade_descriptor(
         left_simulation_id or default_left,
         right_simulation_id or default_right,
     )
-    differences = _trade_differences(left, right, world.simulations)
+    records = {item.simulation_id: item for item in world.simulations}
+    left_record = records[left.simulation_id]
+    right_record = records[right.simulation_id]
+    direct_relationship = _trade_envelope_relationship(left_record, right_record)
+    differences = _trade_differences(left_record, right_record)
+    pair_classification = direct_relationship or _trade_pair_classification(
+        left_record,
+        right_record,
+        differences,
+    )
+    controlled = pair_classification == "controlled_physical_variation"
     compatibility = _compatibility(
         left,
         right,
-        relationship=_relationship(left, right),
-        controlled_pair=bool(
-            {left.simulation_id, right.simulation_id} == {default_left, default_right}
-        ),
-        controlled_message=(
-            "Only surface moisture supply changed; the retained pair is a controlled comparison."
-            if {left.simulation_id, right.simulation_id} == {default_left, default_right}
-            else "The selected Trade Cumulus relationship is not the approved controlled pair."
-        ),
+        relationship=_trade_relationship_message(left, right, pair_classification),
+        controlled_pair=controlled,
+        controlled_message=_trade_controlled_message(pair_classification),
     )
     return WorldCompareDescriptor(
         world_id="trade_cumulus",
@@ -362,10 +366,34 @@ def _supercells_descriptor(
 def _trade_simulation(record: SimulationRecord) -> CompareSimulationDescriptor:
     if record.simulation_id is None:
         raise ValueError("Trade Cumulus Compare requires stable Simulation identity.")
+    configuration = record.configuration or {}
+    domain = configuration.get("domain") if isinstance(configuration, Mapping) else {}
+    domain = domain if isinstance(domain, Mapping) else {}
+    observation = record.observation_plan if isinstance(record.observation_plan, Mapping) else {}
+    duration = _number(
+        observation.get("duration_seconds"),
+        _number(configuration.get("duration_seconds"), 14_400),
+    )
+    cadence = _number(
+        observation.get("output_cadence_seconds"),
+        _number(configuration.get("output_cadence_seconds"), 60),
+    )
+    nx = int(_number(domain.get("nx"), 96))
+    ny = int(_number(domain.get("ny"), 96))
+    nz = int(_number(domain.get("nz"), 100))
+    dx = _number(domain.get("dx_m"), 66.6666667)
+    dy = _number(domain.get("dy_m"), 66.6666667)
+    dz = _number(domain.get("dz_m"), 30)
+    model_top = _number(domain.get("model_top_m"), nz * dz)
     is_more_moisture = record.simulation_id == "trade_cumulus_more_moisture"
-    time_seconds = 13_920.0 if is_more_moisture else 12_060.0
-    plane_index = 72 if is_more_moisture else 83
-    plane_coordinate = 1.6333333253860474 if is_more_moisture else 2.366666555404663
+    is_baseline = record.simulation_id == "trade_cumulus_canonical_bomex"
+    time_seconds = 13_920.0 if is_more_moisture else (12_060.0 if is_baseline else duration)
+    time_seconds = min(time_seconds, duration)
+    plane_index = 72 if is_more_moisture else (83 if is_baseline else ny // 2)
+    plane_index = min(max(plane_index, 0), max(ny - 1, 0))
+    plane_coordinate = (
+        1.6333333253860474 if is_more_moisture else (2.366666555404663 if is_baseline else 0.0)
+    )
     return CompareSimulationDescriptor(
         simulation_id=record.simulation_id,
         display_name=record.display_name,
@@ -382,17 +410,17 @@ def _trade_simulation(record: SimulationRecord) -> CompareSimulationDescriptor:
         inspectable=record.explore_available,
         grid=CompareGridDescriptor(
             topology="native_3d",
-            nx=96,
-            ny=96,
-            nz=100,
-            dx_m=66.6666667,
-            dy_m=66.6666667,
-            dz_m=30.0,
-            x_extent_km=(-3.2, 3.2),
-            y_extent_km=(-3.2, 3.2),
-            z_extent_km=(0.0, 3.0),
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            dx_m=dx,
+            dy_m=dy,
+            dz_m=dz,
+            x_extent_km=(-0.5 * nx * dx / 1_000, 0.5 * nx * dx / 1_000),
+            y_extent_km=(-0.5 * ny * dy / 1_000, 0.5 * ny * dy / 1_000),
+            z_extent_km=(0.0, model_top / 1_000),
         ),
-        time=_regular_time_descriptor(14_400, 60),
+        time=_regular_time_descriptor(duration, cadence),
         available_field_ids=["ql", "w"],
         available_view_ids=["field", "updraft_lens"],
         fixed_scale_ids=["trade_cumulus_updraft_velocity_v1"],
@@ -708,27 +736,17 @@ def _relationship(
 
 
 def _trade_differences(
-    left: CompareSimulationDescriptor,
-    right: CompareSimulationDescriptor,
-    records: list[SimulationRecord],
+    left: SimulationRecord,
+    right: SimulationRecord,
 ) -> list[CompareDifference]:
-    if right.simulation_id == "trade_cumulus_more_moisture":
-        source = next(
-            item for item in records if item.simulation_id == "trade_cumulus_more_moisture"
-        )
-        reverse = False
-    elif left.simulation_id == "trade_cumulus_more_moisture":
-        source = next(
-            item for item in records if item.simulation_id == "trade_cumulus_more_moisture"
-        )
-        reverse = True
-    else:
-        return []
-    differences = []
-    for item in source.configuration_difference_from_reference or []:
-        if not item.material:
-            continue
-        differences.append(
+    child = (
+        right
+        if right.parent_simulation_id == left.simulation_id
+        else (left if left.parent_simulation_id == right.simulation_id else None)
+    )
+    if child is not None and child.configuration_difference_from_reference is not None:
+        reverse = child is left
+        return [
             CompareDifference(
                 path=item.path,
                 label=item.label,
@@ -738,8 +756,175 @@ def _trade_differences(
                 units=item.units,
                 material=True,
             )
+            for item in child.configuration_difference_from_reference
+            if item.material
+        ]
+
+    rows: list[CompareDifference] = []
+    for prefix, category, left_payload, right_payload in (
+        (
+            "scientific_design",
+            "atmospheric",
+            left.scientific_design,
+            right.scientific_design,
+        ),
+        (
+            "numerical_realization",
+            "numerical",
+            left.numerical_realization,
+            right.numerical_realization,
+        ),
+        (
+            "observation_plan",
+            "output",
+            left.observation_plan,
+            right.observation_plan,
+        ),
+    ):
+        for item in _mapping_differences(left_payload, right_payload):
+            rows.append(
+                item.model_copy(
+                    update={
+                        "path": f"{prefix}.{item.path}",
+                        "label": _trade_difference_label(f"{prefix}.{item.path}"),
+                        "category": category,
+                        "units": _trade_difference_units(f"{prefix}.{item.path}"),
+                    }
+                )
+            )
+    return rows
+
+
+def _trade_envelope_relationship(
+    left: SimulationRecord,
+    right: SimulationRecord,
+) -> str | None:
+    if right.parent_simulation_id == left.simulation_id:
+        return right.relationship_classification
+    if left.parent_simulation_id == right.simulation_id:
+        return left.relationship_classification
+    return None
+
+
+def _trade_pair_classification(
+    left: SimulationRecord,
+    right: SimulationRecord,
+    differences: list[CompareDifference],
+) -> str:
+    if (
+        left.source_recipe_id
+        and right.source_recipe_id
+        and left.source_recipe_id != right.source_recipe_id
+    ):
+        return "different_recipes"
+    physical = [item for item in differences if item.category == "atmospheric"]
+    numerical = [item for item in differences if item.category == "numerical"]
+    observation = [item for item in differences if item.category == "output"]
+    if physical and (numerical or observation):
+        return "mixed_variation"
+    if numerical:
+        return "numerical_sensitivity"
+    if physical:
+        return (
+            "controlled_physical_variation"
+            if len(physical) == 1
+            else "multi_factor_physical_variation"
         )
-    return differences
+    if observation:
+        return "observation_only_attempt"
+    return "replicate_realization"
+
+
+def _trade_relationship_message(
+    left: CompareSimulationDescriptor,
+    right: CompareSimulationDescriptor,
+    classification: str,
+) -> str:
+    relationship = classification.replace("_", " ")
+    if right.parent_simulation_id == left.simulation_id:
+        return f"{right.display_name} is a {relationship} of {left.display_name}."
+    if left.parent_simulation_id == right.simulation_id:
+        return f"{left.display_name} is a {relationship} of {right.display_name}."
+    if classification == "different_recipes":
+        return "The selected Simulations do not share one Trade Cumulus Recipe."
+    return f"The selected same-Recipe Simulations form a {relationship}."
+
+
+def _trade_controlled_message(classification: str) -> str:
+    messages = {
+        "controlled_physical_variation": (
+            "One material physical control changed while the numerical and observation "
+            "layers remain matched."
+        ),
+        "multi_factor_physical_variation": (
+            "Multiple physical controls changed; this is not a one-factor comparison."
+        ),
+        "numerical_sensitivity": (
+            "The numerical realization changed without a material physical-control change."
+        ),
+        "mixed_variation": (
+            "Physical controls and the numerical or observation layer both changed."
+        ),
+        "observation_only_attempt": (
+            "Only the observation plan changed; the physical design remains matched."
+        ),
+        "replicate_realization": "No material normalized difference is recorded.",
+        "different_recipes": "The selected Simulations do not share one Recipe contract.",
+    }
+    return messages.get(classification, f"Pair classification: {classification}.")
+
+
+def _trade_difference_label(path: str) -> str:
+    labels = {
+        "scientific_design.controls.surface_sensible_heat_flux_k_m_s": (
+            "Surface sensible heat flux"
+        ),
+        "scientific_design.controls.surface_moisture_flux_g_kg_m_s": ("Surface moisture flux"),
+        "scientific_design.controls.sub_inversion_total_water_g_kg": (
+            "Sub-inversion total-water mean"
+        ),
+        "scientific_design.controls.inversion_base_m_agl": "Inversion base",
+        "scientific_design.controls.inversion_thickness_m": "Inversion thickness",
+        "scientific_design.controls.inversion_strength_k": "Inversion strength",
+        "scientific_design.controls.free_tropospheric_rh_percent": ("Free-tropospheric mean RH"),
+        "scientific_design.controls.cloud_layer_shear_m_s": "0–3 km shear",
+        "scientific_design.controls.cloud_layer_shear_direction_deg": ("0–3 km shear direction"),
+        "scientific_design.controls.cloud_layer_mean_u_m_s": "0–3 km mean u wind",
+        "scientific_design.controls.cloud_layer_mean_v_m_s": "0–3 km mean v wind",
+        "scientific_design.controls.large_scale_vertical_motion_m_s": (
+            "Peak large-scale vertical motion"
+        ),
+        "scientific_design.controls.temperature_tendency_k_day": ("Peak temperature tendency"),
+        "scientific_design.controls.total_water_tendency_g_kg_day": ("Peak total-water tendency"),
+        "observation_plan.output_cadence_seconds": "Saved-output cadence",
+        "observation_plan.duration_seconds": "Simulation duration",
+        "observation_plan.expected_history_count": "Expected saved outputs",
+    }
+    return labels.get(path, path.replace(".", " / ").replace("_", " ").title())
+
+
+def _trade_difference_units(path: str) -> str | None:
+    if path.endswith("surface_sensible_heat_flux_k_m_s"):
+        return "K m/s"
+    if path.endswith("surface_moisture_flux_g_kg_m_s"):
+        return "g/kg m/s"
+    if path.endswith(("sub_inversion_total_water_g_kg", "total_water_tendency_g_kg_day")):
+        return "g/kg" if path.endswith("_g_kg") else "g/kg/day"
+    if path.endswith(("_base_m_agl", "_thickness_m")):
+        return "m"
+    if path.endswith("_strength_k"):
+        return "K"
+    if path.endswith("_rh_percent"):
+        return "%"
+    if path.endswith(("_shear_m_s", "_mean_u_m_s", "_mean_v_m_s", "_motion_m_s")):
+        return "m/s"
+    if path.endswith("_direction_deg"):
+        return "deg"
+    if path.endswith("_tendency_k_day"):
+        return "K/day"
+    if path.endswith("_seconds"):
+        return "s"
+    return None
 
 
 def _mapping_differences(

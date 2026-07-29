@@ -239,6 +239,21 @@
   min-width: 0;
 }
 
+.variation-range-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5.2rem;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.variation-range-inputs input[type="number"] {
+  box-sizing: border-box;
+  min-height: 2rem;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .variation-range-field small {
   color: var(--color-text-muted);
   font-size: 0.59rem;
@@ -276,6 +291,66 @@
 
 .variation-advanced[open] .variation-control-groups {
   margin-top: 0.7rem;
+}
+
+.variation-wind-summary {
+  display: grid;
+  gap: 0.18rem;
+  border-left: 3px solid var(--color-border-strong);
+  padding: 0.35rem 0.55rem;
+  background: var(--color-surface-muted);
+}
+
+.variation-wind-summary span {
+  color: var(--color-text-muted);
+  font-size: 0.6rem;
+}
+
+.variation-wind-summary strong {
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.variation-forcing-controls {
+  display: grid;
+  gap: 0.7rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.7rem;
+}
+
+.variation-forcing-controls > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.variation-forcing-controls h5,
+.variation-forcing-controls p {
+  margin: 0;
+}
+
+.variation-forcing-controls h5 {
+  font-size: 0.72rem;
+}
+
+.variation-forcing-controls p {
+  margin-top: 0.12rem;
+  color: var(--color-text-muted);
+  font-size: 0.62rem;
+}
+
+.variation-convenience-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.variation-convenience-actions button {
+  min-height: 2rem;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.62rem;
 }
 
 .variation-scientific-preview {
@@ -410,6 +485,12 @@
   stroke-width: 1;
 }
 
+.variation-profile-plot .profile-marker {
+  stroke: var(--color-warning);
+  stroke-dasharray: 2 3;
+  stroke-width: 1;
+}
+
 .variation-profile-plot .profile-line {
   fill: none;
   stroke: var(--color-accent-primary);
@@ -449,6 +530,10 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.45rem;
+}
+
+.trade-profile-options {
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
 }
 
 .variation-profile-option {
@@ -672,6 +757,62 @@
   text-align: right;
 }
 
+.variation-exact-review {
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.55rem;
+}
+
+.variation-exact-review summary {
+  font-size: 0.68rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.variation-exact-table {
+  display: grid;
+  gap: 0;
+  margin-top: 0.45rem;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.variation-exact-heading,
+.variation-exact-table > div:not(.variation-exact-heading) {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 1.7fr) repeat(4, minmax(3.2rem, 0.72fr));
+  column-gap: 0.25rem;
+  align-items: center;
+}
+
+.variation-exact-heading {
+  padding: 0.3rem 0.35rem;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: 0.51rem;
+  font-weight: 800;
+}
+
+.variation-exact-table > div:not(.variation-exact-heading) {
+  border-top: 1px solid var(--color-border);
+  padding: 0.34rem 0.35rem 0.26rem;
+  font-size: 0.55rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.variation-exact-table strong {
+  min-width: 0;
+  font-size: 0.55rem;
+  overflow-wrap: anywhere;
+}
+
+.variation-exact-table small {
+  grid-column: 1 / -1;
+  margin-top: 0.08rem;
+  color: var(--color-text-muted);
+  font-size: 0.49rem;
+}
+
 .variation-budget {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -745,6 +886,36 @@
   margin: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.58rem;
+}
+
+.variation-packaged-state small {
+  color: var(--color-text-muted);
+  font-size: 0.6rem;
+}
+
+.world-create-variation-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.8rem 0;
+}
+
+.world-create-variation-callout h3,
+.world-create-variation-callout p {
+  margin: 0;
+}
+
+.world-create-variation-callout > div {
+  display: grid;
+  gap: 0.16rem;
+}
+
+.world-create-variation-callout > div > p:last-child {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
 }
 
 .mountain-waves-scientific-view {

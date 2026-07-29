@@ -481,6 +481,14 @@ Mechanics and Boulder Moist Wave Recipe controls. Deterministic generators
 resolve those controls into complete sounding, terrain, domain, timing, output,
 diagnostic, and run-cost specifications.
 
+Trade Cumulus implements its separate typed direct-value payload in
+`app/backend/cloud_chamber/trade_cumulus_recipes.py`. Its generator resolves
+signed surface exchange, absolute atmosphere and wind targets, and signed
+large-scale forcing into complete external sounding and forcing profiles. The
+package layer in `trade_cumulus_variations.py` binds those profiles to the
+source-locked BOMEX implementation, explicit run profile, output contract,
+immutable launch review, and generated-input readback.
+
 Package identity is derived from the immutable layers. The same specification
 therefore resolves to the same intended Simulation identity, while each
 packaging creates a distinct technical attempt and run ID. Exact inheritance,
@@ -493,6 +501,16 @@ The Mountain Waves API keeps preview, package, and queue separate:
 GET  /api/worlds/mountain-waves/variation-template
 POST /api/worlds/mountain-waves/variations/preview
 POST /api/worlds/mountain-waves/variations
+POST /api/runs/queue
+```
+
+Trade Cumulus uses the same lifecycle separation:
+
+```text
+GET  /api/worlds/trade-cumulus/variation-template
+POST /api/worlds/trade-cumulus/variations/preview
+POST /api/worlds/trade-cumulus/variations
+POST /api/worlds/trade-cumulus/variations/preflight
 POST /api/runs/queue
 ```
 
@@ -600,8 +618,11 @@ only in a transient unsaved pair.
 
 Saved Comparisons do not write the per-Simulation Explore-state library or
 mutate either Simulation. Compare consumes the shared envelope relationship and
-material differences for Mountain Waves parent-child pairs. Other Worlds do not
-yet provide typed Recipe payloads to the common variation envelope.
+material differences for Mountain Waves and Trade Cumulus parent-child pairs.
+It derives Trade Cumulus grid, timeline, and normalized differences from the
+retained immutable layers rather than assuming the built-in Presentation pair.
+Supercells does not yet provide a typed Recipe payload to the common variation
+envelope.
 
 ## Product and Research Boundaries
 
@@ -620,8 +641,9 @@ reused.
 - World shells and Explore implementations share vocabulary but still contain
   World-specific state and rendering code.
 - Saved Comparisons are local filesystem state and do not synchronize across devices.
-- The shared variation envelope is implemented, but only Mountain Waves
-  currently provides typed Recipe payloads and a Create Variation surface.
+- The shared variation envelope is implemented for Mountain Waves and Trade
+  Cumulus; Supercells does not yet provide a typed Recipe payload or Create
+  Variation surface.
 - Legacy run, result, and sounding surfaces remain interleaved with the newer
   World application.
 - Filesystem-backed runtime metadata is local and not a durable multi-device

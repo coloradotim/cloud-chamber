@@ -10,6 +10,7 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from cloud_chamber.bomex_case import BomexCaseError
 from cloud_chamber.cli import ENGINE_NOTE
 from cloud_chamber.cloud_worlds import (
     MORE_MOISTURE_SIMULATION_ID as TRADE_MORE_MOISTURE_SIMULATION_ID,
@@ -213,6 +214,17 @@ from cloud_chamber.trade_cumulus_updraft_lens import (
     WindMode,
     trade_cumulus_updraft_lens_defaults,
     trade_cumulus_updraft_lens_frame,
+)
+from cloud_chamber.trade_cumulus_variations import (
+    TradeCumulusVariationError,
+    TradeCumulusVariationPackage,
+    TradeCumulusVariationPreview,
+    TradeCumulusVariationRequest,
+    TradeCumulusVariationTemplate,
+    create_trade_cumulus_variation,
+    preflight_trade_cumulus_variation,
+    preview_trade_cumulus_variation,
+    trade_cumulus_variation_template,
 )
 from cloud_chamber.visualization_data import (
     ProfileAggregationMethod,
@@ -1176,6 +1188,59 @@ def delete_simulation_saved_view(
             canonical_world_id, simulation_id, settings=settings
         ),
     )
+
+
+@app.get(
+    "/api/worlds/trade-cumulus/variation-template",
+    response_model=TradeCumulusVariationTemplate,
+)
+def get_trade_cumulus_variation_template(
+    parent_simulation_id: str,
+) -> TradeCumulusVariationTemplate:
+    try:
+        return trade_cumulus_variation_template(load_settings(), parent_simulation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, TradeCumulusVariationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/api/worlds/trade-cumulus/variations/preview",
+    response_model=TradeCumulusVariationPreview,
+)
+def preview_trade_cumulus_variation_request(
+    request: TradeCumulusVariationRequest,
+) -> TradeCumulusVariationPreview:
+    try:
+        return preview_trade_cumulus_variation(load_settings(), request)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, TradeCumulusVariationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/api/worlds/trade-cumulus/variations",
+    response_model=TradeCumulusVariationPackage,
+)
+def package_trade_cumulus_variation(
+    request: TradeCumulusVariationRequest,
+) -> TradeCumulusVariationPackage:
+    try:
+        return create_trade_cumulus_variation(load_settings(), request)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, BomexCaseError, TradeCumulusVariationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/worlds/trade-cumulus/variations/preflight")
+def preflight_trade_cumulus_variation_request(request: LaunchRunRequest) -> dict[str, Any]:
+    try:
+        return preflight_trade_cumulus_variation(Path(request.manifest_path).expanduser())
+    except (OSError, ValueError, TradeCumulusVariationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get(

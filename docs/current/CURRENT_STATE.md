@@ -68,8 +68,8 @@ retained Experiments open directly in non-World Explore.
 
 | World | Current content | Current surfaces | Current limitation |
 | --- | --- | --- | --- |
-| **Trade Cumulus** | Canonical BOMEX Baseline and More Moisture retained Simulations | Overview, Simulations, Activity, History, featured and ordinary Compare, Saved Comparisons, Explore resume, and Saved Views | Shared variation creation is not implemented |
-| **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, Activity, History, ordinary Compare, Saved Comparisons, shared-contract Create Variation, Explore resume, and Saved Views | The first shared variation envelope is implemented; other Worlds do not yet supply Recipe payloads |
+| **Trade Cumulus** | Canonical BOMEX Baseline and More Moisture retained Simulations | Overview, Simulations, Activity, History, featured and ordinary Compare, Saved Comparisons, direct-value Create Variation, Explore resume, and Saved Views | Standard and Extended profile characterization remains separately gated |
+| **Mountain Waves** | Dry Ridge and Boulder Windstorm retained Simulations | Overview, Simulations, Activity, History, ordinary Compare, Saved Comparisons, shared-contract Create Variation, Explore resume, and Saved Views | The first shared variation envelope remains the reference implementation |
 | **Supercells** | Quarter-Circle and Straight-Line Hodograph retained Simulations | Overview, Simulations, Activity, History, ordinary Compare, Saved Comparisons, Explore resume, and Saved Views | No create-variation workflow |
 
 The World Overview and Simulations surfaces use stable content identities and
@@ -98,8 +98,9 @@ and attempt relationships with text search, practical filters, and sort.
 Technical identifiers, differences, caveats, dependencies, and attempt evidence
 remain available on demand.
 
-Current shared-envelope Mountain Waves variations can be assigned to their
-World when their Recipe identity and current contract evidence are present.
+Current shared-envelope Mountain Waves and Trade Cumulus variations can be
+assigned to their World when their Recipe identity and current contract
+evidence are present.
 Availability is evaluated independently from parent eligibility. A World name
 or Simulation string by itself does not establish ownership. Sounding-related
 work remains under Fun With Soundings, while ambiguous records remain visibly
@@ -107,7 +108,7 @@ legacy or unassigned.
 
 ## Create Variation
 
-Mountain Waves is the first consumer of the shared variation envelope. The
+Mountain Waves and Trade Cumulus consume the shared variation envelope. The
 envelope records stable intended Simulation identity, parent and reference
 lineage, immutable scientific, numerical, and observation layers, categorized
 material differences, relationship classification, explicit run profile,
@@ -120,6 +121,14 @@ Two versioned Mountain Waves Recipes are implemented:
   wind, shear, and stability controls;
 - Boulder Moist Wave, using absolute transforms against the retained
   source-backed Boulder reference for terrain, wind, moisture, and stability.
+
+The versioned Canonical BOMEX Trade Cumulus Recipe exposes signed surface heat
+and moisture fluxes, direct thermodynamic and wind-profile targets, and direct
+large-scale vertical-motion, temperature-tendency, and total-water-tendency
+targets. Its preview shows complete generated atmosphere and forcing profiles,
+exact canonical/parent/child/delta review, all five explicit run profiles, and
+the package-bound storage gate. Unusual but coherent atmospheric states warn
+rather than fail. Packaging remains separate from queueing.
 
 The selected parent determines the Recipe. Controls resolve against the Recipe
 reference rather than compounding relative to a previous variation. Quick,
@@ -135,9 +144,8 @@ Storage. Packaging or process success does not imply Simulation availability.
 
 Validated completed output is made available automatically when current World
 inspectability passes. Parent eligibility is a separate decision. Existing
-out-of-contract Mountain Waves variations remain visible as Legacy-contract
-history and may remain inspectable or comparable, but cannot parent a new
-Recipe variation.
+out-of-contract variations remain visible as Legacy-contract history and may
+remain inspectable or comparable, but cannot parent a new Recipe variation.
 
 ## Explore Experiences
 

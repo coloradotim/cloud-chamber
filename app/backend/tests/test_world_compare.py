@@ -8,6 +8,7 @@ from cloud_chamber.cloud_worlds import (
     ConfigurationDifference,
     SimulationRecord,
 )
+from cloud_chamber.explore_state import TradeCumulusExploreState
 from cloud_chamber.mountain_wave_terrain_visualization import (
     _ordered_sample_indices,
     _sample_native_grid,
@@ -36,6 +37,12 @@ def _trade_record(
     run_id: str,
     parent_simulation_id: str | None = None,
     difference: ConfigurationDifference | None = None,
+    relationship_classification: str | None = None,
+    source_recipe_id: str | None = "canonical_bomex_trade_cumulus",
+    scientific_design: dict[str, Any] | None = None,
+    numerical_realization: dict[str, Any] | None = None,
+    observation_plan: dict[str, Any] | None = None,
+    configuration: dict[str, Any] | None = None,
 ) -> SimulationRecord:
     return SimulationRecord(
         simulation_id=simulation_id,
@@ -45,6 +52,7 @@ def _trade_record(
         case_id="bomex_trade_cumulus_baseline_v0",
         result_id=f"result-{run_id}",
         run_id=run_id,
+        source_recipe_id=source_recipe_id,
         parent_simulation_id=parent_simulation_id,
         reference_simulation_id="trade_cumulus_canonical_bomex",
         technical_state="available",
@@ -53,6 +61,11 @@ def _trade_record(
         explore_available=True,
         configuration_difference_from_reference=[difference] if difference else None,
         lineage_state="known",
+        relationship_classification=relationship_classification,
+        scientific_design=scientific_design,
+        numerical_realization=numerical_realization,
+        observation_plan=observation_plan,
+        configuration=configuration,
     )
 
 
@@ -140,9 +153,8 @@ def test_trade_compare_uses_the_approved_pair_and_exact_material_difference(
     assert descriptor.selected_right_simulation_id == moisture.simulation_id
     assert descriptor.compatibility is not None
     assert descriptor.compatibility.controlled_pair is True
-    assert (
-        descriptor.compatibility.relationship
-        == "More Moisture is a child of Canonical BOMEX Baseline."
+    assert descriptor.compatibility.relationship == (
+        "More Moisture is a controlled physical variation of Canonical BOMEX Baseline."
     )
     assert descriptor.compatibility.shared_view_ids == ["field", "updraft_lens"]
     assert descriptor.compatibility.physical_plane_link_available is True
@@ -156,6 +168,105 @@ def test_trade_compare_uses_the_approved_pair_and_exact_material_difference(
         simulation.initial_state.world_id == "trade_cumulus"
         for simulation in descriptor.simulations
     )
+
+
+def test_trade_compare_uses_descendant_layers_and_actual_run_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    baseline = _trade_record(
+        simulation_id="trade_cumulus_canonical_bomex",
+        display_name="Canonical BOMEX Baseline",
+        role="reference",
+        run_id="baseline",
+        scientific_design={
+            "controls": {
+                "surface_moisture_flux_g_kg_m_s": 0.052,
+                "inversion_strength_k": 3.7,
+            }
+        },
+        numerical_realization={"grid": "96 x 96 x 100"},
+        observation_plan={
+            "duration_seconds": 14_400,
+            "output_cadence_seconds": 60,
+            "expected_history_count": 241,
+        },
+    )
+    descendant = _trade_record(
+        simulation_id="trade_cumulus_drier_standard",
+        display_name="Drier Standard",
+        role="variation",
+        run_id="drier-standard",
+        parent_simulation_id=baseline.simulation_id,
+        relationship_classification="mixed_variation",
+        difference=ConfigurationDifference(
+            path="scientific_design.controls.surface_moisture_flux_g_kg_m_s",
+            label="Surface moisture flux",
+            category="atmospheric",
+            left_value=0.052,
+            right_value=0.01,
+            units="g/kg m/s",
+            material=True,
+        ),
+        scientific_design={
+            "controls": {
+                "surface_moisture_flux_g_kg_m_s": 0.01,
+                "inversion_strength_k": 3.7,
+            }
+        },
+        numerical_realization={"grid": "64 x 64 x 75"},
+        observation_plan={
+            "duration_seconds": 10_800,
+            "output_cadence_seconds": 180,
+            "expected_history_count": 61,
+        },
+        configuration={
+            "duration_seconds": 10_800,
+            "output_cadence_seconds": 180,
+            "domain": {
+                "nx": 64,
+                "ny": 64,
+                "nz": 75,
+                "dx_m": 100,
+                "dy_m": 100,
+                "dz_m": 40,
+                "model_top_m": 3_000,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.world_compare.trade_cumulus_world_detail",
+        lambda _settings: SimpleNamespace(
+            display_name="Trade Cumulus",
+            simulations=[baseline, descendant],
+            reference_simulation=baseline,
+            featured_comparison=SimpleNamespace(
+                more_moisture_simulation_id=descendant.simulation_id
+            ),
+        ),
+    )
+
+    descriptor = world_compare_descriptor(
+        _settings(tmp_path),
+        world_slug="trade-cumulus",
+        left_simulation_id=baseline.simulation_id,
+        right_simulation_id=descendant.simulation_id,
+    )
+
+    assert descriptor.compatibility is not None
+    assert descriptor.compatibility.controlled_pair is False
+    assert "mixed variation" in descriptor.compatibility.relationship
+    assert "both changed" in descriptor.compatibility.controlled_pair_message
+    descendant_descriptor = next(
+        item for item in descriptor.simulations if item.simulation_id == descendant.simulation_id
+    )
+    assert (descendant_descriptor.grid.nx, descendant_descriptor.grid.nz) == (64, 75)
+    assert descendant_descriptor.grid.x_extent_km == (-3.2, 3.2)
+    assert descendant_descriptor.time.saved_output_count == 61
+    assert descendant_descriptor.initial_state.model_time_seconds == 10_800
+    assert isinstance(descendant_descriptor.initial_state, TradeCumulusExploreState)
+    assert descendant_descriptor.initial_state.slice_native_index == 32
+    assert descriptor.material_differences[0].left_value == 0.052
+    assert descriptor.material_differences[0].right_value == 0.01
 
 
 def test_mountain_compare_is_structural_and_keeps_unknown_distinct_from_equal(
