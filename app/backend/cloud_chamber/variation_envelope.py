@@ -141,6 +141,17 @@ class VariationEnvelope(BaseModel):
             raise ValueError(
                 "World controls do not match the immutable scientific-design controls."
             )
+        material_categories = {
+            difference.category for difference in self.differences if difference.material
+        }
+        if self.relationship_classification == "observation_only_attempt":
+            if material_categories != {"observation_plan"}:
+                raise ValueError("Observation-only attempts may change only the observation plan.")
+            if self.simulation_id != self.parent_simulation_id:
+                raise ValueError(
+                    "Observation-only attempts must remain beneath the same Simulation."
+                )
+            return self
         identity = canonical_payload_sha256(
             {
                 "scientific_design": self.scientific_design.payload,

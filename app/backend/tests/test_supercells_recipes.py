@@ -62,6 +62,50 @@ def test_default_recipe_closes_every_requested_direct_target() -> None:
     assert resolved.diagnostics.freezing_level_m_agl is not None
 
 
+def test_default_thermodynamics_reproduce_stock_cm1_isnd5_readback() -> None:
+    resolved = _resolve(
+        default_controls().model_copy(update={"thermal_perturbation_amplitude_k": 2.0})
+    )
+    by_height = {level.height_m: level for level in resolved.sounding}
+    expected = {
+        0.0: (100_000.0, 300.0, 300.0, 14.0),
+        1_000.0: (
+            89_181.1929147654,
+            301.9252711278505,
+            292.2178927614537,
+            14.0,
+        ),
+        6_000.0: (
+            47_963.419131632654,
+            318.0792729279549,
+            257.9068802001032,
+            1.6739880712349995,
+        ),
+        12_000.0: (
+            20_205.91074385263,
+            343.0,
+            217.3044072302913,
+            0.024474914259117155,
+        ),
+        20_000.0: (
+            5_771.953670365771,
+            494.7699393265583,
+            219.21413815501373,
+            0.10800094252237333,
+        ),
+    }
+
+    for height, values in expected.items():
+        level = by_height[height]
+        assert (
+            level.pressure_pa,
+            level.theta_k,
+            level.temperature_k,
+            level.qv_g_kg,
+        ) == pytest.approx(values, rel=0.0, abs=1.0e-9)
+    assert resolved.diagnostics.hydrostatic_residual_pa == pytest.approx(0.0)
+
+
 @pytest.mark.parametrize(
     ("family", "expected_label"),
     [

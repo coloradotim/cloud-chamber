@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +14,7 @@ from cloud_chamber.generated_input_identity import (
     GeneratedInputIdentityError,
     verify_generated_input_identity,
 )
-from cloud_chamber.mountain_wave_case import sha256_file
+from cloud_chamber.mountain_wave_case import parse_namelist_assignments, sha256_file
 from cloud_chamber.run_manifest import (
     LifecycleState,
     RunManifest,
@@ -38,12 +39,31 @@ from cloud_chamber.storm_examination import (
 from cloud_chamber.storm_examination import (
     STRAIGHT_LINE_SIMULATION_ID as STORM_STRAIGHT_LINE_SIMULATION_ID,
 )
-from cloud_chamber.supercell_benchmark import CM1_EXECUTABLE_SHA256
+from cloud_chamber.supercell_benchmark import (
+    CM1_EXECUTABLE_SHA256,
+    CM1_SOURCE_MANIFEST_SHA256,
+    CRITICAL_SOURCE_SHA256,
+    collect_cm1_provenance,
+)
+from cloud_chamber.supercell_hodograph import (
+    PINNED_BASE_F_SHA256,
+    STRAIGHT_LINE_HODOGRAPH_ARTIFACT_FILENAME,
+    STRAIGHT_LINE_HODOGRAPH_CUSTOMIZATION_KIND,
+    STRAIGHT_LINE_HODOGRAPH_TARGET,
+    straight_line_hodograph_artifact,
+)
+from cloud_chamber.supercell_presentation import (
+    BASE_PRESENTATION_ASSIGNMENTS,
+    LOCKED_SCIENCE_ASSIGNMENTS,
+    PRESENTATION_PROFILE_ID,
+)
 from cloud_chamber.supercells_recipes import (
     RECIPE_CONTRACT_VERSION,
     RECIPE_ID,
     SupercellsControls,
     default_controls,
+    fixed_assumptions,
+    generator_contract,
     normalize_controls,
 )
 from cloud_chamber.supercells_source_customization import (
@@ -253,6 +273,14 @@ def _variation_simulation_records(
             or envelope.world_id != WORLD_ID
             or envelope.recipe_id != RECIPE_ID
         ):
+            continue
+        if (
+            envelope.relationship_classification == "observation_only_attempt"
+            and envelope.simulation_id in {REFERENCE_SIMULATION_ID, STRAIGHT_LINE_SIMULATION_ID}
+        ):
+            # Built-in Simulations remain backed by their accepted presentation run.
+            # Alternate observation attempts stay visible in lifecycle history without
+            # creating a duplicate World record.
             continue
         by_simulation[envelope.simulation_id].append(
             _VariationCandidate(
@@ -690,36 +718,21 @@ def _builtin_parent_eligibility(
     manifest_path = settings.runtime_home.expanduser() / "runs" / run_id / "run_manifest.json"
     try:
         manifest = load_run_manifest(manifest_path)
-        verify_generated_input_identity(manifest)
+        verified_generated_inputs = verify_generated_input_identity(manifest)
     except (OSError, RunManifestError, GeneratedInputIdentityError) as exc:
         return False, f"Retained parent generated-input identity is invalid: {exc}"
     if manifest.lifecycle_state != LifecycleState.COMPLETED:
         return False, "The retained parent is not complete."
-    if not (manifest_path.parent / "namelist.input").is_file():
-        return False, "The retained parent namelist is unavailable."
-    if not manifest.execution.command:
-        return False, "The retained parent execution command is unavailable."
-    executable = Path(manifest.execution.command[0]).expanduser().resolve()
-    if not executable.is_file():
-        return False, "The retained parent executable is unavailable."
-    if simulation_id == REFERENCE_SIMULATION_ID:
-        if sha256_file(executable) != CM1_EXECUTABLE_SHA256:
-            return False, "The retained reference executable no longer matches approved CM1."
-    else:
-        status = manifest.cm1_source_customization_status
-        if not isinstance(status, dict):
-            return False, "The retained straight-line source customization is unavailable."
-        expected_hash = status.get("custom_executable_sha256")
-        if (
-            status.get("source_restored_after_build") != "not_modified_isolated_build_tree"
-            or status.get("build_command") != ["make"]
-            or not isinstance(expected_hash, str)
-            or sha256_file(executable) != expected_hash
-        ):
-            return False, "The retained straight-line isolated build identity is invalid."
-        build_root = Path(str(status.get("build_root", ""))).expanduser()
-        if not build_root.is_dir():
-            return False, "The retained straight-line isolated build tree is unavailable."
+    try:
+        _validate_builtin_source_identity(
+            settings,
+            simulation_id=simulation_id,
+            manifest=manifest,
+            manifest_path=manifest_path,
+            verified_generated_inputs=verified_generated_inputs,
+        )
+    except (OSError, ValueError) as exc:
+        return False, f"Retained parent source/case identity is invalid: {exc}"
     try:
         interactions = storm_examination_interactions(settings, simulation_id)
     except StormExaminationError as exc:
@@ -740,6 +753,190 @@ def _builtin_parent_eligibility(
         "Accepted retained presentation evidence, generated inputs, source execution, and "
         "useful-window contract remain reconstructible.",
     )
+
+
+def _validate_builtin_source_identity(
+    settings: CloudChamberSettings,
+    *,
+    simulation_id: str,
+    manifest: RunManifest,
+    manifest_path: Path,
+    verified_generated_inputs: dict[str, str],
+) -> None:
+    run_dir = manifest_path.parent.resolve()
+    case_manifest = json.loads((run_dir / "case_manifest.json").read_text())
+    provenance = collect_cm1_provenance(settings)
+    provenance_record = provenance.report_record()
+    expected_case = {
+        "run_id": manifest.run_id,
+        "case_id": manifest.scenario.id,
+        "simulation_id": simulation_id,
+        "profile_id": PRESENTATION_PROFILE_ID,
+        "hodograph": (
+            "quarter_circle" if simulation_id == REFERENCE_SIMULATION_ID else "straight_line"
+        ),
+        "cm1_provenance": provenance_record,
+        "generated_input_sha256": verified_generated_inputs,
+    }
+    mismatches = {
+        key: (case_manifest.get(key), expected)
+        for key, expected in expected_case.items()
+        if case_manifest.get(key) != expected
+    }
+    if mismatches:
+        raise ValueError(f"retained case manifest disagrees with the pinned contract: {mismatches}")
+    if provenance_record.get("source_manifest_sha256") != CM1_SOURCE_MANIFEST_SHA256:
+        raise ValueError("configured CM1 source manifest is not the approved source lock")
+    if provenance_record.get("critical_source_sha256") != CRITICAL_SOURCE_SHA256:
+        raise ValueError("configured CM1 critical-source hashes are not approved")
+    if manifest.run_configuration.get("source_lock") != provenance_record:
+        raise ValueError("retained run source lock disagrees with current pinned CM1 provenance")
+    for key in ("source_run", "gate_a_source_lock"):
+        if manifest.run_configuration.get(key) != case_manifest.get(key):
+            raise ValueError(f"retained {key} identity differs between manifest and case")
+
+    namelist_path = run_dir / "namelist.input"
+    if not namelist_path.is_file():
+        raise ValueError("retained parent namelist is unavailable")
+    assignments = parse_namelist_assignments(namelist_path.read_text())
+    expected_assignments = {
+        **BASE_PRESENTATION_ASSIGNMENTS,
+        **LOCKED_SCIENCE_ASSIGNMENTS,
+        "timax": "10800.0",
+        "tapfrq": "120.0",
+    }
+    if simulation_id == STRAIGHT_LINE_SIMULATION_ID:
+        expected_assignments["iwnd"] = "12"
+    namelist_mismatches = {
+        name: (assignments.get(name), expected)
+        for name, expected in expected_assignments.items()
+        if not _namelist_values_equal(assignments.get(name), expected)
+    }
+    if namelist_mismatches:
+        raise ValueError(
+            "retained namelist differs from the approved presentation contract: "
+            f"{namelist_mismatches}"
+        )
+
+    if simulation_id == REFERENCE_SIMULATION_ID:
+        executable = _relocated_asset(
+            manifest.execution.command[0] if manifest.execution.command else None,
+            fallback_root=provenance.run_directory,
+        )
+        if executable != provenance.executable_path.resolve():
+            raise ValueError("Quarter-Circle execution did not use the pinned CM1 executable")
+        if sha256_file(executable) != CM1_EXECUTABLE_SHA256:
+            raise ValueError("Quarter-Circle executable hash changed")
+        if (
+            manifest.execution.executable_sha256 is not None
+            and manifest.execution.executable_sha256 != CM1_EXECUTABLE_SHA256
+        ):
+            raise ValueError("Quarter-Circle launch-time executable hash changed")
+        if manifest.generated_inputs.cm1_source_customization:
+            raise ValueError("Quarter-Circle parent unexpectedly declares source customization")
+        return
+
+    source_path = provenance.source_root / STRAIGHT_LINE_HODOGRAPH_TARGET
+    if sha256_file(source_path) != PINNED_BASE_F_SHA256:
+        raise ValueError("Straight-Line customization base source changed")
+    expected_customization = straight_line_hodograph_artifact(source_path.read_text())
+    customization_path = _relocated_asset(
+        manifest.generated_inputs.cm1_source_customization,
+        fallback_root=run_dir,
+        fallback_name=STRAIGHT_LINE_HODOGRAPH_ARTIFACT_FILENAME,
+    )
+    if json.loads(customization_path.read_text()) != expected_customization:
+        raise ValueError("Straight-Line packaged customization no longer reproduces")
+
+    status = manifest.cm1_source_customization_status
+    if not isinstance(status, dict):
+        raise ValueError("Straight-Line applied source-customization status is unavailable")
+    required_status = {
+        "schema_version": "cm1_source_customization_status_v1",
+        "customization_kind": STRAIGHT_LINE_HODOGRAPH_CUSTOMIZATION_KIND,
+        "run_id": manifest.run_id,
+        "original_target_sha256": expected_customization["original_source_sha256"],
+        "patched_target_sha256": expected_customization["patched_source_sha256"],
+        "patched_files": [str(STRAIGHT_LINE_HODOGRAPH_TARGET)],
+        "source_restored_after_build": "not_modified_isolated_build_tree",
+        "build_command": ["make"],
+        "hodograph_profile": expected_customization["wind_profile"],
+        "no_silent_hodograph_fallback": True,
+    }
+    status_mismatches = {
+        key: (status.get(key), expected)
+        for key, expected in required_status.items()
+        if status.get(key) != expected
+    }
+    if status_mismatches:
+        raise ValueError(
+            "Straight-Line applied customization disagrees with the pinned artifact: "
+            f"{status_mismatches}"
+        )
+    applied_path = run_dir / "cm1_source_customization_applied.json"
+    if json.loads(applied_path.read_text()) != status:
+        raise ValueError("Straight-Line launch-time customization status changed")
+
+    build_root = _relocated_asset(
+        status.get("build_root"),
+        fallback_root=(settings.runtime_home.expanduser().resolve() / "cm1_source_builds"),
+        require_directory=True,
+    )
+    built_source = build_root / STRAIGHT_LINE_HODOGRAPH_TARGET
+    if sha256_file(built_source) != expected_customization["patched_source_sha256"]:
+        raise ValueError("Straight-Line isolated build source no longer matches the patch")
+    executable = _relocated_asset(
+        status.get("custom_executable"),
+        fallback_root=run_dir,
+    )
+    executable_sha256 = status.get("custom_executable_sha256")
+    if not isinstance(executable_sha256, str) or sha256_file(executable) != executable_sha256:
+        raise ValueError("Straight-Line retained executable hash changed")
+    launched_executable = _relocated_asset(
+        manifest.execution.command[0] if manifest.execution.command else None,
+        fallback_root=run_dir,
+    )
+    if launched_executable != executable:
+        raise ValueError("Straight-Line execution command used a different executable")
+    if (
+        manifest.execution.executable_sha256 is not None
+        and manifest.execution.executable_sha256 != executable_sha256
+    ):
+        raise ValueError("Straight-Line launch-time executable hash changed")
+
+
+def _relocated_asset(
+    value: object,
+    *,
+    fallback_root: Path,
+    fallback_name: str | None = None,
+    require_directory: bool = False,
+) -> Path:
+    if isinstance(value, str) and value:
+        original = Path(value).expanduser()
+        if original.exists():
+            return original.resolve()
+        name = original.name
+    elif fallback_name is not None:
+        name = fallback_name
+    else:
+        raise ValueError("retained provenance path is unavailable")
+    candidate = fallback_root / (fallback_name or name)
+    if require_directory:
+        if not candidate.is_dir():
+            raise ValueError(f"relocated provenance directory is unavailable: {candidate.name}")
+    elif not candidate.is_file():
+        raise ValueError(f"relocated provenance asset is unavailable: {candidate.name}")
+    return candidate.resolve()
+
+
+def _namelist_values_equal(actual: str | None, expected: str) -> bool:
+    if actual == expected:
+        return True
+    try:
+        return float(actual or "") == float(expected)
+    except ValueError:
+        return False
 
 
 def _interaction_parent_reason(interactions: Any) -> str:
@@ -770,20 +967,9 @@ def _intended_simulation_sha256(envelope: VariationEnvelope) -> str:
             "recipe_id": envelope.recipe_id,
             "recipe_contract_version": envelope.recipe_contract_version,
             "simulation_id": envelope.simulation_id,
-            "parent_simulation_id": envelope.parent_simulation_id,
             "reference_simulation_id": envelope.reference_simulation_id,
-            "display_name": envelope.display_name,
-            "question": envelope.question,
             "scientific_design": envelope.scientific_design.payload,
             "numerical_realization": envelope.numerical_realization.payload,
-            "observation_plan": envelope.observation_plan.payload,
-            "world_payload": envelope.world_payload,
-            "differences": [
-                difference.model_dump(mode="json") for difference in envelope.differences
-            ],
-            "relationship_classification": envelope.relationship_classification,
-            "run_profile_id": envelope.run_profile_id,
-            "run_profile_contract": envelope.run_profile_contract,
         }
     )
 
@@ -811,6 +997,9 @@ def _builtin_simulation_contract(
         "recipe_contract_version": RECIPE_CONTRACT_VERSION,
         "reference_simulation_id": REFERENCE_SIMULATION_ID,
         "controls": controls_payload,
+        "achieved_controls": controls_payload,
+        "generators": generator_contract(),
+        "fixed_assumptions": fixed_assumptions(),
     }
     numerical = profile.numerical_realization.model_dump(mode="json")
     observation = profile.observation_plan.model_dump(mode="json")
@@ -835,6 +1024,10 @@ def _builtin_simulation_contract(
         observation,
         {
             "controls": controls_payload,
+            "reference_controls": default_controls().model_dump(mode="json"),
+            "parent_controls": controls_payload,
+            "requested_controls": controls_payload,
+            "achieved_controls": controls_payload,
             "useful_window_end_seconds": 10_800,
         },
         differences,

@@ -131,3 +131,46 @@ def test_envelope_rejects_control_and_simulation_identity_mismatch() -> None:
     }
     with pytest.raises(ValueError, match="Simulation ID hash suffix"):
         VariationEnvelope.model_validate(mismatched_id)
+
+
+def test_observation_only_envelope_retains_simulation_identity() -> None:
+    scientific = {"controls": {"cape_j_kg": 2_200}}
+    numerical = {"grid": "240 x 240 x 60"}
+    payload = {
+        "world_id": "supercells",
+        "recipe_id": "idealized_isolated_supercell",
+        "recipe_contract_version": "1",
+        "simulation_id": "supercells_quarter_circle_reference",
+        "parent_simulation_id": "supercells_quarter_circle_reference",
+        "reference_simulation_id": "supercells_quarter_circle_reference",
+        "display_name": "Quarter-Circle Supercell",
+        "scientific_design": immutable_layer(scientific),
+        "numerical_realization": immutable_layer(numerical),
+        "observation_plan": immutable_layer({"cadence_seconds": 60}),
+        "world_payload": {"controls": scientific["controls"]},
+        "differences": [difference("observation_plan")],
+        "relationship_classification": "observation_only_attempt",
+        "run_profile_id": "alternate_observation",
+        "run_profile_contract": {},
+        "cost_estimate": {},
+    }
+
+    VariationEnvelope.model_validate(payload)
+
+    with pytest.raises(ValueError, match="same Simulation"):
+        VariationEnvelope.model_validate(
+            {
+                **payload,
+                "simulation_id": "supercells_new_simulation",
+            }
+        )
+    with pytest.raises(ValueError, match="only the observation plan"):
+        VariationEnvelope.model_validate(
+            {
+                **payload,
+                "differences": [
+                    difference("observation_plan"),
+                    difference("wind"),
+                ],
+            }
+        )

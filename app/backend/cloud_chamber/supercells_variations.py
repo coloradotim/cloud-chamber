@@ -66,6 +66,8 @@ from cloud_chamber.supercells_recipes import (
     SupercellsControls,
     SupercellsProfileLevel,
     default_controls,
+    fixed_assumptions,
+    generator_contract,
     normalize_controls,
     resolve_supercells_recipe,
 )
@@ -239,15 +241,7 @@ def create_supercells_variation(
         request.run_profile_id,
         int(resolved.observation_plan.duration_seconds or 0),
     )
-    fixed_assumptions: dict[str, Any] = {
-        "horizontally_homogeneous_environment": True,
-        "microphysics": "Morrison double-moment",
-        "terrain": "flat",
-        "surface_heat_moisture_forcing": False,
-        "single_deterministic_thermal": True,
-        "storm_object_lineage": False,
-        "tornado_diagnosis": False,
-    }
+    assumptions = fixed_assumptions()
     scientific_design = {
         "world_id": WORLD_ID,
         "recipe_id": RECIPE_ID,
@@ -255,12 +249,8 @@ def create_supercells_variation(
         "reference_simulation_id": REFERENCE_SIMULATION_ID,
         "controls": resolved.controls,
         "achieved_controls": resolved.achieved_controls,
-        "generators": {
-            "wind": "authored_true_circle_hodograph_direct_targets_v2",
-            "thermodynamics": "iterated_hydrostatic_buoyancy_profile_v2",
-            "initiation": "source_locked_single_thermal_v1",
-        },
-        "fixed_assumptions": fixed_assumptions,
+        "generators": generator_contract(),
+        "fixed_assumptions": assumptions,
     }
     identity = canonical_payload_sha256(
         {
@@ -268,13 +258,27 @@ def create_supercells_variation(
             "numerical_realization": numerical_payload,
         }
     )
+    relationship = classify_relationship(differences)
     slug = _slug(request.simulation_name)
-    simulation_id = f"supercells_{slug}_{identity[:8]}"
+    observation_only = relationship == "observation_only_attempt"
+    simulation_id = (
+        request.parent_simulation_id if observation_only else f"supercells_{slug}_{identity[:8]}"
+    )
+    simulation_display_name = (
+        context.template.parent_display_name
+        if observation_only
+        else request.simulation_name.strip()
+    )
+    envelope_parent_simulation_id = (
+        simulation_id if observation_only else request.parent_simulation_id
+    )
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     run_id = f"sc-{slug}-{timestamp}-{uuid4().hex[:4]}"
     existing_attempts = _existing_attempts(settings, simulation_id)
     attempt_relationship: AttemptRelationship = (
-        "unchanged_retry" if existing_attempts else "initial"
+        "alternate_observation_attempt"
+        if observation_only
+        else ("unchanged_retry" if existing_attempts else "initial")
     )
     package_dir = settings.runtime_home.expanduser() / "runs" / run_id
     if package_dir.exists():
@@ -330,16 +334,15 @@ def create_supercells_variation(
                 "implementation_commit": implementation_commit,
             }
         )
-        relationship = classify_relationship(differences)
         reference_controls = default_controls().model_dump(mode="json")
         envelope = VariationEnvelope(
             world_id=WORLD_ID,
             recipe_id=RECIPE_ID,
             recipe_contract_version=RECIPE_CONTRACT_VERSION,
             simulation_id=simulation_id,
-            parent_simulation_id=request.parent_simulation_id,
+            parent_simulation_id=envelope_parent_simulation_id,
             reference_simulation_id=REFERENCE_SIMULATION_ID,
-            display_name=request.simulation_name.strip(),
+            display_name=simulation_display_name,
             question=_optional_text(request.user_question),
             scientific_design=immutable_layer(scientific_design),
             numerical_realization=immutable_layer(numerical_payload),
@@ -412,10 +415,10 @@ def create_supercells_variation(
         run_configuration: dict[str, Any] = {
             "cloud_world_id": WORLD_ID,
             "simulation_id": simulation_id,
-            "simulation_display_name": request.simulation_name.strip(),
+            "simulation_display_name": simulation_display_name,
             "attempt_id": run_id,
             "attempt_relationship": attempt_relationship,
-            "parent_simulation_id": request.parent_simulation_id,
+            "parent_simulation_id": envelope_parent_simulation_id,
             "parent_run_id": context.template.parent_run_id,
             "reference_simulation_id": REFERENCE_SIMULATION_ID,
             "user_question": _optional_text(request.user_question),
@@ -500,7 +503,7 @@ def create_supercells_variation(
             recipe_display_name=RECIPE_NAME,
             assumption_set_id="idealized_isolated_supercell_contract_v1",
             assumption_mode="approved_recipe_contract",
-            recipe_assumptions=fixed_assumptions,
+            recipe_assumptions=assumptions,
             required_output_fields=list(resolved.observation_plan.retained_field_inventory),
             input_source="source_locked_generated_supercell_environment_v1",
             expected_outputs=[
@@ -515,7 +518,7 @@ def create_supercells_variation(
             "schema_version": VARIATION_SCHEMA_VERSION,
             "case_id": VARIATION_CASE_ID,
             "simulation_id": simulation_id,
-            "parent_simulation_id": request.parent_simulation_id,
+            "parent_simulation_id": envelope_parent_simulation_id,
             "reference_simulation_id": REFERENCE_SIMULATION_ID,
             "recipe_id": RECIPE_ID,
             "variation_envelope_authority": {
@@ -739,11 +742,6 @@ def _request_errors(
         errors.append("Variation name is required.")
     if not differences:
         errors.append("Change at least one scientific control or run profile before packaging.")
-    if _relationship(differences) == "observation_only_attempt":
-        errors.append(
-            "Output-only changes are alternate_observation_attempts beneath the same "
-            "Simulation; they cannot create a named Supercells Variation."
-        )
     try:
         _configured_init3d_path(settings)
     except SupercellsVariationError as exc:

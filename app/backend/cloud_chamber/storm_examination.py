@@ -1010,6 +1010,17 @@ def _run_fingerprint(
     run_dir: Path,
     contract: _RunContract,
 ) -> tuple[tuple[str, int, int], ...]:
+    if contract.hodograph == "generated":
+        try:
+            validate_supercells_attempt_provenance(load_run_manifest(run_dir / "run_manifest.json"))
+        except (
+            OSError,
+            RunManifestError,
+            SupercellsAttemptProvenanceError,
+        ) as exc:
+            raise StormExaminationError(
+                f"The completed Supercells variation provenance is invalid: {exc}"
+            ) from exc
     paths = [run_dir / "run_manifest.json", run_dir / "case_manifest.json"]
     paths.extend(run_dir / name for name in contract.history_filenames)
     if contract.evidence_filename is not None:

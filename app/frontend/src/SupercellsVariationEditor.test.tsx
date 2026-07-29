@@ -164,6 +164,51 @@ describe("SupercellsVariationEditor", () => {
     );
   });
 
+  it("labels observation-only packaging as an alternate attempt", async () => {
+    vi.mocked(fetch).mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("variation-template")) {
+          const value = template(false);
+          value.run_profiles.push({
+            ...costEstimate("supercells_quick_v1", "Observation"),
+            profile: {
+              ...costEstimate("supercells_quick_v1", "Observation").profile,
+              profile_id: "supercells_observation_only_test",
+            },
+          });
+          return ok(value);
+        }
+        if (url.endsWith("/variations/preview")) {
+          return ok(preview(JSON.parse(String(init?.body))));
+        }
+        throw new Error(`Unexpected fetch ${url}`);
+      },
+    );
+    render(
+      <SupercellsVariationEditor
+        world={world}
+        initialParentSimulationId={referenceSimulation.simulation_id}
+        onCreated={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("radio", { name: /Observation/i }),
+    );
+    fireEvent.change(screen.getByLabelText("Variation name"), {
+      target: { value: "Denser output attempt" },
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Package alternate attempt" }),
+      ).toBeEnabled(),
+    );
+    expect(screen.getByText("Ready to package attempt")).toBeVisible();
+    expect(screen.getByText("Observation-only attempt")).toBeVisible();
+  });
+
   it("switches parent values without compounding and blocks impossible geometry", async () => {
     render(
       <SupercellsVariationEditor
@@ -261,6 +306,8 @@ function template(straight: boolean) {
 }
 
 function preview(body: { controls: typeof referenceControls; run_profile_id: string }) {
+  const observationOnly =
+    body.run_profile_id === "supercells_observation_only_test";
   const differences =
     body.controls.shear_0_6_km_m_s === referenceControls.shear_0_6_km_m_s &&
     body.controls.shear_0_2_km_m_s === referenceControls.shear_0_2_km_m_s
@@ -297,9 +344,23 @@ function preview(body: { controls: typeof referenceControls; run_profile_id: str
       thermodynamics: [],
       initiation: [],
       numerical: [],
-      observation: [],
+      observation: observationOnly
+        ? [
+            {
+              path: "observation_plan",
+              label: "Observation plan",
+              before: "120 s",
+              after: "60 s",
+              units: null,
+            },
+          ]
+        : [],
     },
-    relationship_classification: differences.length ? "controlled_physical_variation" : null,
+    relationship_classification: observationOnly
+      ? "observation_only_attempt"
+      : differences.length
+        ? "controlled_physical_variation"
+        : null,
     warnings: [],
     blocking_errors: blocked
       ? ["The thermal does not fit inside the selected domain clearance."]

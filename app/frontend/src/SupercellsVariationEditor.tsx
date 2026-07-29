@@ -296,6 +296,8 @@ export function SupercellsVariationEditor({
   const differenceCount = preview
     ? Object.values(preview.differences).reduce((total, group) => total + group.length, 0)
     : 0;
+  const isAlternateObservationAttempt =
+    preview?.relationship_classification === "observation_only_attempt";
   const canPackage =
     Boolean(simulationName.trim()) &&
     Boolean(preview) &&
@@ -788,7 +790,11 @@ export function SupercellsVariationEditor({
                     : "technical-state available"
                 }
               >
-                {preview.blocking_errors.length ? "Blocked" : "Ready to package"}
+                {preview.blocking_errors.length
+                  ? "Blocked"
+                  : isAlternateObservationAttempt
+                    ? "Ready to package attempt"
+                    : "Ready to package"}
               </span>
             )}
           </header>
@@ -839,7 +845,11 @@ export function SupercellsVariationEditor({
           <div className="variation-submit">
             {!packaged ? (
               <button type="button" disabled={!canPackage} onClick={() => void packageVariation()}>
-                {submitting ? "Packaging..." : "Package variation"}
+                {submitting
+                  ? "Packaging..."
+                  : isAlternateObservationAttempt
+                    ? "Package alternate attempt"
+                    : "Package variation"}
               </button>
             ) : (
               <section className="variation-packaged-state">

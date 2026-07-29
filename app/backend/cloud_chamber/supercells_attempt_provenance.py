@@ -162,6 +162,14 @@ def validate_supercells_attempt_provenance(
     _require_contained(build_root, runtime_builds, "Isolated CM1 build")
     if not build_root.is_dir():
         raise SupercellsAttemptProvenanceError("Applied isolated CM1 build tree is unavailable.")
+    built_target = build_root / SUPERCELLS_SOURCE_CUSTOMIZATION_TARGET
+    if (
+        not built_target.is_file()
+        or _sha256_file(built_target) != customization["patched_source_sha256"]
+    ):
+        raise SupercellsAttemptProvenanceError(
+            "Applied isolated CM1 build source no longer matches the reviewed customization."
+        )
 
     executable_path = _required_status_path(status, "custom_executable")
     _require_contained(executable_path, run_dir, "Custom CM1 executable")

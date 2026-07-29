@@ -715,8 +715,8 @@ def _supercell_absolute_differences(
         (
             "scientific_design",
             "atmospheric",
-            left.scientific_design,
-            right.scientific_design,
+            _supercell_semantic_scientific_design(left),
+            _supercell_semantic_scientific_design(right),
         ),
         (
             "numerical_realization",
@@ -747,6 +747,18 @@ def _supercell_absolute_differences(
                 )
             )
     return rows
+
+
+def _supercell_semantic_scientific_design(
+    record: SupercellSimulationRecord,
+) -> dict[str, Any]:
+    """Compare authored controls and fixed assumptions, not derived storage shape."""
+    controls = record.scientific_design.get("controls")
+    assumptions = record.scientific_design.get("fixed_assumptions")
+    return {
+        "controls": controls if isinstance(controls, Mapping) else {},
+        "fixed_assumptions": assumptions if isinstance(assumptions, Mapping) else {},
+    }
 
 
 def _supercell_pair_classification(

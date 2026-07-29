@@ -38,6 +38,17 @@ DRY_AIR_GAS_CONSTANT = 287.05
 DRY_AIR_CP = 1004.0
 WATER_VAPOR_EPSILON = 0.622
 LATENT_HEAT_VAPORIZATION = 2.5e6
+CM1_GRAVITY_M_S2 = 9.81
+CM1_DRY_AIR_GAS_CONSTANT = 287.04
+CM1_DRY_AIR_CP = 1005.7
+CM1_WATER_VAPOR_GAS_CONSTANT = 461.5
+CM1_WATER_VAPOR_EPSILON = CM1_DRY_AIR_GAS_CONSTANT / CM1_WATER_VAPOR_GAS_CONSTANT
+CM1_WATER_VAPOR_REPS = CM1_WATER_VAPOR_GAS_CONSTANT / CM1_DRY_AIR_GAS_CONSTANT
+CM1_WK_TROPOPAUSE_M = 12_000.0
+CM1_WK_THETA_TROPOPAUSE_K = 343.0
+CM1_WK_TEMPERATURE_TROPOPAUSE_K = 213.0
+CM1_WK_SURFACE_THETA_K = 300.0
+CM1_WK_QV_CAP_KG_KG = 0.014
 
 HodographFamily = Literal["straight", "quarter_circle", "half_circle"]
 BuoyancyDistribution = Literal["low_level_weighted", "reference", "deep_weighted"]
@@ -152,6 +163,26 @@ class ResolvedSupercellsRecipe(BaseModel):
 
 def default_controls() -> SupercellsControls:
     return SupercellsControls()
+
+
+def fixed_assumptions() -> dict[str, Any]:
+    return {
+        "horizontally_homogeneous_environment": True,
+        "microphysics": "Morrison double-moment",
+        "terrain": "flat",
+        "surface_heat_moisture_forcing": False,
+        "single_deterministic_thermal": True,
+        "storm_object_lineage": False,
+        "tornado_diagnosis": False,
+    }
+
+
+def generator_contract() -> dict[str, str]:
+    return {
+        "wind": "authored_true_circle_hodograph_direct_targets_v2",
+        "thermodynamics": "cm1_r21_1_isnd5_baseline_direct_target_transforms_v1",
+        "initiation": "source_locked_single_thermal_v1",
+    }
 
 
 def normalize_controls(
@@ -444,6 +475,9 @@ def _thermodynamic_profile(
     winds: list[tuple[float, float]],
     heights: list[float],
 ) -> tuple[list[SupercellsProfileLevel], _ThermodynamicDiagnostics]:
+    if _uses_source_defined_thermodynamics(controls):
+        return _source_defined_isnd5_profile(controls, winds, heights)
+
     z = np.asarray(heights, dtype=float)
     lcl_m = controls.lcl_height_m_agl
     cap_top_m = min(max(lcl_m + 750.0, 2_000.0), 5_000.0)
@@ -551,6 +585,206 @@ def _thermodynamic_profile(
         "translation_v_m_s": mean_v,
     }
     return output, diagnostics
+
+
+def _uses_source_defined_thermodynamics(controls: SupercellsControls) -> bool:
+    reference = default_controls()
+    return all(
+        getattr(controls, name) == getattr(reference, name)
+        for name in (
+            "surface_based_cape_j_kg",
+            "buoyancy_distribution",
+            "lcl_height_m_agl",
+            "midlevel_rh_percent",
+            "cin_j_kg",
+        )
+    )
+
+
+def _source_defined_isnd5_profile(
+    controls: SupercellsControls,
+    winds: list[tuple[float, float]],
+    heights: list[float],
+) -> tuple[list[SupercellsProfileLevel], _ThermodynamicDiagnostics]:
+    """Reproduce the stock CM1 r21.1 Weisman-Klemp `isnd=5` environment."""
+    z = np.asarray(heights, dtype=float)
+    below_tropopause = z < CM1_WK_TROPOPAUSE_M
+    fractional_height = np.maximum(z / CM1_WK_TROPOPAUSE_M, 0.0) ** 1.25
+    theta = np.where(
+        below_tropopause,
+        CM1_WK_SURFACE_THETA_K
+        + (CM1_WK_THETA_TROPOPAUSE_K - CM1_WK_SURFACE_THETA_K) * fractional_height,
+        CM1_WK_THETA_TROPOPAUSE_K
+        * np.exp(
+            CM1_GRAVITY_M_S2
+            * (z - CM1_WK_TROPOPAUSE_M)
+            / (CM1_WK_TEMPERATURE_TROPOPAUSE_K * CM1_DRY_AIR_CP)
+        ),
+    )
+    authored_rh = np.where(
+        below_tropopause,
+        1.0 - 0.75 * fractional_height,
+        0.25,
+    )
+    qv = np.zeros_like(z)
+    exner = np.ones_like(z)
+    pressure = np.full_like(z, SURFACE_PRESSURE_PA)
+    surface_saturated_qv = _cm1_saturation_mixing_ratio(
+        SURFACE_PRESSURE_PA,
+        CM1_WK_SURFACE_THETA_K,
+    )
+    surface_virtual_theta = (
+        CM1_WK_SURFACE_THETA_K
+        * (1.0 + surface_saturated_qv * CM1_WATER_VAPOR_REPS)
+        / (1.0 + surface_saturated_qv)
+    )
+    for _iteration in range(20):
+        virtual_theta = theta * (1.0 + qv * CM1_WATER_VAPOR_REPS) / (1.0 + qv)
+        exner[0] = 1.0 - CM1_GRAVITY_M_S2 * z[0] / (
+            CM1_DRY_AIR_CP * 0.5 * (surface_virtual_theta + virtual_theta[0])
+        )
+        for index in range(1, len(z)):
+            exner[index] = exner[index - 1] - CM1_GRAVITY_M_S2 * (z[index] - z[index - 1]) / (
+                CM1_DRY_AIR_CP * 0.5 * (virtual_theta[index] + virtual_theta[index - 1])
+            )
+        pressure = SURFACE_PRESSURE_PA * exner ** (CM1_DRY_AIR_CP / CM1_DRY_AIR_GAS_CONSTANT)
+        temperature = theta * exner
+        qv = np.minimum(
+            np.asarray(
+                [
+                    rh * _cm1_saturation_mixing_ratio(float(p), float(t))
+                    for rh, p, t in zip(
+                        authored_rh,
+                        pressure,
+                        temperature,
+                        strict=True,
+                    )
+                ]
+            ),
+            CM1_WK_QV_CAP_KG_KG,
+        )
+
+    temperature = theta * exner
+    actual_rh = np.asarray(
+        [
+            100.0 * mixing_ratio / max(_cm1_saturation_mixing_ratio(float(p), float(t)), 1.0e-12)
+            for mixing_ratio, p, t in zip(qv, pressure, temperature, strict=True)
+        ]
+    )
+    parcel_temperature = _parcel_temperature_profile(z, controls.lcl_height_m_agl)
+    cap_top_m = min(max(controls.lcl_height_m_agl + 750.0, 2_000.0), 5_000.0)
+    cin_shape = np.where(
+        (z > 0.0) & (z < cap_top_m),
+        np.sin(math.pi * z / cap_top_m) ** 2,
+        0.0,
+    )
+    parcel_buoyancy = _normalized_area_profile(
+        z,
+        cin_shape,
+        -controls.cin_j_kg,
+        negative=True,
+    ) + _normalized_area_profile(
+        z,
+        _cape_shape(z, cap_top_m, controls.buoyancy_distribution),
+        controls.surface_based_cape_j_kg,
+        negative=False,
+    )
+    output = [
+        SupercellsProfileLevel(
+            height_m=float(height),
+            pressure_pa=float(level_pressure),
+            theta_k=float(level_theta),
+            temperature_k=float(level_temperature),
+            qv_g_kg=float(level_qv * 1_000.0),
+            relative_humidity_percent=float(level_rh),
+            parcel_temperature_k=float(level_parcel_temperature),
+            parcel_buoyancy_m_s2=float(level_parcel_buoyancy),
+            u_m_s=winds[index][0],
+            v_m_s=winds[index][1],
+        )
+        for index, (
+            height,
+            level_pressure,
+            level_theta,
+            level_temperature,
+            level_qv,
+            level_rh,
+            level_parcel_temperature,
+            level_parcel_buoyancy,
+        ) in enumerate(
+            zip(
+                z,
+                pressure,
+                theta,
+                temperature,
+                qv,
+                actual_rh,
+                parcel_temperature,
+                parcel_buoyancy,
+                strict=True,
+            )
+        )
+    ]
+    freezing_level = _crossing_height(
+        [(level.height_m, level.temperature_k - 273.15) for level in output],
+        0.0,
+    )
+    mean_u = _layer_mean([(level.height_m, level.u_m_s) for level in output], 0, 6_000)
+    mean_v = _layer_mean([(level.height_m, level.v_m_s) for level in output], 0, 6_000)
+    return output, {
+        "cape_j_kg": controls.surface_based_cape_j_kg,
+        "cin_j_kg": controls.cin_j_kg,
+        "lcl_height_m_agl": controls.lcl_height_m_agl,
+        "midlevel_rh_percent": controls.midlevel_rh_percent,
+        "freezing_level_m_agl": freezing_level,
+        "hydrostatic_residual_pa": _cm1_exner_readback_residual_pa(output),
+        "translation_u_m_s": mean_u,
+        "translation_v_m_s": mean_v,
+    }
+
+
+def _cm1_saturation_mixing_ratio(
+    pressure_pa: float,
+    temperature_k: float,
+) -> float:
+    vapor_pressure = 611.2 * math.exp(17.67 * (temperature_k - 273.15) / (temperature_k - 29.65))
+    vapor_pressure = min(vapor_pressure, pressure_pa * 0.5)
+    return CM1_WATER_VAPOR_EPSILON * vapor_pressure / (pressure_pa - vapor_pressure)
+
+
+def _cm1_exner_readback_residual_pa(
+    sounding: list[SupercellsProfileLevel],
+) -> float:
+    surface_saturated_qv = _cm1_saturation_mixing_ratio(
+        SURFACE_PRESSURE_PA,
+        CM1_WK_SURFACE_THETA_K,
+    )
+    surface_virtual_theta = (
+        CM1_WK_SURFACE_THETA_K
+        * (1.0 + surface_saturated_qv * CM1_WATER_VAPOR_REPS)
+        / (1.0 + surface_saturated_qv)
+    )
+    residual = 0.0
+    previous_exner = 1.0
+    previous_virtual_theta = surface_virtual_theta
+    previous_height = 0.0
+    for level in sounding:
+        virtual_theta = (
+            level.theta_k
+            * (1.0 + level.qv_g_kg / 1_000.0 * CM1_WATER_VAPOR_REPS)
+            / (1.0 + level.qv_g_kg / 1_000.0)
+        )
+        expected_exner = previous_exner - CM1_GRAVITY_M_S2 * (level.height_m - previous_height) / (
+            CM1_DRY_AIR_CP * 0.5 * (previous_virtual_theta + virtual_theta)
+        )
+        expected_pressure = SURFACE_PRESSURE_PA * expected_exner ** (
+            CM1_DRY_AIR_CP / CM1_DRY_AIR_GAS_CONSTANT
+        )
+        residual = max(residual, abs(level.pressure_pa - expected_pressure))
+        previous_exner = expected_exner
+        previous_virtual_theta = virtual_theta
+        previous_height = level.height_m
+    return residual
 
 
 def _environment_level_state(
@@ -1071,6 +1305,8 @@ __all__ = [
     "SupercellsHodographLevel",
     "SupercellsProfileLevel",
     "default_controls",
+    "fixed_assumptions",
+    "generator_contract",
     "normalize_controls",
     "resolve_supercells_recipe",
 ]

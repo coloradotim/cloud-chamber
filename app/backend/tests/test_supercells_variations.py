@@ -37,6 +37,7 @@ from cloud_chamber.storm_examination import (
     STRAIGHT_LINE_SIMULATION_ID,
     StormExaminationError,
     _validate_generated_history_contract,
+    storm_examination_variation_inventory,
 )
 from cloud_chamber.supercell_benchmark import (
     CM1_EXECUTABLE_SHA256,
@@ -47,7 +48,11 @@ from cloud_chamber.supercells_attempt_provenance import (
     validate_supercells_attempt_provenance,
 )
 from cloud_chamber.supercells_recipes import SupercellsControls, default_controls
+from cloud_chamber.supercells_source_customization import (
+    render_supercells_source,
+)
 from cloud_chamber.supercells_variations import (
+    VARIATION_CASE_ID,
     SupercellsVariationPackage,
     SupercellsVariationRequest,
     create_supercells_variation,
@@ -56,9 +61,13 @@ from cloud_chamber.supercells_variations import (
     supercells_variation_template,
 )
 from cloud_chamber.supercells_world import (
+    SupercellSimulationRecord,
+    _builtin_simulation_contract,
     _intended_simulation_sha256,
     supercells_world_detail,
 )
+from cloud_chamber.variation_envelope import grouped_differences
+from cloud_chamber.world_compare import world_compare_descriptor
 
 
 @pytest.fixture(autouse=True)
@@ -168,12 +177,13 @@ def test_unchanged_specification_and_uncharacterized_extended_profile_block(
     assert any("uncharacterized" in item for item in extended.blocking_errors)
 
 
-def test_observation_only_change_is_not_a_named_variation(
+def test_observation_only_change_packages_as_an_alternate_attempt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = _settings(tmp_path)
     _write_builtin_parents(settings)
+    _trust_packaging(monkeypatch, settings)
     presentation = profile_by_id("supercells_presentation_v1")
     observation_only = presentation.model_copy(
         update={
@@ -195,17 +205,31 @@ def test_observation_only_change_is_not_a_named_variation(
             else original_profile_by_id(profile_id)
         ),
     )
+    monkeypatch.setattr(
+        "cloud_chamber.run_cost.profile_by_id",
+        lambda profile_id: (
+            observation_only
+            if profile_id == observation_only.profile_id
+            else original_profile_by_id(profile_id)
+        ),
+    )
     request = _request(
         controls=default_controls(),
         profile_id=observation_only.profile_id,
     )
 
     preview = preview_supercells_variation(settings, request)
+    package = create_supercells_variation(settings, request)
+    manifest = load_run_manifest(Path(package.manifest_path))
 
     assert preview.relationship_classification == "observation_only_attempt"
-    assert any("alternate_observation_attempt" in error for error in preview.blocking_errors)
-    with pytest.raises(Exception, match="cannot create a named"):
-        create_supercells_variation(settings, request)
+    assert preview.blocking_errors == []
+    assert package.simulation_id == QUARTER_CIRCLE_SIMULATION_ID
+    assert package.envelope.parent_simulation_id == QUARTER_CIRCLE_SIMULATION_ID
+    assert package.envelope.display_name == "Quarter-Circle Supercell"
+    assert package.envelope.attempts[-1].relationship == "alternate_observation_attempt"
+    assert manifest.run_configuration["attempt_relationship"] == ("alternate_observation_attempt")
+    assert manifest.run_configuration["simulation_id"] == QUARTER_CIRCLE_SIMULATION_ID
 
 
 def test_package_persists_exact_profiles_source_readback_and_launch_binding(
@@ -250,6 +274,12 @@ def test_package_persists_exact_profiles_source_readback_and_launch_binding(
     sounding_rows = (run_dir / "input_sounding").read_text().splitlines()
     assert float(sounding_rows[1].split()[0]) == 0.0
     assert float(sounding_rows[-1].split()[0]) > 20_000.0
+    one_km = next(row for row in sounding_rows[1:] if float(row.split()[0]) == 1_000.0).split()
+    assert tuple(float(value) for value in one_km[1:3]) == pytest.approx(
+        (301.9252711278505, 14.0),
+        rel=0.0,
+        abs=1.0e-9,
+    )
 
 
 def test_completed_attempt_binds_isolated_build_and_executable_used(
@@ -283,7 +313,12 @@ def test_completed_attempt_binds_isolated_build_and_executable_used(
         validate_supercells_attempt_provenance(manifest)
 
 
-def test_attempt_grouping_hash_covers_the_complete_intended_simulation(
+@pytest.mark.parametrize(
+    "mutated_asset",
+    ["input_sounding", "customization", "build_source", "executable"],
+)
+def test_completed_attempt_revalidates_provenance_before_cached_inventory(
+    mutated_asset: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -299,11 +334,180 @@ def test_attempt_grouping_hash_covers_the_complete_intended_simulation(
             profile_id="supercells_quick_v1",
         ),
     )
-    altered = package.envelope.model_copy(
-        update={"question": "A materially different intended scientific question."}
+    manifest = _apply_fake_custom_build(package, settings)
+    _mark_package_completed_for_world_wiring(package)
+    inventory = tuple(
+        (
+            Path(package.package_dir) / f"cm1out_{index + 1:06d}.nc",
+            float(index * 300),
+        )
+        for index in range(25)
+    )
+    for path, _time_seconds in inventory:
+        path.write_bytes(b"cached-history-fixture")
+    monkeypatch.setattr(
+        "cloud_chamber.storm_examination._cached_inventory",
+        lambda _run_dir, _fingerprint, _contract: inventory,
     )
 
-    assert _intended_simulation_sha256(package.envelope) != (_intended_simulation_sha256(altered))
+    assert (
+        storm_examination_variation_inventory(
+            settings,
+            Path(package.manifest_path),
+        )
+        == inventory
+    )
+
+    status = manifest.cm1_source_customization_status
+    assert isinstance(status, dict)
+    paths = {
+        "input_sounding": Path(manifest.generated_inputs.input_sounding or ""),
+        "customization": Path(manifest.generated_inputs.cm1_source_customization or ""),
+        "build_source": Path(status["build_root"]) / "src" / "init3d.F",
+        "executable": Path(status["custom_executable"]),
+    }
+    paths[mutated_asset].write_bytes(b"mutated-after-validation")
+    with pytest.raises(StormExaminationError, match="provenance is invalid"):
+        storm_examination_variation_inventory(
+            settings,
+            Path(package.manifest_path),
+        )
+
+
+def test_attempt_grouping_hash_covers_simulation_identity_not_attempt_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_builtin_parents(settings)
+    _trust_packaging(monkeypatch, settings)
+    package = create_supercells_variation(
+        settings,
+        _request(
+            controls=default_controls().model_copy(
+                update={"thermal_perturbation_amplitude_k": 2.0}
+            ),
+            profile_id="supercells_quick_v1",
+        ),
+    )
+    altered_question = package.envelope.model_copy(
+        update={"question": "A materially different intended scientific question."}
+    )
+    altered_science = package.envelope.model_copy(
+        update={
+            "scientific_design": package.envelope.scientific_design.model_copy(
+                update={
+                    "payload": {
+                        **package.envelope.scientific_design.payload,
+                        "generators": {
+                            **package.envelope.scientific_design.payload["generators"],
+                            "initiation": "different_generator",
+                        },
+                    }
+                }
+            )
+        }
+    )
+
+    assert _intended_simulation_sha256(package.envelope) == (
+        _intended_simulation_sha256(altered_question)
+    )
+    assert _intended_simulation_sha256(package.envelope) != (
+        _intended_simulation_sha256(altered_science)
+    )
+
+
+def test_non_direct_compare_uses_real_generated_semantic_layers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_builtin_parents(settings)
+    _trust_packaging(monkeypatch, settings)
+    request = _request(
+        controls=default_controls().model_copy(
+            update={
+                "hodograph_family": "straight",
+                "thermal_perturbation_amplitude_k": 2.0,
+            }
+        ),
+        profile_id="supercells_presentation_v1",
+    ).model_copy(update={"parent_simulation_id": STRAIGHT_LINE_SIMULATION_ID})
+    package = create_supercells_variation(settings, request)
+    (
+        scientific,
+        numerical,
+        observation,
+        world_payload,
+        differences,
+        profile,
+    ) = _builtin_simulation_contract(QUARTER_CIRCLE_SIMULATION_ID)
+    reference = SupercellSimulationRecord(
+        simulation_id=QUARTER_CIRCLE_SIMULATION_ID,
+        display_name="Quarter-Circle Supercell",
+        role="reference",
+        run_id=PRESENTATION_RUN_ID,
+        case_id=PRESENTATION_CASE_ID,
+        technical_state="available",
+        technical_state_message="Available",
+        explore_available=True,
+        saved_output_count=91,
+        model_start_seconds=0,
+        model_end_seconds=10_800,
+        history_cadence_seconds=120,
+        parent_eligibility_reason="Accepted.",
+        scientific_design=scientific,
+        numerical_realization=numerical,
+        observation_plan=observation,
+        world_payload=world_payload,
+        differences=differences,
+        run_profile_contract=profile,
+    )
+    envelope = package.envelope
+    child = SupercellSimulationRecord(
+        simulation_id=envelope.simulation_id,
+        display_name=envelope.display_name,
+        role="variation",
+        run_id=package.run_id,
+        case_id=VARIATION_CASE_ID,
+        parent_simulation_id=STRAIGHT_LINE_SIMULATION_ID,
+        technical_state="available",
+        technical_state_message="Available",
+        explore_available=True,
+        saved_output_count=91,
+        model_start_seconds=0,
+        model_end_seconds=10_800,
+        history_cadence_seconds=120,
+        parent_eligibility_reason="Accepted.",
+        scientific_design=envelope.scientific_design.payload,
+        numerical_realization=envelope.numerical_realization.payload,
+        observation_plan=envelope.observation_plan.payload,
+        world_payload=envelope.world_payload,
+        differences=grouped_differences(envelope.differences),
+        run_profile_contract=envelope.run_profile_contract,
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.world_compare.supercells_world_detail",
+        lambda _settings: SimpleNamespace(
+            display_name="Supercells",
+            simulations=[reference, child],
+            reference_simulation=reference,
+        ),
+    )
+
+    descriptor = world_compare_descriptor(
+        settings,
+        world_slug="supercells",
+        left_simulation_id=reference.simulation_id,
+        right_simulation_id=child.simulation_id,
+    )
+
+    paths = {difference.path for difference in descriptor.material_differences}
+    assert "scientific_design.controls.hodograph_family" in paths
+    assert "scientific_design.controls.thermal_perturbation_amplitude_k" in paths
+    assert not any("achieved_controls" in path for path in paths)
+    assert not any("generators" in path for path in paths)
+    assert not any("fixed_assumptions" in path for path in paths)
 
 
 def test_impossible_thermal_clearance_blocks_before_writing_a_package(
@@ -496,7 +700,15 @@ def _apply_fake_custom_build(
     customization_path = Path(manifest.generated_inputs.cm1_source_customization or "")
     customization = json.loads(customization_path.read_text())
     build_root = settings.runtime_home / "cm1_source_builds" / manifest.run_id
-    build_root.mkdir(parents=True)
+    built_source = build_root / "src" / "init3d.F"
+    built_source.parent.mkdir(parents=True)
+    assert settings.cm1_root is not None
+    built_source.write_text(
+        render_supercells_source(
+            (settings.cm1_root / "src" / "init3d.F").read_text(),
+            customization["initiation"],
+        )
+    )
     executable = run_dir / "cm1_cloud_chamber_custom.exe"
     executable.write_bytes(b"custom-supercells-executable")
     executable_hash = hashlib.sha256(executable.read_bytes()).hexdigest()
