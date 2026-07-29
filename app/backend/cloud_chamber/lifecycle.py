@@ -978,12 +978,43 @@ def _lightweight_world_sources(
         ),
     ]
     known_run_ids = {source.run_id for source in sources}
+    variation_sources: dict[str, list[WorldLifecycleSource]] = defaultdict(list)
     for run in storage.runs:
         if run.run_id in known_run_ids:
             continue
         source = _variation_source(run, result_by_run.get(run.run_id))
         if source is not None:
-            sources.append(source)
+            variation_sources[source.simulation_id].append(source)
+    for candidates in variation_sources.values():
+        accepted = [source for source in candidates if source.accepted_backing]
+        if len(accepted) > 1:
+            selected = sorted(
+                accepted, key=lambda source: (source.created_at or "", source.run_id)
+            )[0]
+            selected.availability_state = "conflict"
+            selected.inspectability_state = "conflict"
+            selected.parent_eligibility_state = "ineligible"
+            selected.trust_state = "failed"
+            selected.caveats.append("Multiple attempts claim accepted backing.")
+        elif accepted:
+            selected = accepted[0]
+        else:
+            available = [
+                source for source in candidates if source.availability_state == "available"
+            ]
+            selected = (
+                sorted(
+                    available,
+                    key=lambda source: (source.created_at or "", source.run_id),
+                )[0]
+                if available
+                else sorted(
+                    candidates,
+                    key=lambda source: (source.created_at or "", source.run_id),
+                )[-1]
+            )
+            selected.accepted_backing = bool(available)
+        sources.append(selected)
     warnings: list[str] = []
     return sources, warnings
 
@@ -1060,6 +1091,16 @@ def _variation_source(
     reference_id = _string(configuration.get("reference_simulation_id"))
     envelope = configuration.get("variation_envelope")
     envelope_record = envelope if isinstance(envelope, dict) else {}
+    attempts = envelope_record.get("attempts")
+    accepted_backing = bool(
+        isinstance(attempts, list)
+        and any(
+            isinstance(attempt, dict)
+            and attempt.get("run_id") == run.run_id
+            and attempt.get("accepted_backing") is True
+            for attempt in attempts
+        )
+    )
     availability, inspectability = _source_availability(run, expected_case_id=None)
     caveats = [*run.run_caveats, *(result.caveats if result is not None else [])]
     differences = _configuration_differences(configuration.get("configuration_difference"))
@@ -1077,6 +1118,7 @@ def _variation_source(
         reference_simulation_id=reference_id,
         question=_string(configuration.get("user_question")) or run.physical_question,
         differences=differences,
+        accepted_backing=accepted_backing,
         availability_state=availability,
         inspectability_state=inspectability,
         parent_eligibility_state=(

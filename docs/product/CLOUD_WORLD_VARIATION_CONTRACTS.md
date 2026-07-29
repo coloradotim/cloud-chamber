@@ -858,9 +858,9 @@ Ridge center remains a generated-domain placement decision, not an ordinary Cont
 
 | Control | Exact transform | Supported envelope |
 | --- | --- | --- |
-| **Cross-ridge flow strength** | Scale the complete Recipe-reference cross-ridge wind profile about zero | `0.50–1.50×` |
-| **Wind-profile offset** | Add a constant cross-ridge wind to every level | `−10 to +10 m/s` |
-| **Shear strength** | Scale departures from the layer-mean profile while preserving the selected mean | `0.50–1.50×` |
+| **0–4 km mean wind** | Translate the complete Recipe-reference cross-ridge wind profile to the selected low-level mean while retaining its resolved smaller-scale structure | `0–50 m/s` |
+| **Additional wind-profile offset** | Add a constant cross-ridge wind to every level after the low-level-mean and shear transforms | `−20 to +20 m/s` |
+| **0–10 km shear** | Adjust the complete profile so the resolved wind change from 0 to 10 km equals the selected value | `−30 to +50 m/s` |
 
 Critical levels, direction reversals, layer shear, and maximum wind are shown before launch. Critical levels are allowed because they are central to mountain-wave behavior; unsupported grid/domain combinations are blocked.
 
@@ -870,11 +870,13 @@ Moisture transforms use relative humidity derived from pressure and temperature.
 
 | Control | Exact transform | Supported envelope |
 | --- | --- | --- |
-| **Lower-tropospheric moisture** | Scale RH deficit from saturation below the authored transition level | deficit factor `0–2.0×` |
-| **Midlevel moisture** | Independently scale RH deficit in the authored middle layer with smooth transitions | deficit factor `0–2.0×` |
+| **0–4 km mean RH** | Shift the Recipe-reference RH profile to the selected layer mean while preserving vertical structure and an authored smooth transition | `0–100%` |
+| **4–10 km mean RH** | Independently shift the Recipe-reference RH profile to the selected layer mean with authored smooth transitions at 4 and 10 km | `0–100%` |
 | **Boulder dry-air counterpart** | Set qv to zero while retaining Boulder terrain, wind, thermodynamics, physics, domain, and numerics | authored extreme state |
 
-Deficit factor `0` means saturation, `1` means reference, and `2` means twice the reference dryness. RH is bounded physically and profiles remain smooth.
+The displayed RH controls are actual layer means rather than generic multipliers. RH is
+bounded physically, qv is solved against the final hydrostatic pressure and temperature
+profile, and transitions remain smooth.
 
 The dry-air counterpart is a valid controlled moisture contrast with Boulder Moist. It is not Dry Ridge and must never be presented as such.
 

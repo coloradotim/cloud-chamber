@@ -43,6 +43,12 @@ from cloud_chamber.run_manifest import (
     write_run_manifest,
 )
 from cloud_chamber.settings import CloudChamberSettings
+from cloud_chamber.variation_envelope import (
+    VariationAttempt,
+    VariationDifference,
+    VariationEnvelope,
+    immutable_layer,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -68,7 +74,8 @@ def test_world_installs_distinct_dry_and_moist_references(tmp_path: Path) -> Non
         MOIST_SIMULATION_ID,
     ]
     assert all(simulation.inspectable for simulation in world.simulations)
-    assert world.simulations[0].can_create_variation is True
+    assert world.simulations[0].can_create_variation is False
+    assert "bounded equivalence" in (world.simulations[0].parent_eligibility_reason or "")
     assert world.simulations[0].recipe_id == "dry_ridge_mechanics"
     assert world.simulations[1].can_create_variation is True
     assert world.simulations[1].recipe_id == "boulder_moist_wave"
@@ -319,6 +326,79 @@ def test_direct_simulation_resolution_does_not_reconstruct_the_world(
     assert manifest.run_id == "mw-direct-resolution"
 
 
+def test_attempts_with_one_simulation_identity_collapse_to_one_world_record(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_run(settings, run_id=DRY_RUN_ID, case_id=DRY_CASE_ID)
+    _write_run(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID)
+    simulation_id = "mountain_waves_same_design"
+    first_run = "mw-same-design-a"
+    second_run = "mw-same-design-b"
+    _write_run(
+        settings,
+        run_id=first_run,
+        case_id="mountain_waves_exploratory_variation_v1",
+        run_configuration=_variation_configuration(
+            simulation_id=simulation_id,
+            run_id=first_run,
+        ),
+    )
+    _write_run(
+        settings,
+        run_id=second_run,
+        case_id="mountain_waves_exploratory_variation_v1",
+        run_configuration=_variation_configuration(
+            simulation_id=simulation_id,
+            run_id=second_run,
+        ),
+    )
+
+    world = mountain_waves_world_detail(settings)
+
+    records = [item for item in world.simulations if item.simulation_id == simulation_id]
+    assert len(records) == 1
+    assert records[0].run_id == first_run
+    assert world.lab_summary.completed_simulation_count == 1
+    promoted = load_run_manifest(settings.runtime_home / "runs" / first_run / "run_manifest.json")
+    envelope = VariationEnvelope.model_validate(promoted.run_configuration["variation_envelope"])
+    assert [attempt.run_id for attempt in envelope.attempts] == [first_run, second_run]
+    assert [attempt.run_id for attempt in envelope.attempts if attempt.accepted_backing] == [
+        first_run
+    ]
+
+
+def test_conflicting_accepted_attempts_fail_closed(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_run(settings, run_id=DRY_RUN_ID, case_id=DRY_CASE_ID)
+    _write_run(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID)
+    simulation_id = "mountain_waves_conflicted_design"
+    for suffix in ("a", "b"):
+        run_id = f"mw-conflicted-design-{suffix}"
+        _write_run(
+            settings,
+            run_id=run_id,
+            case_id="mountain_waves_exploratory_variation_v1",
+            run_configuration=_variation_configuration(
+                simulation_id=simulation_id,
+                run_id=run_id,
+                accepted_backing=True,
+            ),
+        )
+
+    world = mountain_waves_world_detail(settings)
+
+    conflict = next(item for item in world.history if item.simulation_id == simulation_id)
+    assert conflict.state == "conflict"
+    assert conflict.inspectable is False
+    assert "Multiple attempts claim accepted backing" in conflict.state_message
+    assert all(item.simulation_id != simulation_id for item in world.simulations)
+    with pytest.raises(ValueError, match="backing is conflicted"):
+        mountain_waves_run_manifest(settings, simulation_id)
+
+
 def _settings(tmp_path: Path) -> CloudChamberSettings:
     return CloudChamberSettings(
         runtime_home=tmp_path / "CloudChamber",
@@ -487,4 +567,107 @@ def _configuration() -> dict[str, Any]:
         ],
         "duration_seconds": 4000,
         "output_cadence_seconds": 200,
+    }
+
+
+def _variation_configuration(
+    *,
+    simulation_id: str,
+    run_id: str,
+    accepted_backing: bool = False,
+) -> dict[str, Any]:
+    scientific_design = {
+        "world_id": "mountain_waves",
+        "recipe_id": "boulder_moist_wave",
+        "recipe_contract_version": "1",
+        "controls": {
+            "recipe_id": "boulder_moist_wave",
+            "boulder_moist": {
+                "ridge_height_m": 2_000.0,
+                "ridge_half_width_m": 11_000.0,
+                "low_level_wind_m_s": 14.1,
+                "wind_offset_m_s": 0.0,
+                "shear_through_10km_m_s": 23.8,
+                "lower_layer_rh_percent": 66.0,
+                "midlevel_rh_percent": 34.5,
+                "dry_air_counterpart": False,
+                "lower_stability_factor": 1.0,
+                "midlevel_stability_factor": 1.0,
+                "upper_stability_factor": 1.0,
+            },
+        },
+    }
+    numerical = {"grid": "fixture"}
+    observation = {
+        "duration_seconds": 400.0,
+        "output_cadence_seconds": 200.0,
+    }
+    envelope = VariationEnvelope(
+        world_id="mountain_waves",
+        recipe_id="boulder_moist_wave",
+        recipe_contract_version="1",
+        simulation_id=simulation_id,
+        parent_simulation_id=MOIST_SIMULATION_ID,
+        reference_simulation_id=MOIST_SIMULATION_ID,
+        display_name="Same design",
+        scientific_design=immutable_layer(scientific_design),
+        numerical_realization=immutable_layer(numerical),
+        observation_plan=immutable_layer(observation),
+        world_payload={
+            "controls": scientific_design["controls"],
+            "terrain": {"height_m": 2_000.0, "half_width_m": 11_000.0},
+            "diagnostics": {
+                "periodic_wrap_time_seconds": 10_000.0,
+                "damping_base_m": 20_000.0,
+                "model_top_m": 30_000.0,
+            },
+        },
+        differences=[
+            VariationDifference(
+                category="terrain",
+                path="controls.ridge_half_width_m",
+                label="Ridge half-width",
+                before=10_000.0,
+                after=11_000.0,
+                units="m",
+            )
+        ],
+        relationship_classification="controlled_physical_variation",
+        run_profile_id="mountain_waves_boulder_quick_v1",
+        run_profile_contract={},
+        cost_estimate={},
+        package_identity_sha256=f"package-{run_id}",
+        attempts=[
+            VariationAttempt(
+                attempt_id=run_id,
+                run_id=run_id,
+                relationship="initial",
+                package_identity_sha256=f"package-{run_id}",
+                accepted_backing=accepted_backing,
+            )
+        ],
+        availability_state="packaged",
+    )
+    configuration = _configuration()
+    return {
+        "cloud_world_id": "mountain_waves",
+        "simulation_id": simulation_id,
+        "simulation_display_name": "Same design",
+        "parent_simulation_id": MOIST_SIMULATION_ID,
+        "parent_run_id": MOIST_RUN_ID,
+        "reference_simulation_id": MOIST_SIMULATION_ID,
+        "variation_envelope": envelope.model_dump(mode="json"),
+        "mountain_waves_configuration": configuration,
+        "duration_seconds": 400.0,
+        "output_cadence_seconds": 200.0,
+        "domain": {
+            "nx": 3,
+            "ny": 1,
+            "nz": 2,
+            "dx_m": 1_000.0,
+            "dy_m": 1_000.0,
+            "dz_m": 10_000.0,
+            "active_top_m": 20_000.0,
+        },
+        "terrain": configuration["terrain"],
     }

@@ -5,9 +5,11 @@ import pytest
 
 from cloud_chamber.run_cost import (
     LaunchBudgetError,
+    consume_manifest_launch_budget,
     create_launch_review_snapshot,
     estimate_profile,
     immediate_prelaunch_disk_gate,
+    preflight_manifest_launch_budget,
     profile_by_id,
     run_cost_catalog,
     validate_manifest_launch_budget,
@@ -271,6 +273,60 @@ def test_manifest_gate_rejects_package_mismatch_and_successful_reuse(
 
     with pytest.raises(LaunchBudgetError, match="already been consumed"):
         validate_manifest_launch_budget(
+            settings,
+            manifest=manifest,
+            snapshot_id=review.snapshot.snapshot_id,
+        )
+
+
+def test_manifest_preflight_does_not_consume_authorization_until_confirmed_start(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = fake_settings(tmp_path)
+    profile = profile_by_id("trade_cumulus_quick_v1")
+    manifest = bound_manifest(tmp_path, profile_id=profile.profile_id)
+    high = profile.expected_size_max_bytes
+    assert high is not None
+    monkeypatch.setattr(
+        "cloud_chamber.run_cost.shutil.disk_usage",
+        lambda _path: type(
+            "Usage",
+            (),
+            {"free": high + profile.required_post_run_reserve_bytes + 1},
+        )(),
+    )
+    review = create_launch_review_snapshot(
+        settings,
+        profile_id=profile.profile_id,
+        warning_threshold_bytes=50 * 1024**3,
+        manifest=manifest,
+    )
+
+    first = preflight_manifest_launch_budget(
+        settings,
+        manifest=manifest,
+        snapshot_id=review.snapshot.snapshot_id,
+    )
+    second = preflight_manifest_launch_budget(
+        settings,
+        manifest=manifest,
+        snapshot_id=review.snapshot.snapshot_id,
+    )
+
+    assert first is not None
+    assert second is not None
+    assert first.check_kind == second.check_kind == "launch_preflight"
+    consumed = consume_manifest_launch_budget(
+        settings,
+        manifest=manifest,
+        snapshot_id=review.snapshot.snapshot_id,
+        preflight_check=second,
+    )
+    assert consumed is not None
+    assert consumed.check_kind == "launch"
+    with pytest.raises(LaunchBudgetError, match="already been consumed"):
+        preflight_manifest_launch_budget(
             settings,
             manifest=manifest,
             snapshot_id=review.snapshot.snapshot_id,

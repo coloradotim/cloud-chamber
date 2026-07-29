@@ -214,13 +214,9 @@ class LocalRunManager:
         except Exception as exc:
             stdout_handle.close()
             stderr_handle.close()
-            failed = self._with_state(
-                queued,
-                state=LifecycleState.FAILED,
-                product_state=ProductState.FAILED_CANCELED_CM1_RUN,
-                exit_code=None,
-            )
-            write_run_manifest(manifest_path, failed)
+            # No CM1 process started. Preserve the immutable package so corrected
+            # local settings can retry the same reviewed attempt.
+            write_run_manifest(manifest_path, manifest)
             raise LocalRunManagerError(f"Failed to launch CM1 process: {exc}") from exc
 
         running = self._with_state(

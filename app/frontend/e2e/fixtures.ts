@@ -2567,11 +2567,11 @@ const mountainWavesBoulderControls = {
   boulder_moist: {
     ridge_height_m: 2000,
     ridge_half_width_m: 10000,
-    flow_strength_factor: 1,
+    low_level_wind_m_s: 14.1,
     wind_offset_m_s: 0,
-    shear_strength_factor: 1,
-    lower_rh_deficit_factor: 1,
-    midlevel_rh_deficit_factor: 1,
+    shear_through_10km_m_s: 23.8,
+    lower_layer_rh_percent: 66,
+    midlevel_rh_percent: 34.5,
     dry_air_counterpart: false,
     lower_stability_factor: 1,
     midlevel_stability_factor: 1,
@@ -2856,9 +2856,9 @@ export async function mockMountainWavesProductPath(
         ? "CM1 completed normally with 21 exact native histories ready for inspection."
         : current === "packaged"
           ? "The exact package is ready and has not been queued."
-        : current === "running"
-          ? "CM1 is running locally."
-          : "Waiting for the local CM1 runner.",
+          : current === "running"
+            ? "CM1 is running locally."
+            : "Waiting for the local CM1 runner.",
       inspectable: completed,
       can_create_variation: completed,
     };
@@ -2882,9 +2882,7 @@ export async function mockMountainWavesProductPath(
       caveats: ["The dry and moist built-ins are not a controlled pair."],
     };
   };
-  const compareSimulation = (
-    simulation: typeof mountainWavesReference | typeof variation,
-  ) => ({
+  const compareSimulation = (simulation: typeof mountainWavesReference | typeof variation) => ({
     simulation_id: simulation.simulation_id,
     display_name: simulation.display_name,
     world_id: "mountain_waves",

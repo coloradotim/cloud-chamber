@@ -54,11 +54,11 @@ class BoulderMoistControls(BaseModel):
 
     ridge_height_m: float = Field(default=2_000.0, ge=500.0, le=3_500.0)
     ridge_half_width_m: float = Field(default=10_000.0, ge=5_000.0, le=30_000.0)
-    flow_strength_factor: float = Field(default=1.0, ge=0.5, le=1.5)
-    wind_offset_m_s: float = Field(default=0.0, ge=-10.0, le=10.0)
-    shear_strength_factor: float = Field(default=1.0, ge=0.5, le=1.5)
-    lower_rh_deficit_factor: float = Field(default=1.0, ge=0.0, le=2.0)
-    midlevel_rh_deficit_factor: float = Field(default=1.0, ge=0.0, le=2.0)
+    low_level_wind_m_s: float = Field(default=14.1, ge=0.0, le=50.0)
+    wind_offset_m_s: float = Field(default=0.0, ge=-20.0, le=20.0)
+    shear_through_10km_m_s: float = Field(default=23.8, ge=-30.0, le=50.0)
+    lower_layer_rh_percent: float = Field(default=66.0, ge=0.0, le=100.0)
+    midlevel_rh_percent: float = Field(default=34.5, ge=0.0, le=100.0)
     dry_air_counterpart: bool = False
     lower_stability_factor: float = Field(default=1.0, ge=0.5, le=1.5)
     midlevel_stability_factor: float = Field(default=1.0, ge=0.5, le=1.5)
@@ -140,26 +140,78 @@ def recipe_name(recipe_id: RecipeId) -> str:
     return "Dry Ridge Mechanics" if recipe_id == DRY_RECIPE_ID else "Boulder Moist Wave"
 
 
+def normalize_recipe_controls(
+    controls: MountainWavesRecipeControls,
+    *,
+    recipe_reference: MountainWavesRecipeControls | None = None,
+) -> MountainWavesRecipeControls:
+    """Remove inactive UI state from the effective scientific design."""
+    reference = recipe_reference or default_controls(controls.recipe_id)
+    if controls.recipe_id != reference.recipe_id:
+        raise ValueError("Controls and Recipe reference must use the same Recipe.")
+    if controls.recipe_id == DRY_RECIPE_ID:
+        assert controls.dry_ridge is not None
+        assert reference.dry_ridge is not None
+        payload = controls.dry_ridge.model_dump(mode="json")
+        if controls.dry_ridge.layered_stability:
+            payload["dry_stability_n_s"] = reference.dry_ridge.dry_stability_n_s
+        else:
+            for field in (
+                "lower_stability_n_s",
+                "upper_stability_n_s",
+                "stability_transition_height_m",
+                "stability_transition_width_m",
+            ):
+                payload[field] = getattr(reference.dry_ridge, field)
+        return MountainWavesRecipeControls(
+            recipe_id=DRY_RECIPE_ID,
+            dry_ridge=DryRidgeControls.model_validate(payload),
+        )
+    assert controls.boulder_moist is not None
+    assert reference.boulder_moist is not None
+    payload = controls.boulder_moist.model_dump(mode="json")
+    if controls.boulder_moist.dry_air_counterpart:
+        payload["lower_layer_rh_percent"] = reference.boulder_moist.lower_layer_rh_percent
+        payload["midlevel_rh_percent"] = reference.boulder_moist.midlevel_rh_percent
+    return MountainWavesRecipeControls(
+        recipe_id=BOULDER_RECIPE_ID,
+        boulder_moist=BoulderMoistControls.model_validate(payload),
+    )
+
+
 def resolve_mountain_waves_recipe(
     *,
     controls: MountainWavesRecipeControls,
     reference_controls: MountainWavesRecipeControls,
+    difference_reference_controls: MountainWavesRecipeControls | None = None,
     reference_sounding: list[RecipeSoundingLevel],
     catalog_profile: RunCostProfile,
 ) -> ResolvedMountainWavesRecipe:
     if controls.recipe_id != reference_controls.recipe_id:
         raise ValueError("Variation controls and Recipe reference must use the same Recipe.")
+    effective_controls = normalize_recipe_controls(controls, recipe_reference=reference_controls)
+    difference_reference = normalize_recipe_controls(
+        difference_reference_controls or reference_controls,
+        recipe_reference=reference_controls,
+    )
     if catalog_profile.recipe_id != controls.recipe_id:
         raise ValueError("Selected run profile does not belong to this Recipe.")
-    if controls.recipe_id == DRY_RECIPE_ID:
-        assert controls.dry_ridge is not None
+    if effective_controls.recipe_id == DRY_RECIPE_ID:
+        assert effective_controls.dry_ridge is not None
         assert reference_controls.dry_ridge is not None
-        return _resolve_dry(controls.dry_ridge, reference_controls.dry_ridge, catalog_profile)
-    assert controls.boulder_moist is not None
+        assert difference_reference.dry_ridge is not None
+        return _resolve_dry(
+            effective_controls.dry_ridge,
+            difference_reference.dry_ridge,
+            catalog_profile,
+        )
+    assert effective_controls.boulder_moist is not None
     assert reference_controls.boulder_moist is not None
+    assert difference_reference.boulder_moist is not None
     return _resolve_boulder(
-        controls.boulder_moist,
+        effective_controls.boulder_moist,
         reference_controls.boulder_moist,
+        difference_reference.boulder_moist,
         reference_sounding,
         catalog_profile,
     )
@@ -315,7 +367,8 @@ def _resolve_dry(
 
 def _resolve_boulder(
     controls: BoulderMoistControls,
-    reference: BoulderMoistControls,
+    recipe_reference: BoulderMoistControls,
+    difference_reference: BoulderMoistControls,
     reference_sounding: list[RecipeSoundingLevel],
     profile: RunCostProfile,
 ) -> ResolvedMountainWavesRecipe:
@@ -335,24 +388,30 @@ def _resolve_boulder(
     duration_s = 4_000 if profile.role == "Quick" else 7_200
     cadence_s = 200 if profile.role == "Quick" else 30 if profile.role == "Presentation" else 120
 
-    sounding = _boulder_sounding(reference_sounding, controls)
+    sounding = _boulder_sounding(reference_sounding, controls, recipe_reference)
     if any(not _finite_level(level) for level in sounding):
         errors.append("The transformed Boulder atmosphere contains nonfinite values.")
     if any(level.qv_g_kg < 0.0 for level in sounding):
         errors.append("The transformed Boulder atmosphere contains negative water vapor.")
+    if any(
+        upper.pressure_pa >= lower.pressure_pa
+        for lower, upper in zip(sounding, sounding[1:], strict=False)
+    ):
+        errors.append(
+            "The transformed Boulder hydrostatic pressure profile is not strictly decreasing."
+        )
     stability = _stability_values(sounding)
     if any(item["n2_s2"] <= 0.0 for item in stability):
         errors.append("The transformed Boulder atmosphere is statically unstable.")
     critical_levels = _critical_levels(sounding)
     maximum_wind = max(abs(level.u_m_s) for level in sounding)
-    if maximum_wind > 60.0:
-        errors.append("The transformed Boulder wind exceeds the supported 60 m/s envelope.")
-    if critical_levels:
+    if maximum_wind > 125.0:
+        errors.append("The transformed Boulder wind exceeds the supported 125 m/s envelope.")
+    elif maximum_wind > 80.0:
         warnings.append(
-            "The transformed profile contains a critical level; the generated domain and "
-            "result should be interpreted as a critical-level experiment."
+            "The transformed profile contains winds above 80 m/s; generated domain and "
+            "cost growth should be reviewed before launch."
         )
-
     representative_n = _representative_n(stability)
     representative_u = max(5.0, _lower_mean_wind(sounding))
     nh_over_u = representative_n * controls.ridge_height_m / representative_u
@@ -366,9 +425,66 @@ def _resolve_boulder(
     )
     nx = _even_count(minimum_span, dx_m)
     span_m = nx * dx_m
-    nz = 125 if dz_m == 200.0 else 250
-    model_top_m = nz * dz_m
-    damping_base_m = 14_000.0
+    vertical_wavelength_m = 2.0 * math.pi * representative_u / max(representative_n, 1.0e-6)
+    required_top_m = max(
+        25_000.0,
+        controls.ridge_height_m + 1.5 * vertical_wavelength_m,
+    )
+    model_top_m = float(_ceil_to(required_top_m, dz_m))
+    if model_top_m > 50_000.0:
+        errors.append(
+            "The selected wind and stability require a model top above the supported "
+            "50 km Boulder envelope."
+        )
+        model_top_m = 50_000.0
+    source_top_m = reference_sounding[-1].height_m
+    if model_top_m > source_top_m:
+        errors.append(
+            f"The generated {model_top_m / 1_000.0:.1f} km model top exceeds the "
+            f"{source_top_m / 1_000.0:.1f} km source-backed sounding; this vertical "
+            "extension is outside the currently supported Boulder envelope."
+        )
+    nz = int(round(model_top_m / dz_m))
+    damping_depth_m = max(6_000.0, 0.5 * vertical_wavelength_m)
+    damping_base_m = model_top_m - damping_depth_m
+    minimum_clear_damping_base_m = controls.ridge_height_m + 0.75 * vertical_wavelength_m
+    if damping_base_m < minimum_clear_damping_base_m:
+        errors.append(
+            "The generated model top cannot keep damping above the terrain-forced "
+            "wave inspection region."
+        )
+    if critical_levels:
+        lowest_critical_level = min(critical_levels)
+        inherited_wind_structure = all(
+            math.isclose(actual, reference, rel_tol=0.0, abs_tol=1.0e-12)
+            for actual, reference in (
+                (controls.low_level_wind_m_s, recipe_reference.low_level_wind_m_s),
+                (controls.wind_offset_m_s, recipe_reference.wind_offset_m_s),
+                (
+                    controls.shear_through_10km_m_s,
+                    recipe_reference.shear_through_10km_m_s,
+                ),
+            )
+        )
+        if (
+            lowest_critical_level < controls.ridge_height_m + 0.5 * vertical_wavelength_m
+            and not inherited_wind_structure
+        ):
+            errors.append(
+                "A critical level falls inside the active terrain-forced wave region; "
+                "this interaction is outside the currently supported Boulder envelope."
+            )
+        elif inherited_wind_structure:
+            warnings.append(
+                "The retained Boulder source atmosphere contains a critical level; its "
+                "inherited wind structure remains visible rather than being treated as "
+                "a new control-induced reversal."
+            )
+        else:
+            warnings.append(
+                "The transformed profile contains a critical level above the active wave "
+                "inspection region; interpret the result as a critical-level experiment."
+            )
     periodic_wrap_time = span_m / max(maximum_wind, 1.0)
     if periodic_wrap_time < 1.15 * duration_s:
         errors.append("Generated domain does not preserve the approved periodic-wrap margin.")
@@ -391,6 +507,7 @@ def _resolve_boulder(
         physics_source="Boulder Moist Wave source-backed generator v1",
     )
     nominal_nx = 440 if profile.role == "Presentation" else 220
+    nominal_nz = 250 if profile.role == "Presentation" else 125
     nominal_histories = (
         241 if profile.role == "Presentation" else 21 if profile.role == "Quick" else 61
     )
@@ -398,13 +515,13 @@ def _resolve_boulder(
         profile,
         numerical=numerical,
         observation=observation,
-        nominal_cells=nominal_nx * nz,
+        nominal_cells=nominal_nx * nominal_nz,
         actual_cells=nx * nz,
         nominal_histories=nominal_histories,
     )
     differences = _control_differences(
         controls.model_dump(mode="json"),
-        reference.model_dump(mode="json"),
+        difference_reference.model_dump(mode="json"),
         _BOULDER_DIFFERENCE_METADATA,
     )
     return ResolvedMountainWavesRecipe(
@@ -497,57 +614,251 @@ def _dry_n_at_height(controls: DryRidgeControls, height_m: float) -> float:
 
 
 def _boulder_sounding(
-    reference: list[RecipeSoundingLevel], controls: BoulderMoistControls
+    reference: list[RecipeSoundingLevel],
+    controls: BoulderMoistControls,
+    reference_controls: BoulderMoistControls,
 ) -> list[RecipeSoundingLevel]:
-    reference_mean = sum(level.u_m_s for level in reference) / len(reference)
+    source_low_mean = _layer_mean([level.u_m_s for level in reference if level.height_m < 4_000.0])
+    source_shear = _interpolated_wind(reference, 10_000.0) - _interpolated_wind(reference, 0.0)
+    target_low_mean = (
+        source_low_mean
+        if controls.low_level_wind_m_s == reference_controls.low_level_wind_m_s
+        else controls.low_level_wind_m_s
+    )
+    target_shear = (
+        source_shear
+        if controls.shear_through_10km_m_s == reference_controls.shear_through_10km_m_s
+        else controls.shear_through_10km_m_s
+    )
+    lower_height_fractions = [
+        _wind_height_fraction(level.height_m) for level in reference if level.height_m < 4_000.0
+    ]
+    shear_adjustment = target_shear - source_shear
+    profile_translation = (
+        target_low_mean - source_low_mean - shear_adjustment * _layer_mean(lower_height_fractions)
+    )
     theta = [reference[0].theta_k]
     for lower, upper in zip(reference, reference[1:], strict=False):
         midpoint = 0.5 * (lower.height_m + upper.height_m)
+        lower_weight, midlevel_weight, upper_weight = _authored_layer_weights(midpoint)
         factor = (
-            controls.lower_stability_factor
-            if midpoint < 4_000.0
-            else controls.midlevel_stability_factor
-            if midpoint < 10_000.0
-            else controls.upper_stability_factor
+            lower_weight * controls.lower_stability_factor
+            + midlevel_weight * controls.midlevel_stability_factor
+            + upper_weight * controls.upper_stability_factor
         )
         theta.append(theta[-1] + (upper.theta_k - lower.theta_k) * factor)
+    reference_rh = [
+        _relative_humidity(
+            level.pressure_pa,
+            level.theta_k * (level.pressure_pa / 100_000.0) ** (287.04 / 1004.0),
+            level.qv_g_kg,
+        )
+        for level in reference
+    ]
+    lower_indexes = [index for index, level in enumerate(reference) if level.height_m < 4_000.0]
+    midlevel_indexes = [
+        index for index, level in enumerate(reference) if 4_000.0 <= level.height_m < 10_000.0
+    ]
+    lower_target = (
+        _layer_mean([reference_rh[index] for index in lower_indexes])
+        if controls.lower_layer_rh_percent == reference_controls.lower_layer_rh_percent
+        else controls.lower_layer_rh_percent
+    )
+    midlevel_target = (
+        _layer_mean([reference_rh[index] for index in midlevel_indexes])
+        if controls.midlevel_rh_percent == reference_controls.midlevel_rh_percent
+        else controls.midlevel_rh_percent
+    )
+    adjusted_rh = _rh_profile_for_layer_targets(
+        reference_rh,
+        [level.height_m for level in reference],
+        lower_target=lower_target,
+        midlevel_target=midlevel_target,
+    )
+    thermodynamics_unchanged = (
+        all(
+            math.isclose(value, reference_value, rel_tol=0.0, abs_tol=1.0e-12)
+            for value, reference_value in (
+                (controls.lower_stability_factor, reference_controls.lower_stability_factor),
+                (controls.midlevel_stability_factor, reference_controls.midlevel_stability_factor),
+                (controls.upper_stability_factor, reference_controls.upper_stability_factor),
+                (controls.lower_layer_rh_percent, reference_controls.lower_layer_rh_percent),
+                (controls.midlevel_rh_percent, reference_controls.midlevel_rh_percent),
+            )
+        )
+        and not controls.dry_air_counterpart
+    )
+    if thermodynamics_unchanged:
+        pressures = [level.pressure_pa for level in reference]
+        qv_values = [level.qv_g_kg for level in reference]
+    else:
+        pressures, qv_values = _hydrostatic_moist_profile(
+            heights_m=[level.height_m for level in reference],
+            theta_k=theta,
+            rh_percent=[0.0 for _ in adjusted_rh] if controls.dry_air_counterpart else adjusted_rh,
+            surface_pressure_pa=reference[0].pressure_pa,
+        )
+
     output: list[RecipeSoundingLevel] = []
     for index, source in enumerate(reference):
         wind = (
-            controls.flow_strength_factor
-            * (reference_mean + controls.shear_strength_factor * (source.u_m_s - reference_mean))
+            source.u_m_s
+            + profile_translation
+            + shear_adjustment * _wind_height_fraction(source.height_m)
             + controls.wind_offset_m_s
         )
         final_theta = theta[index]
-        if controls.dry_air_counterpart:
-            qv = 0.0
-        else:
-            temperature = final_theta * (source.pressure_pa / 100_000.0) ** (287.04 / 1004.0)
-            reference_temperature = source.theta_k * (source.pressure_pa / 100_000.0) ** (
-                287.04 / 1004.0
-            )
-            reference_rh = _relative_humidity(
-                source.pressure_pa, reference_temperature, source.qv_g_kg
-            )
-            deficit_factor = (
-                controls.lower_rh_deficit_factor
-                if source.height_m < 4_000.0
-                else controls.midlevel_rh_deficit_factor
-                if source.height_m < 10_000.0
-                else 1.0
-            )
-            rh = min(100.0, max(0.0, 100.0 - (100.0 - reference_rh) * deficit_factor))
-            qv = _qv_from_rh(source.pressure_pa, temperature, rh)
         output.append(
             RecipeSoundingLevel(
                 height_m=source.height_m,
-                pressure_pa=source.pressure_pa,
+                pressure_pa=pressures[index],
                 theta_k=final_theta,
-                qv_g_kg=qv,
+                qv_g_kg=qv_values[index],
                 u_m_s=wind,
             )
         )
     return output
+
+
+def _wind_height_fraction(height_m: float) -> float:
+    return min(max(height_m / 10_000.0, 0.0), 1.0)
+
+
+def _interpolated_wind(sounding: list[RecipeSoundingLevel], height_m: float) -> float:
+    if height_m <= sounding[0].height_m:
+        return sounding[0].u_m_s
+    for lower, upper in zip(sounding, sounding[1:], strict=False):
+        if lower.height_m <= height_m <= upper.height_m:
+            fraction = (height_m - lower.height_m) / (upper.height_m - lower.height_m)
+            return lower.u_m_s + fraction * (upper.u_m_s - lower.u_m_s)
+    return sounding[-1].u_m_s
+
+
+def _layer_mean(values: list[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def _authored_layer_weights(height_m: float) -> tuple[float, float, float]:
+    lower_to_mid = _smoothstep((height_m - 3_500.0) / 1_000.0)
+    mid_to_upper = _smoothstep((height_m - 9_500.0) / 1_000.0)
+    lower = 1.0 - lower_to_mid
+    upper = mid_to_upper
+    midlevel = lower_to_mid * (1.0 - mid_to_upper)
+    total = lower + midlevel + upper
+    return lower / total, midlevel / total, upper / total
+
+
+def _smoothstep(value: float) -> float:
+    bounded = min(max(value, 0.0), 1.0)
+    return bounded * bounded * (3.0 - 2.0 * bounded)
+
+
+def _rh_profile_for_layer_targets(
+    reference_values: list[float],
+    heights_m: list[float],
+    *,
+    lower_target: float,
+    midlevel_target: float,
+) -> list[float]:
+    if len(reference_values) != len(heights_m):
+        raise ValueError("RH values and heights must have the same length.")
+    lower_indexes = [index for index, height in enumerate(heights_m) if height < 4_000.0]
+    midlevel_indexes = [
+        index for index, height in enumerate(heights_m) if 4_000.0 <= height < 10_000.0
+    ]
+    weights = [_authored_layer_weights(height) for height in heights_m]
+
+    def profile(lower_delta: float, midlevel_delta: float) -> list[float]:
+        return [
+            min(
+                100.0,
+                max(
+                    0.0,
+                    reference + lower_delta * layer_weights[0] + midlevel_delta * layer_weights[1],
+                ),
+            )
+            for reference, layer_weights in zip(reference_values, weights, strict=True)
+        ]
+
+    def solve_delta(
+        indexes: list[int],
+        target: float,
+        *,
+        lower_delta: float,
+        midlevel_delta: float,
+        solve_lower: bool,
+    ) -> float:
+        low = -2_000.0
+        high = 2_000.0
+        for _ in range(64):
+            candidate = 0.5 * (low + high)
+            values = profile(
+                candidate if solve_lower else lower_delta,
+                midlevel_delta if solve_lower else candidate,
+            )
+            mean = _layer_mean([values[index] for index in indexes])
+            if mean < target:
+                low = candidate
+            else:
+                high = candidate
+        return 0.5 * (low + high)
+
+    lower_delta = 0.0
+    midlevel_delta = 0.0
+    for _ in range(12):
+        lower_delta = solve_delta(
+            lower_indexes,
+            lower_target,
+            lower_delta=lower_delta,
+            midlevel_delta=midlevel_delta,
+            solve_lower=True,
+        )
+        midlevel_delta = solve_delta(
+            midlevel_indexes,
+            midlevel_target,
+            lower_delta=lower_delta,
+            midlevel_delta=midlevel_delta,
+            solve_lower=False,
+        )
+    return profile(lower_delta, midlevel_delta)
+
+
+def _hydrostatic_moist_profile(
+    *,
+    heights_m: list[float],
+    theta_k: list[float],
+    rh_percent: list[float],
+    surface_pressure_pa: float,
+) -> tuple[list[float], list[float]]:
+    if not (len(heights_m) == len(theta_k) == len(rh_percent)):
+        raise ValueError("Hydrostatic profile inputs must have the same length.")
+    pressures = [surface_pressure_pa]
+    surface_temperature = theta_k[0] * (surface_pressure_pa / 100_000.0) ** (287.04 / 1004.0)
+    qv_values = [_qv_from_rh(surface_pressure_pa, surface_temperature, rh_percent[0])]
+    for index in range(1, len(heights_m)):
+        dz = heights_m[index] - heights_m[index - 1]
+        if dz <= 0.0:
+            raise ValueError("Hydrostatic profile heights must increase.")
+        lower_pressure = pressures[-1]
+        pressure = lower_pressure * math.exp(-9.81 * dz / (287.04 * 280.0))
+        upper_qv = 0.0
+        for _ in range(24):
+            lower_temperature = theta_k[index - 1] * (lower_pressure / 100_000.0) ** (
+                287.04 / 1004.0
+            )
+            upper_temperature = theta_k[index] * (pressure / 100_000.0) ** (287.04 / 1004.0)
+            upper_qv = _qv_from_rh(pressure, upper_temperature, rh_percent[index])
+            lower_virtual_temperature = lower_temperature * (1.0 + 0.61 * qv_values[-1] / 1_000.0)
+            upper_virtual_temperature = upper_temperature * (1.0 + 0.61 * upper_qv / 1_000.0)
+            mean_virtual_temperature = 0.5 * (lower_virtual_temperature + upper_virtual_temperature)
+            updated = lower_pressure * math.exp(-9.81 * dz / (287.04 * mean_virtual_temperature))
+            if math.isclose(updated, pressure, rel_tol=0.0, abs_tol=1.0e-6):
+                pressure = updated
+                break
+            pressure = updated
+        pressures.append(pressure)
+        qv_values.append(upper_qv)
+    return pressures, qv_values
 
 
 def _control_differences(
@@ -611,11 +922,11 @@ _DRY_DIFFERENCE_METADATA = {
 _BOULDER_DIFFERENCE_METADATA = {
     "ridge_height_m": ("terrain", "Ridge height", "m"),
     "ridge_half_width_m": ("terrain", "Ridge half-width", "m"),
-    "flow_strength_factor": ("wind", "Cross-ridge flow strength", "x"),
+    "low_level_wind_m_s": ("wind", "0–4 km mean wind", "m/s"),
     "wind_offset_m_s": ("wind", "Wind-profile offset", "m/s"),
-    "shear_strength_factor": ("wind", "Shear strength", "x"),
-    "lower_rh_deficit_factor": ("moisture", "Lower RH-deficit factor", "x"),
-    "midlevel_rh_deficit_factor": ("moisture", "Midlevel RH-deficit factor", "x"),
+    "shear_through_10km_m_s": ("wind", "0–10 km shear", "m/s"),
+    "lower_layer_rh_percent": ("moisture", "0–4 km mean RH", "%"),
+    "midlevel_rh_percent": ("moisture", "4–10 km mean RH", "%"),
     "dry_air_counterpart": ("moisture", "Boulder dry-air counterpart", None),
     "lower_stability_factor": (
         "stability_thermodynamics",
@@ -662,10 +973,18 @@ def _resolve_cost_profile(
     if runtime_high is not None:
         runtime_high = max(runtime_low or 1, int(math.ceil(runtime_high * ratio)))
     reasons = list(profile.cost_change_reasons)
+    estimate_basis = profile.estimate_basis
+    confidence = profile.confidence
     if ratio > 1.001:
         reasons.append(
             f"Resolved domain and output inventory are {ratio:.2f}x the nominal retained-cell plan."
         )
+        if estimate_basis == "measured":
+            estimate_basis = "scaled_from_measured"
+            confidence = (
+                "Scaled from the measured reference realization because the generated "
+                "domain, vertical grid, or output inventory differs."
+            )
     return profile.model_copy(
         update={
             "numerical_realization": numerical,
@@ -674,6 +993,8 @@ def _resolve_cost_profile(
             "expected_size_max_bytes": high,
             "expected_runtime_min_seconds": runtime_low,
             "expected_runtime_max_seconds": runtime_high,
+            "estimate_basis": estimate_basis,
+            "confidence": confidence,
             "cost_change_reasons": reasons,
         }
     )

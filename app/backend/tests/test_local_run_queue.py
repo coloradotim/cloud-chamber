@@ -255,7 +255,7 @@ def test_queue_enforces_opted_in_launch_budget_before_process_start(
         raise LaunchBudgetError("Launch blocked: fixture storage budget.")
 
     monkeypatch.setattr(
-        "cloud_chamber.local_run_queue.validate_manifest_launch_budget",
+        "cloud_chamber.local_run_queue.preflight_manifest_launch_budget",
         block_budget,
     )
     fake_manager = FakeRunManager()
@@ -267,6 +267,73 @@ def test_queue_enforces_opted_in_launch_budget_before_process_start(
     assert fake_manager.launched == []
     assert state.entries[0].state == "launch_failed"
     assert state.entries[0].error == "Launch blocked: fixture storage budget."
+
+
+def test_process_start_failure_does_not_consume_launch_authorization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_path = create_manifest(tmp_path, "run-retry-after-process-failure")
+    manifest = load_run_manifest(manifest_path)
+    write_run_manifest(
+        manifest_path,
+        manifest.model_copy(
+            update={
+                "run_configuration": {
+                    **manifest.run_configuration,
+                    "launch_review_snapshot_id": "snapshot-retry",
+                }
+            }
+        ),
+    )
+    preflights: list[str | None] = []
+    consumptions: list[str | None] = []
+
+    def pass_preflight(
+        _settings: CloudChamberSettings,
+        *,
+        manifest: RunManifest,
+        snapshot_id: str | None,
+    ) -> SimpleNamespace:
+        preflights.append(snapshot_id)
+        return SimpleNamespace(manifest_run_id=manifest.run_id)
+
+    def record_consumption(
+        _settings: CloudChamberSettings,
+        *,
+        manifest: RunManifest,
+        snapshot_id: str | None,
+        preflight_check: object,
+    ) -> SimpleNamespace:
+        assert preflight_check is not None
+        consumptions.append(snapshot_id)
+        return SimpleNamespace(manifest_run_id=manifest.run_id)
+
+    monkeypatch.setattr(
+        "cloud_chamber.local_run_queue.preflight_manifest_launch_budget",
+        pass_preflight,
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.local_run_queue.consume_manifest_launch_budget",
+        record_consumption,
+    )
+    fake_manager = FakeRunManager()
+    fake_manager.launch_error = LocalRunManagerError("process factory failed")
+    queue = LocalRunQueueManager(
+        settings=fake_settings(tmp_path),
+        run_manager=fake_manager,
+    )
+
+    first = queue.enqueue(manifest_path)
+    assert first.entries[-1].state == "launch_failed"
+    assert preflights == ["snapshot-retry"]
+    assert consumptions == []
+
+    fake_manager.launch_error = None
+    second = queue.enqueue(manifest_path)
+    assert second.entries[-1].state == "running"
+    assert preflights == ["snapshot-retry", "snapshot-retry"]
+    assert consumptions == ["snapshot-retry"]
 
 
 def test_queue_recovers_running_entry_from_manifest_after_stale_launch_failure(

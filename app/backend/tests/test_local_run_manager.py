@@ -278,6 +278,30 @@ def test_launch_constructs_cm1_command_and_captures_logs(tmp_path: Path) -> None
     assert manifest.execution.process_id == fake_process.pid
 
 
+def test_process_factory_failure_restores_packaged_manifest(tmp_path: Path) -> None:
+    settings = fake_settings(tmp_path)
+    manifest_path = dry_run_manifest_path(tmp_path)
+
+    def fail_process_start(
+        command: list[str],
+        *,
+        cwd: Path,
+        stdout: TextIO,
+        stderr: TextIO,
+    ) -> FakeProcess:
+        del command, cwd, stdout, stderr
+        raise OSError("process start failed")
+
+    manager = LocalRunManager(settings=settings, process_factory=fail_process_start)
+
+    with pytest.raises(LocalRunManagerError, match="process start failed"):
+        manager.launch(manifest_path)
+
+    manifest = load_run_manifest(manifest_path)
+    assert manifest.lifecycle_state == LifecycleState.PACKAGED
+    assert manifest.provenance.product_state == ProductState.PACKAGED_DRY_RUN_OUTPUT
+
+
 def test_launch_allows_source_defined_case_without_input_sounding(tmp_path: Path) -> None:
     settings = fake_settings(tmp_path)
     manifest_path = dry_run_manifest_path(tmp_path, run_id="source-defined")

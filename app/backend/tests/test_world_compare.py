@@ -1,6 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Literal
+from typing import Any, Literal
 
 import pytest
 
@@ -64,6 +64,12 @@ def _mountain_record(
     moist: bool,
     configuration: dict[str, object],
 ) -> MountainWavesSimulationRecord:
+    domain = configuration.get("domain")
+    terrain = configuration.get("terrain")
+    scientific_controls = {
+        "moisture_state": "moist" if moist else "dry",
+        **(terrain if isinstance(terrain, dict) else {}),
+    }
     return MountainWavesSimulationRecord(
         simulation_id=simulation_id,
         display_name=display_name,
@@ -74,10 +80,20 @@ def _mountain_record(
         state_message="Available",
         inspectable=True,
         can_create_variation=moist,
+        recipe_id="boulder_moist_wave" if moist else "dry_ridge_mechanics",
         moist=moist,
         moist_fields_available=moist,
         purpose="Test retained output.",
         configuration=configuration,
+        scientific_design={"controls": scientific_controls},
+        numerical_realization={
+            "domain": domain if isinstance(domain, dict) else {},
+        },
+        observation_plan={
+            key: configuration[key]
+            for key in ("duration_seconds", "output_cadence_seconds")
+            if key in configuration
+        },
     )
 
 
@@ -197,21 +213,21 @@ def test_mountain_compare_is_structural_and_keeps_unknown_distinct_from_equal(
 
     assert descriptor.compatibility is not None
     assert descriptor.compatibility.controlled_pair is False
-    assert (
-        descriptor.compatibility.relationship
-        == "Both are retained built-in Mountain Waves Simulations; no controlled "
-        "experimental relationship is declared."
-    )
+    assert descriptor.compatibility.relationship.startswith("Different Recipes:")
     assert descriptor.compatibility.camera_link_available is False
     assert descriptor.compatibility.physical_plane_link_available is False
     assert descriptor.compatibility.shared_view_ids == ["field", "wave_structure"]
-    assert "structural comparison" in descriptor.compatibility.controlled_pair_message
+    assert "different Mountain Waves Recipes" in (descriptor.compatibility.controlled_pair_message)
     moisture_row = next(
-        item for item in descriptor.material_differences if item.path == "atmosphere.moisture_state"
+        item
+        for item in descriptor.material_differences
+        if item.path == "scientific_design.controls.moisture_state"
     )
-    assert (moisture_row.left_value, moisture_row.right_value) == ("Dry", "Moist")
+    assert (moisture_row.left_value, moisture_row.right_value) == ("dry", "moist")
     missing_height = next(
-        item for item in descriptor.material_differences if item.path == "terrain.height_m"
+        item
+        for item in descriptor.material_differences
+        if item.path == "scientific_design.controls.height_m"
     )
     assert missing_height.left_known is True
     assert missing_height.right_known is False
@@ -289,6 +305,85 @@ def test_mountain_compare_consumes_shared_envelope_relationship_and_differences(
     row = descriptor.material_differences[0]
     assert row.path == "terrain.ridge_half_width_m"
     assert (row.left_value, row.right_value, row.units) == (10_000, 11_000, "m")
+
+
+def test_mountain_compare_uses_absolute_layers_for_sibling_variations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    common: dict[str, Any] = {
+        "role": "variation",
+        "case_id": "mountain_waves_recipe_variation_v1",
+        "parent_simulation_id": "mountain_waves_boulder_moist_reference",
+        "reference_simulation_id": "mountain_waves_boulder_moist_reference",
+        "recipe_id": "boulder_moist_wave",
+        "recipe_contract_version": "1",
+        "state": "available",
+        "state_message": "Available",
+        "inspectable": True,
+        "can_create_variation": True,
+        "moist": True,
+        "moist_fields_available": True,
+        "purpose": "Sibling comparison fixture.",
+        "numerical_realization": {"grid": "220 × 1 × 125"},
+        "observation_plan": {
+            "duration_seconds": 7_200,
+            "output_cadence_seconds": 120,
+        },
+        "configuration": {
+            "duration_seconds": 7_200,
+            "output_cadence_seconds": 120,
+            "domain": {
+                "nx": 220,
+                "ny": 1,
+                "nz": 125,
+                "dx_m": 1_000,
+                "dy_m": 1_000,
+                "dz_m": 200,
+                "active_model_top_m": 25_000,
+            },
+        },
+    }
+    narrower = MountainWavesSimulationRecord(
+        simulation_id="mountain_waves_narrower",
+        display_name="Narrower",
+        run_id="narrower",
+        scientific_design={"controls": {"ridge_half_width_m": 8_000.0}},
+        **common,
+    )
+    broader = MountainWavesSimulationRecord(
+        simulation_id="mountain_waves_broader",
+        display_name="Broader",
+        run_id="broader",
+        scientific_design={"controls": {"ridge_half_width_m": 14_000.0}},
+        **common,
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.world_compare.mountain_waves_world_detail",
+        lambda _settings: SimpleNamespace(
+            display_name="Mountain Waves",
+            simulations=[narrower, broader],
+        ),
+    )
+
+    descriptor = world_compare_descriptor(
+        _settings(tmp_path),
+        world_slug="mountain-waves",
+        left_simulation_id=narrower.simulation_id,
+        right_simulation_id=broader.simulation_id,
+    )
+
+    assert descriptor.compatibility is not None
+    assert descriptor.compatibility.controlled_pair is True
+    assert "normalized absolute layers" in descriptor.compatibility.relationship
+    assert len(descriptor.material_differences) == 1
+    difference = descriptor.material_differences[0]
+    assert difference.path == "scientific_design.controls.ridge_half_width_m"
+    assert (difference.left_value, difference.right_value, difference.units) == (
+        8_000.0,
+        14_000.0,
+        "m",
+    )
 
 
 def test_supercells_compare_does_not_clone_the_only_simulation(

@@ -161,7 +161,7 @@ def classify_relationship(
     observation = [
         difference for difference in material if difference.category == "observation_plan"
     ]
-    if physical and numerical:
+    if physical and (numerical or observation):
         return "mixed_variation"
     if numerical:
         return "numerical_sensitivity"

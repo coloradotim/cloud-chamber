@@ -2,10 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MountainWavesVariationEditor } from "./MountainWavesVariationEditor";
-import type {
-  MountainWavesSimulation,
-  MountainWavesWorldDetail,
-} from "./MountainWavesWorld";
+import type { MountainWavesSimulation, MountainWavesWorldDetail } from "./MountainWavesWorld";
 
 const moistControls = {
   recipe_id: "boulder_moist_wave",
@@ -13,11 +10,11 @@ const moistControls = {
   boulder_moist: {
     ridge_height_m: 2_000,
     ridge_half_width_m: 10_000,
-    flow_strength_factor: 1,
+    low_level_wind_m_s: 14.1,
     wind_offset_m_s: 0,
-    shear_strength_factor: 1,
-    lower_rh_deficit_factor: 1,
-    midlevel_rh_deficit_factor: 1,
+    shear_through_10km_m_s: 23.8,
+    lower_layer_rh_percent: 66,
+    midlevel_rh_percent: 34.5,
     dry_air_counterpart: false,
     lower_stability_factor: 1,
     midlevel_stability_factor: 1,
@@ -135,7 +132,9 @@ describe("MountainWavesVariationEditor", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Atmosphere and terrain" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Atmosphere and terrain" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Boulder Moist Wave")).toBeInTheDocument();
     await screen.findByText("0 material changes");
     expect(
@@ -188,7 +187,7 @@ describe("MountainWavesVariationEditor", () => {
     expect(await screen.findByText("Dry Ridge Mechanics")).toBeInTheDocument();
     expect(screen.getByLabelText("Cross-ridge wind")).toBeInTheDocument();
     expect(screen.getByLabelText("Dry stability N")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Lower RH deficit")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("0–4 km mean RH")).not.toBeInTheDocument();
   });
 
   it("shows run-profile differences as product language rather than contract ids", async () => {
@@ -203,8 +202,19 @@ describe("MountainWavesVariationEditor", () => {
     await screen.findByText("0 material changes");
     fireEvent.click(screen.getByRole("radio", { name: /Presentation/ }));
 
-    expect(await screen.findByText("1 material changes")).toBeInTheDocument();
-    expect(screen.getByText("Standard profile → Presentation profile")).toBeInTheDocument();
+    expect(await screen.findByText("2 material changes")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "220 × 1 × 125 · 1,000 × 200 m · 220 km × 25 km · target 2 s → " +
+          "642 × 1 × 250 · 500 × 100 m · 321 km × 25 km · target 1 s",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "7,200 s · 120 s cadence · 61 saved outputs → " +
+          "7,200 s · 30 s cadence · 241 saved outputs",
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/mountain waves boulder presentation v1/i)).not.toBeInTheDocument();
   });
 });
@@ -264,7 +274,8 @@ function template({
   recipeName: string;
   controls: typeof moistControls | typeof dryControls;
 }) {
-  const prefix = recipeId === "dry_ridge_mechanics" ? "mountain_waves_dry" : "mountain_waves_boulder";
+  const prefix =
+    recipeId === "dry_ridge_mechanics" ? "mountain_waves_dry" : "mountain_waves_boulder";
   return {
     parent_simulation_id: parentSimulationId,
     parent_run_id: parentRunId,
@@ -335,14 +346,43 @@ function preview(
   const terrainDifferences = changed
     ? [{ label: "Ridge height", before: referenceHeight, after: ridgeHeight, units: "m" }]
     : [];
-  const prefix = recipeId === "dry_ridge_mechanics" ? "mountain_waves_dry" : "mountain_waves_boulder";
+  const prefix =
+    recipeId === "dry_ridge_mechanics" ? "mountain_waves_dry" : "mountain_waves_boulder";
   const profileChanged = runProfileId !== `${prefix}_standard_v1`;
   const numericalDifferences = profileChanged
     ? [
         {
-          label: "Run profile",
-          before: `${prefix}_standard_v1`,
-          after: runProfileId,
+          label: "Numerical realization",
+          before: {
+            domain: "220 km × 25 km",
+            grid: "220 × 1 × 125",
+            spacing: "1,000 × 200 m",
+            timestep_strategy: "target 2 s",
+          },
+          after: {
+            domain: "321 km × 25 km",
+            grid: "642 × 1 × 250",
+            spacing: "500 × 100 m",
+            timestep_strategy: "target 1 s",
+          },
+          units: null,
+        },
+      ]
+    : [];
+  const observationDifferences = profileChanged
+    ? [
+        {
+          label: "Observation plan",
+          before: {
+            duration_seconds: 7_200,
+            output_cadence_seconds: 120,
+            expected_history_count: 61,
+          },
+          after: {
+            duration_seconds: 7_200,
+            output_cadence_seconds: 30,
+            expected_history_count: 241,
+          },
           units: null,
         },
       ]
@@ -357,7 +397,7 @@ function preview(
       "stability/thermodynamics": [],
       "forcing/initiation": [],
       "numerical realization": numericalDifferences,
-      "observation plan": [],
+      "observation plan": observationDifferences,
     },
     relationship_classification: changed
       ? profileChanged

@@ -44,6 +44,9 @@ export type MountainWavesSimulation = {
   moist_fields_available: boolean;
   purpose: string;
   configuration: Record<string, unknown> | null;
+  scientific_design?: Record<string, unknown> | null;
+  numerical_realization?: Record<string, unknown> | null;
+  observation_plan?: Record<string, unknown> | null;
   differences: Record<string, MountainWavesDifference[]>;
   warnings: string[];
   caveats: string[];
@@ -330,9 +333,9 @@ function MountainWavesSimulationCard({
               ? "Legacy-contract Simulation"
               : simulation.role === "variation"
                 ? "Variation"
-              : simulation.simulation_id === simulation.reference_simulation_id
-                ? "Reference Simulation"
-                : "Built-in Simulation"}
+                : simulation.simulation_id === simulation.reference_simulation_id
+                  ? "Reference Simulation"
+                  : "Built-in Simulation"}
           </p>
           <h3>{simulation.display_name}</h3>
         </div>
@@ -386,7 +389,7 @@ function MountainWavesSimulationCard({
             <dd>
               {simulation.can_create_variation
                 ? "Eligible"
-                : simulation.parent_eligibility_reason ?? "Not eligible"}
+                : (simulation.parent_eligibility_reason ?? "Not eligible")}
             </dd>
           </div>
         </dl>

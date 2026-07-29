@@ -15,9 +15,7 @@ test.describe("mocked smoke: Mountain Waves product path", () => {
 
     await gotoApp(page);
     await page.getByRole("button", { name: "Enter Mountain Waves" }).click();
-    await expect(
-      page.getByRole("heading", { name: "Mountain Waves", exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Mountain Waves", exact: true })).toBeVisible();
 
     const reference = page.locator("article", { hasText: "Boulder Windstorm" });
     await reference.getByRole("button", { name: "Explore" }).click();
@@ -42,7 +40,7 @@ test.describe("mocked smoke: Mountain Waves product path", () => {
       .getByLabel("Parent Simulation")
       .selectOption({ value: mountainWavesBoulderSimulationId });
     await expect(page.getByText("Boulder Moist Wave")).toBeVisible();
-    await expect(page.getByRole("slider", { name: "Lower RH deficit" })).toBeVisible();
+    await expect(page.getByRole("slider", { name: "0–4 km mean RH" })).toBeVisible();
     await page.getByLabel("Variation name").fill("Broader Ridge");
     await page.getByRole("slider", { name: "Ridge half-width" }).press("ArrowRight");
     await expect(page.getByText("1 material changes")).toBeVisible();
@@ -118,9 +116,7 @@ test.describe("mocked smoke: Mountain Waves product path", () => {
 
     await expect(page.getByRole("alert")).toHaveText("Variation package preflight failed.");
     await expect(page.getByRole("heading", { name: "Atmosphere and terrain" })).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Mountain Waves", exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Mountain Waves", exact: true })).toBeVisible();
   });
 });
 

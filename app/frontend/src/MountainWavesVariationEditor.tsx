@@ -20,11 +20,11 @@ type DryRidgeControls = {
 type BoulderMoistControls = {
   ridge_height_m: number;
   ridge_half_width_m: number;
-  flow_strength_factor: number;
+  low_level_wind_m_s: number;
   wind_offset_m_s: number;
-  shear_strength_factor: number;
-  lower_rh_deficit_factor: number;
-  midlevel_rh_deficit_factor: number;
+  shear_through_10km_m_s: number;
+  lower_layer_rh_percent: number;
+  midlevel_rh_percent: number;
   dry_air_counterpart: boolean;
   lower_stability_factor: number;
   midlevel_stability_factor: number;
@@ -392,7 +392,10 @@ export function MountainWavesVariationEditor({
   }
 
   return (
-    <section className="lab-content mountain-waves-variation-editor" aria-labelledby="variation-title">
+    <section
+      className="lab-content mountain-waves-variation-editor"
+      aria-labelledby="variation-title"
+    >
       <header className="variation-editor-header">
         <div>
           <p className="eyebrow">Create Variation</p>
@@ -469,7 +472,11 @@ export function MountainWavesVariationEditor({
               </div>
             </div>
             {controls.dry_ridge ? (
-              <DryControls controls={controls.dry_ridge} update={updateDry} disabled={Boolean(packaged)} />
+              <DryControls
+                controls={controls.dry_ridge}
+                update={updateDry}
+                disabled={Boolean(packaged)}
+              />
             ) : controls.boulder_moist ? (
               <BoulderControls
                 controls={controls.boulder_moist}
@@ -510,7 +517,11 @@ export function MountainWavesVariationEditor({
                     <strong>{estimate.profile.role}</strong>
                     <small>{shortProfileName(estimate.profile.profile_name)}</small>
                   </span>
-                  <span className={estimate.disposition === "passes" ? "profile-cost" : "profile-cost blocked"}>
+                  <span
+                    className={
+                      estimate.disposition === "passes" ? "profile-cost" : "profile-cost blocked"
+                    }
+                  >
                     {profileCost(estimate.profile)}
                   </span>
                 </label>
@@ -520,7 +531,10 @@ export function MountainWavesVariationEditor({
               <div className="variation-profile-detail">
                 <div>
                   <span>Numerical realization</span>
-                  <strong>{preview?.numerical_realization.grid ?? selectedProfile.profile.numerical_realization.grid}</strong>
+                  <strong>
+                    {preview?.numerical_realization.grid ??
+                      selectedProfile.profile.numerical_realization.grid}
+                  </strong>
                   <small>
                     {preview?.numerical_realization.spacing ??
                       selectedProfile.profile.numerical_realization.spacing}
@@ -543,8 +557,15 @@ export function MountainWavesVariationEditor({
                 </div>
                 <div>
                   <span>Expected local cost</span>
-                  <strong>{profileCost(preview?.cost_estimate.profile ?? selectedProfile.profile)}</strong>
-                  <small>{selectedProfile.profile.estimate_basis.replaceAll("_", " ")}</small>
+                  <strong>
+                    {profileCost(preview?.cost_estimate.profile ?? selectedProfile.profile)}
+                  </strong>
+                  <small>
+                    {(
+                      preview?.cost_estimate.profile.estimate_basis ??
+                      selectedProfile.profile.estimate_basis
+                    ).replaceAll("_", " ")}
+                  </small>
                 </div>
               </div>
             )}
@@ -555,7 +576,9 @@ export function MountainWavesVariationEditor({
           <header>
             <div>
               <p className="eyebrow">Review</p>
-              <h3>{previewing ? "Resolving experiment..." : `${differenceCount} material changes`}</h3>
+              <h3>
+                {previewing ? "Resolving experiment..." : `${differenceCount} material changes`}
+              </h3>
             </div>
             {preview && preview.blocking_errors.length === 0 && (
               <span className="technical-state available">Ready to package</span>
@@ -602,7 +625,11 @@ export function MountainWavesVariationEditor({
               </section>
 
               {preview.blocking_errors.map((message) => (
-                <p key={message} className="variation-message variation-message-blocking" role="alert">
+                <p
+                  key={message}
+                  className="variation-message variation-message-blocking"
+                  role="alert"
+                >
                   {message}
                 </p>
               ))}
@@ -858,56 +885,56 @@ function BoulderControls({
         </ControlGroup>
         <ControlGroup title="Wind">
           <RangeField
-            label="Flow strength"
-            value={controls.flow_strength_factor}
-            min={0.5}
-            max={1.5}
-            step={0.05}
-            units="×"
+            label="0–4 km mean wind"
+            value={controls.low_level_wind_m_s}
+            min={0}
+            max={50}
+            step={0.1}
+            units="m/s"
             disabled={disabled}
-            onChange={(value) => update("flow_strength_factor", value)}
+            onChange={(value) => update("low_level_wind_m_s", value)}
           />
           <RangeField
-            label="Wind offset"
+            label="Additional profile offset"
             value={controls.wind_offset_m_s}
-            min={-10}
-            max={10}
+            min={-20}
+            max={20}
             step={1}
             units="m/s"
             disabled={disabled}
             onChange={(value) => update("wind_offset_m_s", value)}
           />
           <RangeField
-            label="Shear strength"
-            value={controls.shear_strength_factor}
-            min={0.5}
-            max={1.5}
-            step={0.05}
-            units="×"
+            label="0–10 km shear"
+            value={controls.shear_through_10km_m_s}
+            min={-30}
+            max={50}
+            step={0.1}
+            units="m/s"
             disabled={disabled}
-            onChange={(value) => update("shear_strength_factor", value)}
+            onChange={(value) => update("shear_through_10km_m_s", value)}
           />
         </ControlGroup>
         <ControlGroup title="Moisture">
           <RangeField
-            label="Lower RH deficit"
-            value={controls.lower_rh_deficit_factor}
+            label="0–4 km mean RH"
+            value={controls.lower_layer_rh_percent}
             min={0}
-            max={2}
+            max={100}
             step={0.1}
-            units="×"
+            units="%"
             disabled={disabled || controls.dry_air_counterpart}
-            onChange={(value) => update("lower_rh_deficit_factor", value)}
+            onChange={(value) => update("lower_layer_rh_percent", value)}
           />
           <RangeField
-            label="Midlevel RH deficit"
-            value={controls.midlevel_rh_deficit_factor}
+            label="4–10 km mean RH"
+            value={controls.midlevel_rh_percent}
             min={0}
-            max={2}
+            max={100}
             step={0.1}
-            units="×"
+            units="%"
             disabled={disabled || controls.dry_air_counterpart}
-            onChange={(value) => update("midlevel_rh_deficit_factor", value)}
+            onChange={(value) => update("midlevel_rh_percent", value)}
           />
           <label className="variation-toggle">
             <input
@@ -1033,10 +1060,7 @@ function ScientificPreview({ preview }: { preview: VariationPreview | null }) {
           symbol="qv"
           units="g/kg"
           profile={preview.moisture_profile}
-          domain={[
-            0,
-            Math.max(...preview.moisture_profile.map((point) => point.value), 1),
-          ]}
+          domain={[0, Math.max(...preview.moisture_profile.map((point) => point.value), 1)]}
         />
         <VerticalProfilePlot
           label="Potential temperature"
@@ -1126,11 +1150,12 @@ function VerticalProfilePlot({
     ((value - minimum) / Math.max(maximum - minimum, Number.EPSILON)) *
       (width - plot.left - plot.right);
   const y = (heightM: number) =>
-    height -
-    plot.bottom -
-    (heightM / maximumHeight) * (height - plot.top - plot.bottom);
+    height - plot.bottom - (heightM / maximumHeight) * (height - plot.top - plot.bottom);
   const path = profile
-    .map((point, index) => `${index ? "L" : "M"}${x(point.value).toFixed(1)},${y(point.height_m).toFixed(1)}`)
+    .map(
+      (point, index) =>
+        `${index ? "L" : "M"}${x(point.value).toFixed(1)},${y(point.height_m).toFixed(1)}`,
+    )
     .join(" ");
   const zeroX = minimum <= 0 && maximum >= 0 ? x(0) : null;
 
@@ -1147,7 +1172,13 @@ function VerticalProfilePlot({
         role="img"
         aria-label={`${label} profile from ${formatProfileValue(minimum)} to ${formatProfileValue(maximum)} ${units}`}
       >
-        <line className="profile-axis" x1={plot.left} y1={plot.top} x2={plot.left} y2={height - plot.bottom} />
+        <line
+          className="profile-axis"
+          x1={plot.left}
+          y1={plot.top}
+          x2={plot.left}
+          y2={height - plot.bottom}
+        />
         <line
           className="profile-axis"
           x1={plot.left}
@@ -1283,12 +1314,45 @@ function differenceGroupLabel(group: string) {
 
 function displayDifferenceValue(value: unknown) {
   if (typeof value === "number") {
-    return Number.isInteger(value) ? value.toLocaleString() : Number(value.toPrecision(4)).toString();
+    return Number.isInteger(value)
+      ? value.toLocaleString()
+      : Number(value.toPrecision(4)).toString();
   }
   if (typeof value === "boolean") return value ? "On" : "Off";
   if (value === null || value === undefined) return "Unknown";
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    if (typeof record.grid === "string") {
+      return [
+        record.grid,
+        typeof record.spacing === "string" ? record.spacing : null,
+        typeof record.domain === "string" ? record.domain : null,
+        typeof record.timestep_strategy === "string" ? record.timestep_strategy : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    }
+    if ("duration_seconds" in record || "output_cadence_seconds" in record) {
+      const duration =
+        typeof record.duration_seconds === "number"
+          ? `${record.duration_seconds.toLocaleString()} s`
+          : "generated duration";
+      const cadence =
+        typeof record.output_cadence_seconds === "number"
+          ? `${record.output_cadence_seconds.toLocaleString()} s cadence`
+          : "generated cadence";
+      const histories =
+        typeof record.expected_history_count === "number"
+          ? `${record.expected_history_count.toLocaleString()} saved outputs`
+          : "generated output count";
+      return `${duration} · ${cadence} · ${histories}`;
+    }
+    return JSON.stringify(record);
+  }
   const text = String(value);
-  const profile = text.match(/^mountain_waves_(?:dry|boulder)_(quick|standard|presentation|extended)_v1$/);
+  const profile = text.match(
+    /^mountain_waves_(?:dry|boulder)_(quick|standard|presentation|extended)_v1$/,
+  );
   if (profile) {
     return `${profile[1][0].toUpperCase()}${profile[1].slice(1)} profile`;
   }

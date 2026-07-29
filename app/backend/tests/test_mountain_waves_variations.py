@@ -13,6 +13,7 @@ from cloud_chamber.mountain_waves_recipes import (
     DryRidgeControls,
     MountainWavesRecipeControls,
     RecipeId,
+    normalize_recipe_controls,
 )
 from cloud_chamber.mountain_waves_variations import (
     MountainWavesVariationRequest,
@@ -29,6 +30,7 @@ from cloud_chamber.mountain_waves_world import (
     MOIST_RUN_ID,
     MOIST_SIMULATION_ID,
 )
+from cloud_chamber.run_cost import LaunchBudgetError, validate_manifest_launch_budget
 from cloud_chamber.run_manifest import (
     AppMetadata,
     GeneratedInputs,
@@ -63,7 +65,8 @@ def test_templates_expose_two_distinct_recipes_and_approved_profiles(tmp_path: P
     dry = mountain_waves_variation_template(settings, DRY_SIMULATION_ID)
     moist = mountain_waves_variation_template(settings, MOIST_SIMULATION_ID)
 
-    assert dry.can_create_variation is True
+    assert dry.can_create_variation is False
+    assert "bounded equivalence" in (dry.unavailable_reason or "")
     assert dry.recipe_id == DRY_RECIPE_ID
     assert dry.controls.dry_ridge == DryRidgeControls()
     assert {item.profile.role for item in dry.run_profiles} == {
@@ -99,7 +102,10 @@ def test_dry_preview_uses_recipe_controls_and_generated_timing(tmp_path: Path) -
         ),
     )
 
-    assert preview.blocking_errors == []
+    assert preview.blocking_errors == [
+        "Dry Ridge remains inspectable but cannot parent a variation until "
+        "source-defined analytic inheritance or bounded equivalence is approved."
+    ]
     assert preview.relationship_classification == "mixed_variation"
     assert {item["label"] for item in preview.differences["terrain"]} == {
         "Ridge height",
@@ -140,8 +146,10 @@ def test_boulder_preview_applies_absolute_reference_transforms(tmp_path: Path) -
     _write_parent(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID, moist=True)
     controls = BoulderMoistControls(
         ridge_half_width_m=11_000,
-        flow_strength_factor=1.1,
-        lower_rh_deficit_factor=0.5,
+        low_level_wind_m_s=20.0,
+        shear_through_10km_m_s=30.0,
+        lower_layer_rh_percent=80.0,
+        midlevel_rh_percent=50.0,
         lower_stability_factor=1.1,
     )
     request = _request(
@@ -160,10 +168,171 @@ def test_boulder_preview_applies_absolute_reference_transforms(tmp_path: Path) -
     assert first.relative_humidity_profile == second.relative_humidity_profile
     assert first.theta_profile == second.theta_profile
     assert first.differences["terrain"][0]["after"] == 11_000
-    assert first.differences["moisture"][0]["label"] == "Lower RH-deficit factor"
+    assert first.differences["moisture"][0]["label"] == "0–4 km mean RH"
     assert first.relationship_classification == "mixed_variation"
+    assert first.cost_estimate.profile.estimate_basis == "scaled_from_measured"
     assert all(item["value"] >= 0 for item in first.moisture_profile)
     assert all(0 <= item["value"] <= 100 for item in first.relative_humidity_profile)
+    assert _profile_layer_mean(first.wind_profile, 0.0, 4_000.0) == pytest.approx(20.0)
+    assert _profile_value_at(first.wind_profile, 10_000.0) - _profile_value_at(
+        first.wind_profile, 0.0
+    ) == pytest.approx(30.0)
+    assert _profile_layer_mean(first.relative_humidity_profile, 0.0, 4_000.0) == pytest.approx(
+        80.0, abs=0.02
+    )
+    assert _profile_layer_mean(first.relative_humidity_profile, 4_000.0, 10_000.0) == pytest.approx(
+        50.0, abs=0.02
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("low_level_wind_m_s", -0.1),
+        ("low_level_wind_m_s", 50.1),
+        ("wind_offset_m_s", -20.1),
+        ("wind_offset_m_s", 20.1),
+        ("shear_through_10km_m_s", -30.1),
+        ("shear_through_10km_m_s", 50.1),
+        ("lower_layer_rh_percent", -0.1),
+        ("lower_layer_rh_percent", 100.1),
+        ("midlevel_rh_percent", -0.1),
+        ("midlevel_rh_percent", 100.1),
+    ],
+)
+def test_boulder_actual_value_controls_enforce_approved_bounds(field: str, value: float) -> None:
+    payload = BoulderMoistControls().model_dump(mode="json")
+    payload[field] = value
+
+    with pytest.raises(ValueError):
+        BoulderMoistControls.model_validate(payload)
+
+
+def test_inactive_controls_normalize_out_of_effective_scientific_design() -> None:
+    dry_reference = MountainWavesRecipeControls(
+        recipe_id=DRY_RECIPE_ID,
+        dry_ridge=DryRidgeControls(),
+    )
+    dry = MountainWavesRecipeControls(
+        recipe_id=DRY_RECIPE_ID,
+        dry_ridge=DryRidgeControls(
+            layered_stability=False,
+            lower_stability_n_s=0.02,
+            upper_stability_n_s=0.005,
+            stability_transition_height_m=12_000,
+        ),
+    )
+    normalized_dry = normalize_recipe_controls(dry, recipe_reference=dry_reference)
+    assert normalized_dry == dry_reference
+
+    moist_reference = MountainWavesRecipeControls(
+        recipe_id=BOULDER_RECIPE_ID,
+        boulder_moist=BoulderMoistControls(dry_air_counterpart=True),
+    )
+    moist = MountainWavesRecipeControls(
+        recipe_id=BOULDER_RECIPE_ID,
+        boulder_moist=BoulderMoistControls(
+            dry_air_counterpart=True,
+            lower_layer_rh_percent=5.0,
+            midlevel_rh_percent=95.0,
+        ),
+    )
+    normalized_moist = normalize_recipe_controls(
+        moist,
+        recipe_reference=MountainWavesRecipeControls(
+            recipe_id=BOULDER_RECIPE_ID,
+            boulder_moist=BoulderMoistControls(),
+        ),
+    )
+    assert normalized_moist.boulder_moist is not None
+    assert normalized_moist.boulder_moist.lower_layer_rh_percent == 66.0
+    assert normalized_moist.boulder_moist.midlevel_rh_percent == 34.5
+    assert normalized_moist.boulder_moist.dry_air_counterpart is True
+    assert moist_reference.boulder_moist is not None
+
+
+def test_boulder_vertical_domain_and_critical_level_fail_closed(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_parent(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID, moist=True)
+    high_wind = preview_mountain_waves_variation(
+        settings,
+        _request(
+            parent=MOIST_SIMULATION_ID,
+            recipe_id=BOULDER_RECIPE_ID,
+            profile_id="mountain_waves_boulder_standard_v1",
+            controls=MountainWavesRecipeControls(
+                recipe_id=BOULDER_RECIPE_ID,
+                boulder_moist=BoulderMoistControls(
+                    low_level_wind_m_s=50.0,
+                    shear_through_10km_m_s=50.0,
+                ),
+            ),
+        ),
+    )
+    critical_level = preview_mountain_waves_variation(
+        settings,
+        _request(
+            parent=MOIST_SIMULATION_ID,
+            recipe_id=BOULDER_RECIPE_ID,
+            profile_id="mountain_waves_boulder_standard_v1",
+            controls=MountainWavesRecipeControls(
+                recipe_id=BOULDER_RECIPE_ID,
+                boulder_moist=BoulderMoistControls(
+                    low_level_wind_m_s=0.0,
+                    wind_offset_m_s=-20.0,
+                    shear_through_10km_m_s=50.0,
+                ),
+            ),
+        ),
+    )
+
+    assert any(
+        "exceeds the 25.0 km source-backed sounding" in error for error in high_wind.blocking_errors
+    )
+    assert any(
+        "critical level falls inside the active terrain-forced wave region" in error
+        for error in critical_level.blocking_errors
+    )
+    assert high_wind.diagnostics["damping_base_m"] < high_wind.diagnostics["model_top_m"]
+
+
+def test_boulder_inherited_critical_structure_warns_without_blocking(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_parent(
+        settings,
+        run_id=MOIST_RUN_ID,
+        case_id=MOIST_CASE_ID,
+        moist=True,
+        upper_wind_m_s=-5.0,
+    )
+
+    preview = preview_mountain_waves_variation(
+        settings,
+        _request(
+            parent=MOIST_SIMULATION_ID,
+            recipe_id=BOULDER_RECIPE_ID,
+            profile_id="mountain_waves_boulder_standard_v1",
+            controls=MountainWavesRecipeControls(
+                recipe_id=BOULDER_RECIPE_ID,
+                boulder_moist=BoulderMoistControls(
+                    ridge_height_m=2_500.0,
+                    ridge_half_width_m=11_000.0,
+                    lower_layer_rh_percent=80.0,
+                    lower_stability_factor=1.1,
+                ),
+            ),
+        ),
+    )
+
+    assert not any("critical level falls" in error for error in preview.blocking_errors)
+    assert any(
+        "retained Boulder source atmosphere contains a critical level" in warning
+        for warning in preview.warnings
+    )
 
 
 def test_package_persists_stable_simulation_identity_separate_attempts_and_launch_binding(
@@ -177,7 +346,11 @@ def test_package_persists_stable_simulation_identity_separate_attempts_and_launc
         profile_id="mountain_waves_boulder_quick_v1",
         controls=MountainWavesRecipeControls(
             recipe_id=BOULDER_RECIPE_ID,
-            boulder_moist=BoulderMoistControls(ridge_half_width_m=11_000),
+            boulder_moist=BoulderMoistControls(
+                ridge_half_width_m=11_000,
+                lower_layer_rh_percent=75.0,
+                lower_stability_factor=1.1,
+            ),
         ),
     )
     monkeypatch.setattr(
@@ -187,6 +360,10 @@ def test_package_persists_stable_simulation_identity_separate_attempts_and_launc
     monkeypatch.setattr(
         "cloud_chamber.mountain_waves_variations.collect_cm1_provenance",
         lambda _settings: SimpleNamespace(report_record=lambda: {"release": "21.1"}),
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.run_cost.shutil.disk_usage",
+        lambda _path: SimpleNamespace(free=100 * 1024**3),
     )
 
     first = create_mountain_waves_variation(settings, request)
@@ -207,6 +384,118 @@ def test_package_persists_stable_simulation_identity_separate_attempts_and_launc
     assert preflight_mountain_waves_variation(Path(first.manifest_path))["passed"] is True
     assert "uinterp" in manifest.required_output_fields
     assert not list(Path(first.package_dir).glob("cm1out*"))
+    case_manifest = Path(first.package_dir, "case_manifest.json").read_text()
+    package_report = Path(first.package_dir, "mountain_waves_variation.json").read_text()
+    assert '"variation_envelope":' not in case_manifest
+    assert '"variation_envelope":' not in package_report
+    assert '"variation_envelope_authority":' in case_manifest
+    assert '"variation_envelope_authority":' in package_report
+    generated_sounding = manifest.run_configuration["mountain_waves_configuration"]["sounding"]
+    generated_pressures = [level["pressure_pa"] for level in generated_sounding]
+    assert all(
+        upper < lower
+        for lower, upper in zip(generated_pressures, generated_pressures[1:], strict=False)
+    )
+
+    launch_check = validate_manifest_launch_budget(
+        settings,
+        manifest=manifest,
+        snapshot_id=first.launch_review_snapshot_id,
+    )
+    assert launch_check is not None
+    assert launch_check.check_kind == "launch"
+    with pytest.raises(LaunchBudgetError, match="already been consumed"):
+        validate_manifest_launch_budget(
+            settings,
+            manifest=manifest,
+            snapshot_id=first.launch_review_snapshot_id,
+        )
+
+
+def test_descendant_differences_are_relative_to_selected_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_parent(settings, run_id=MOIST_RUN_ID, case_id=MOIST_CASE_ID, moist=True)
+    parent_controls = BoulderMoistControls(ridge_half_width_m=11_000)
+    parent_request = _request(
+        parent=MOIST_SIMULATION_ID,
+        recipe_id=BOULDER_RECIPE_ID,
+        profile_id="mountain_waves_boulder_quick_v1",
+        controls=MountainWavesRecipeControls(
+            recipe_id=BOULDER_RECIPE_ID,
+            boulder_moist=parent_controls,
+        ),
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.mountain_waves_variations.verified_clean_git_commit",
+        lambda: "implementation-commit",
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.mountain_waves_variations.collect_cm1_provenance",
+        lambda _settings: SimpleNamespace(report_record=lambda: {"release": "21.1"}),
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.run_cost.shutil.disk_usage",
+        lambda _path: SimpleNamespace(free=100 * 1024**3),
+    )
+    parent = create_mountain_waves_variation(settings, parent_request)
+    monkeypatch.setattr(
+        "cloud_chamber.mountain_waves_variations._parent_eligibility",
+        lambda *_args: (True, None),
+    )
+
+    unchanged = preview_mountain_waves_variation(
+        settings,
+        parent_request.model_copy(update={"parent_simulation_id": parent.simulation_id}),
+    )
+    assert unchanged.blocking_errors == [
+        "Change at least one effective Recipe control or numerical realization."
+    ]
+
+    child_controls = parent_controls.model_copy(update={"ridge_height_m": 2_500.0})
+    child_request = parent_request.model_copy(
+        update={
+            "parent_simulation_id": parent.simulation_id,
+            "controls": MountainWavesRecipeControls(
+                recipe_id=BOULDER_RECIPE_ID,
+                boulder_moist=child_controls,
+            ),
+        }
+    )
+    child = preview_mountain_waves_variation(settings, child_request)
+
+    assert child.blocking_errors == []
+    terrain_differences = child.differences["terrain"]
+    assert terrain_differences == [
+        {
+            "path": "controls.ridge_height_m",
+            "label": "Ridge height",
+            "before": 2_000.0,
+            "after": 2_500.0,
+            "units": "m",
+            "material": True,
+        }
+    ]
+    child_package = create_mountain_waves_variation(settings, child_request)
+    child_manifest = load_run_manifest(Path(child_package.manifest_path))
+    assert child_manifest.run_configuration["configuration_difference"]["terrain"] == (
+        terrain_differences
+    )
+    assert [
+        difference.model_dump(mode="json") for difference in child_package.envelope.differences
+    ] == [
+        {
+            "category": "terrain",
+            "path": "controls.ridge_height_m",
+            "label": "Ridge height",
+            "before": 2_000.0,
+            "after": 2_500.0,
+            "units": "m",
+            "material": True,
+        }
+    ]
 
 
 def _request(
@@ -224,6 +513,21 @@ def _request(
         run_profile_id=profile_id,
         controls=controls,
     )
+
+
+def _profile_layer_mean(
+    profile: list[dict[str, float]],
+    lower_height_m: float,
+    upper_height_m: float,
+) -> float:
+    values = [
+        item["value"] for item in profile if lower_height_m <= item["height_m"] < upper_height_m
+    ]
+    return sum(values) / len(values)
+
+
+def _profile_value_at(profile: list[dict[str, float]], height_m: float) -> float:
+    return next(item["value"] for item in profile if item["height_m"] == height_m)
 
 
 def _settings(tmp_path: Path) -> CloudChamberSettings:
@@ -246,6 +550,7 @@ def _write_parent(
     run_id: str,
     case_id: str,
     moist: bool,
+    upper_wind_m_s: float = 28.0,
 ) -> None:
     run_dir = settings.runtime_home / "runs" / run_id
     run_dir.mkdir(parents=True)
@@ -259,7 +564,7 @@ def _write_parent(
         "0.0 288.0 8.0 12.0 0.0\n"
         "4000.0 305.0 4.0 16.0 0.0\n"
         "10000.0 335.0 0.5 22.0 0.0\n"
-        "25000.0 460.0 0.0 28.0 0.0\n"
+        f"25000.0 460.0 0.0 {upper_wind_m_s} 0.0\n"
     )
     (run_dir / "case_manifest.json").write_text("{}\n")
     now = datetime(2026, 7, 21, tzinfo=UTC)
