@@ -153,7 +153,10 @@ def test_all_authored_hodograph_families_are_finite_and_distinct(
 def test_default_quarter_circle_reproduces_canonical_deep_layer_vector() -> None:
     resolved = _resolve(default_controls())
     assert resolved.achieved_controls["shear_0_2_km_m_s"] == pytest.approx(math.hypot(7.0, 7.0))
-    assert resolved.achieved_controls["shear_0_6_km_m_s"] == pytest.approx(math.hypot(31.0, 7.0))
+    assert resolved.achieved_controls["shear_0_6_km_m_s"] == pytest.approx(
+        math.hypot(31.0, 7.0),
+        abs=0.02,
+    )
     assert all(
         math.isfinite(value)
         for level in resolved.initialized_state
@@ -216,6 +219,73 @@ def test_broad_wind_targets_preserve_mean_and_vector_shear() -> None:
     assert resolved.achieved_controls["mean_wind_0_6_km_direction_deg"] == pytest.approx(
         359.0, abs=0.1
     )
+
+
+@pytest.mark.parametrize(
+    ("profile_id", "updates", "closes"),
+    [
+        (
+            "supercells_quick_v1",
+            {
+                "hodograph_family": "quarter_circle",
+                "turning_depth_km_agl": 0.25,
+                "shear_0_2_km_m_s": 18.0,
+                "shear_0_6_km_m_s": 42.0,
+            },
+            False,
+        ),
+        (
+            "supercells_standard_v1",
+            {
+                "hodograph_family": "quarter_circle",
+                "turning_depth_km_agl": 6.0,
+            },
+            True,
+        ),
+        (
+            "supercells_presentation_v1",
+            {
+                "hodograph_family": "half_circle",
+                "turning_depth_km_agl": 8.0,
+                "shear_0_2_km_m_s": 25.0,
+                "shear_0_6_km_m_s": 55.0,
+                "shear_6_12_km_m_s": 20.0,
+                "upper_shear_direction_relative_deg": -120.0,
+            },
+            True,
+        ),
+    ],
+)
+def test_curved_shallow_and_deep_wind_endpoints_close_on_the_initialized_grid(
+    profile_id: str,
+    updates: dict[str, object],
+    closes: bool,
+) -> None:
+    controls = default_controls().model_copy(update=updates)
+    resolved = _resolve(controls, profile_id=profile_id)
+
+    target_errors = [error for error in resolved.blocking_errors if "attainable" in error]
+    if not closes:
+        assert target_errors
+        return
+    assert not target_errors
+    assert resolved.achieved_controls["hodograph_family"] == controls.hodograph_family
+    assert resolved.achieved_controls["turning_depth_km_agl"] == pytest.approx(
+        controls.turning_depth_km_agl,
+        abs=0.02,
+    )
+    for key in ("shear_0_2_km_m_s", "shear_0_6_km_m_s", "shear_6_12_km_m_s"):
+        assert resolved.achieved_controls[key] == pytest.approx(
+            getattr(controls, key),
+            abs=0.02,
+        )
+    if controls.shear_6_12_km_m_s > 0.0:
+        difference = (
+            resolved.achieved_controls["upper_shear_direction_relative_deg"]
+            - controls.upper_shear_direction_relative_deg
+            + 180.0
+        ) % 360.0 - 180.0
+        assert difference == pytest.approx(0.0, abs=0.1)
 
 
 def test_zero_mean_wind_removes_inactive_direction_identity() -> None:
@@ -322,6 +392,50 @@ def test_broad_thermodynamic_edges_close_without_silent_clipping(
             level.parcel_buoyancy_m_s2,
         )
     )
+
+
+@pytest.mark.parametrize(
+    "profile_id",
+    [
+        "supercells_quick_v1",
+        "supercells_standard_v1",
+        "supercells_presentation_v1",
+    ],
+)
+def test_transformed_thermodynamic_targets_are_final_initialized_state_diagnostics(
+    profile_id: str,
+) -> None:
+    controls = default_controls().model_copy(
+        update={
+            "surface_based_cape_j_kg": 3_500.0,
+            "cin_j_kg": 100.0,
+            "lcl_height_m_agl": 1_500.0,
+            "midlevel_rh_percent": 55.0,
+        }
+    )
+    resolved = _resolve(controls, profile_id=profile_id)
+
+    assert not [error for error in resolved.blocking_errors if "attainable" in error]
+    assert resolved.achieved_controls["surface_based_cape_j_kg"] == pytest.approx(
+        controls.surface_based_cape_j_kg,
+        abs=max(10.0, 0.01 * controls.surface_based_cape_j_kg),
+    )
+    assert resolved.achieved_controls["cin_j_kg"] == pytest.approx(
+        controls.cin_j_kg,
+        abs=max(2.0, 0.01 * controls.cin_j_kg),
+    )
+    assert resolved.achieved_controls["lcl_height_m_agl"] == pytest.approx(
+        controls.lcl_height_m_agl,
+        abs=1.0,
+    )
+    assert resolved.achieved_controls["midlevel_rh_percent"] == pytest.approx(
+        controls.midlevel_rh_percent,
+        abs=0.05,
+    )
+    assert resolved.diagnostics.achieved_cape_j_kg == pytest.approx(
+        resolved.achieved_controls["surface_based_cape_j_kg"]
+    )
+    assert resolved.diagnostics.hydrostatic_residual_pa <= HYDROSTATIC_RESIDUAL_TOLERANCE_PA
 
 
 def test_weak_or_failed_initiation_is_warned_not_blocked() -> None:

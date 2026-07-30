@@ -8,7 +8,7 @@ from typing import Any, Literal, TypedDict
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, Field
-from scipy.optimize import brentq  # type: ignore[import-untyped]
+from scipy.optimize import brentq, least_squares  # type: ignore[import-untyped]
 
 from cloud_chamber.run_cost import ObservationPlan, RunCostProfile
 from cloud_chamber.variation_envelope import VariationDifference
@@ -248,22 +248,27 @@ def resolve_supercells_recipe(
     effective = normalize_controls(controls)
     parent = normalize_controls(parent_controls)
     heights = _profile_heights(numerical.nz, numerical.dz_m)
-    raw_wind = _wind_profile(effective, heights)
-    sounding_surface, sounding, thermo = _thermodynamic_profile(
+    raw_wind, authored_wind_controls = _resolved_wind_profile(
+        effective,
+        heights,
+        model_level_count=numerical.nz,
+    )
+    sounding_surface, sounding, _authored_thermo = _thermodynamic_profile(
         effective,
         raw_wind,
         heights,
         model_level_count=numerical.nz,
     )
-    initialized_state = emulate_cm1_isnd7_initialization(
+    initialized_state, thermo = _diagnose_final_initialized_state(
         sounding_surface,
         sounding,
-        heights[: numerical.nz],
+        model_level_count=numerical.nz,
     )
     achieved = _achieved_controls(
         effective,
         initialized_state,
         thermo,
+        authored_wind_controls=authored_wind_controls,
     )
     errors = _target_errors(effective, achieved)
     warnings = _scientific_warnings(effective)
@@ -310,17 +315,23 @@ def resolve_supercells_recipe(
             f"{HYDROSTATIC_RESIDUAL_TOLERANCE_PA:.6f} Pa."
         )
 
-    mean_u = _layer_mean(
-        [(level.height_m, level.u_m_s) for level in initialized_state],
-        0.0,
-        6_000.0,
+    wind_metrics = _diagnose_wind_metrics(initialized_state)
+    mean_u = wind_metrics["mean_u_m_s"]
+    mean_v = wind_metrics["mean_v_m_s"]
+    translation_u, translation_v = _translation_for_achieved_mean(mean_u, mean_v)
+    parent_wind, _parent_authored = _resolved_wind_profile(
+        parent,
+        heights,
+        model_level_count=numerical.nz,
     )
-    mean_v = _layer_mean(
-        [(level.height_m, level.v_m_s) for level in initialized_state],
-        0.0,
-        6_000.0,
+    parent_metrics = _diagnose_wind_samples(
+        heights[: numerical.nz],
+        parent_wind[: numerical.nz],
     )
-    translation_u, translation_v = _translation_for_controls(effective)
+    parent_translation = _translation_for_achieved_mean(
+        parent_metrics["mean_u_m_s"],
+        parent_metrics["mean_v_m_s"],
+    )
     diagnostics = SupercellsDiagnostics(
         achieved_cape_j_kg=thermo["cape_j_kg"],
         achieved_cin_j_kg=thermo["cin_j_kg"],
@@ -335,8 +346,8 @@ def resolve_supercells_recipe(
         shear_6_12_km_m_s=_vector_shear(initialized_state, 6_000.0, 12_000.0),
         mean_wind_0_6_km_u_m_s=mean_u,
         mean_wind_0_6_km_v_m_s=mean_v,
-        mean_wind_0_6_km_speed_m_s=effective.mean_wind_0_6_km_speed_m_s,
-        mean_wind_0_6_km_direction_deg=(effective.mean_wind_0_6_km_direction_deg % 360.0),
+        mean_wind_0_6_km_speed_m_s=wind_metrics["mean_speed_m_s"],
+        mean_wind_0_6_km_direction_deg=wind_metrics["mean_direction_deg"],
         storm_relative_helicity_0_1_km_m2_s2=_storm_relative_helicity(
             initialized_state,
             1_000.0,
@@ -384,7 +395,7 @@ def resolve_supercells_recipe(
             effective.model_dump(mode="json"),
             parent.model_dump(mode="json"),
             translation=(translation_u, translation_v),
-            parent_translation=_translation_for_controls(parent),
+            parent_translation=parent_translation,
         ),
         warnings=warnings,
         blocking_errors=errors,
@@ -461,6 +472,229 @@ def _wind_profile(
     )
     offset = target_mean - np.array([mean_u, mean_v])
     return [(float(point[0] + offset[0]), float(point[1] + offset[1])) for point in raw]
+
+
+def _resolved_wind_profile(
+    controls: SupercellsControls,
+    heights: list[float],
+    *,
+    model_level_count: int,
+) -> tuple[list[tuple[float, float]], SupercellsControls]:
+    """Adjust authored controls until the initialized-grid metrics close."""
+    target = normalize_controls(controls)
+    initial = np.asarray(
+        [
+            target.shear_0_6_km_m_s,
+            target.shear_0_2_km_m_s,
+            target.mean_wind_0_6_km_speed_m_s,
+            target.mean_wind_0_6_km_direction_deg,
+        ],
+        dtype=float,
+    )
+
+    def candidate(values: NDArray[np.float64]) -> SupercellsControls:
+        return target.model_copy(
+            update={
+                "shear_0_6_km_m_s": float(values[0]),
+                "shear_0_2_km_m_s": float(values[1]),
+                "shear_6_12_km_m_s": 0.0,
+                "upper_shear_direction_relative_deg": 0.0,
+                "mean_wind_0_6_km_speed_m_s": float(values[2]),
+                "mean_wind_0_6_km_direction_deg": float(values[3] % 360.0),
+            }
+        )
+
+    def residual(values: NDArray[np.float64]) -> NDArray[np.float64]:
+        authored = candidate(values)
+        profile = _wind_profile(authored, heights)
+        metrics = _diagnose_wind_samples(
+            heights[:model_level_count],
+            profile[:model_level_count],
+        )
+        return np.asarray(
+            [
+                (metrics["shear_0_6_km_m_s"] - target.shear_0_6_km_m_s) / 0.02,
+                (metrics["shear_0_2_km_m_s"] - target.shear_0_2_km_m_s) / 0.02,
+                (metrics["mean_speed_m_s"] - target.mean_wind_0_6_km_speed_m_s) / 0.02,
+                (
+                    0.0
+                    if target.mean_wind_0_6_km_speed_m_s == 0.0
+                    else _wrapped_direction_difference(
+                        metrics["mean_direction_deg"],
+                        target.mean_wind_0_6_km_direction_deg,
+                    )
+                    / 0.1
+                ),
+            ],
+            dtype=float,
+        )
+
+    solved = least_squares(
+        residual,
+        initial,
+        bounds=(
+            np.asarray([0.0, 0.0, 0.0, -360.0]),
+            np.asarray([160.0, 100.0, 100.0, 720.0]),
+        ),
+        xtol=1.0e-12,
+        ftol=1.0e-12,
+        gtol=1.0e-12,
+        max_nfev=400,
+    )
+    authored = _resolve_upper_shear(
+        candidate(solved.x),
+        target=target,
+        heights=heights,
+        model_level_count=model_level_count,
+    )
+    return _wind_profile(authored, heights), authored
+
+
+def _resolve_upper_shear(
+    authored: SupercellsControls,
+    *,
+    target: SupercellsControls,
+    heights: list[float],
+    model_level_count: int,
+) -> SupercellsControls:
+    deep_direction_deg = math.degrees(math.atan2(7.0, 31.0))
+
+    def upper_vector(candidate: SupercellsControls) -> NDArray[np.float64]:
+        profile = _wind_profile(candidate, heights)
+        u_points = list(
+            zip(heights[:model_level_count], [wind[0] for wind in profile], strict=False)
+        )
+        v_points = list(
+            zip(heights[:model_level_count], [wind[1] for wind in profile], strict=False)
+        )
+        return np.asarray(
+            [
+                _interpolated_value(u_points, 12_000.0) - _interpolated_value(u_points, 6_000.0),
+                _interpolated_value(v_points, 12_000.0) - _interpolated_value(v_points, 6_000.0),
+            ]
+        )
+
+    base = authored.model_copy(
+        update={"shear_6_12_km_m_s": 0.0, "upper_shear_direction_relative_deg": 0.0}
+    )
+    bias = upper_vector(base)
+    x_response = (
+        upper_vector(
+            base.model_copy(
+                update={
+                    "shear_6_12_km_m_s": 1.0,
+                    "upper_shear_direction_relative_deg": -deep_direction_deg,
+                }
+            )
+        )
+        - bias
+    )
+    y_response = (
+        upper_vector(
+            base.model_copy(
+                update={
+                    "shear_6_12_km_m_s": 1.0,
+                    "upper_shear_direction_relative_deg": 90.0 - deep_direction_deg,
+                }
+            )
+        )
+        - bias
+    )
+    deep_profile = _wind_profile(base, heights)
+    deep_metrics = _diagnose_wind_samples(
+        heights[:model_level_count],
+        deep_profile[:model_level_count],
+    )
+    target_angle = math.radians(
+        deep_metrics["deep_direction_deg"] + target.upper_shear_direction_relative_deg
+    )
+    desired = target.shear_6_12_km_m_s * np.asarray(
+        [math.cos(target_angle), math.sin(target_angle)]
+    )
+    authored_vector = np.linalg.solve(
+        np.column_stack((x_response, y_response)),
+        desired - bias,
+    )
+    authored_direction = math.degrees(
+        math.atan2(float(authored_vector[1]), float(authored_vector[0]))
+    )
+    return base.model_copy(
+        update={
+            "shear_6_12_km_m_s": float(np.linalg.norm(authored_vector)),
+            "upper_shear_direction_relative_deg": _wrapped_direction_difference(
+                authored_direction,
+                deep_direction_deg,
+            ),
+        }
+    )
+
+
+def _diagnose_wind_samples(
+    heights: list[float],
+    winds: list[tuple[float, float]],
+) -> dict[str, float]:
+    u_points = list(zip(heights, [wind[0] for wind in winds], strict=True))
+    v_points = list(zip(heights, [wind[1] for wind in winds], strict=True))
+
+    def vector_at(height_m: float) -> NDArray[np.float64]:
+        return np.asarray(
+            [
+                _interpolated_value(u_points, height_m),
+                _interpolated_value(v_points, height_m),
+            ],
+            dtype=float,
+        )
+
+    zero = vector_at(0.0)
+    two = vector_at(2_000.0)
+    six = vector_at(6_000.0)
+    twelve = vector_at(12_000.0)
+    mean_u = _layer_mean(u_points, 0.0, 6_000.0)
+    mean_v = _layer_mean(v_points, 0.0, 6_000.0)
+    deep_vector = six - zero
+    upper_vector = twelve - six
+    deep_angle = math.degrees(math.atan2(float(deep_vector[1]), float(deep_vector[0])))
+    upper_angle = math.degrees(math.atan2(float(upper_vector[1]), float(upper_vector[0])))
+    upper_relative = _wrapped_direction_difference(upper_angle, deep_angle)
+    if math.isclose(abs(upper_relative), 180.0, rel_tol=0.0, abs_tol=1.0e-9):
+        upper_relative = -180.0
+    return {
+        "shear_0_2_km_m_s": float(np.linalg.norm(two - zero)),
+        "shear_0_6_km_m_s": float(np.linalg.norm(deep_vector)),
+        "shear_6_12_km_m_s": float(np.linalg.norm(upper_vector)),
+        "deep_direction_deg": deep_angle,
+        "upper_direction_relative_deg": upper_relative,
+        "mean_u_m_s": mean_u,
+        "mean_v_m_s": mean_v,
+        "mean_speed_m_s": math.hypot(mean_u, mean_v),
+        "mean_direction_deg": math.degrees(math.atan2(mean_v, mean_u)) % 360.0,
+    }
+
+
+def _diagnose_wind_metrics(
+    sounding: list[SupercellsProfileLevel],
+) -> dict[str, float]:
+    return _diagnose_wind_samples(
+        [level.height_m for level in sounding],
+        [(level.u_m_s, level.v_m_s) for level in sounding],
+    )
+
+
+def _interpolated_value(
+    points: list[tuple[float, float]],
+    target_height_m: float,
+) -> float:
+    if target_height_m <= points[0][0]:
+        lower, upper = points[0], points[1]
+        fraction = (target_height_m - lower[0]) / (upper[0] - lower[0])
+        return lower[1] + fraction * (upper[1] - lower[1])
+    if target_height_m >= points[-1][0]:
+        return points[-1][1]
+    for lower, upper in zip(points, points[1:], strict=False):
+        if lower[0] <= target_height_m <= upper[0]:
+            fraction = (target_height_m - lower[0]) / (upper[0] - lower[0])
+            return lower[1] + fraction * (upper[1] - lower[1])
+    raise ValueError(f"Height {target_height_m:g} m is outside the initialized wind profile.")
 
 
 def _curved_hodograph_point(
@@ -717,7 +951,11 @@ def _transformed_source_profile(
         "midlevel_rh_percent",
     )
     for _iteration in range(12):
-        diagnostics = result[2]
+        diagnostics = _diagnose_final_initialized_state(
+            result[0],
+            result[1],
+            model_level_count=model_level_count,
+        )[1]
         achieved = {
             "surface_based_cape_j_kg": diagnostics["cape_j_kg"],
             "cin_j_kg": diagnostics["cin_j_kg"],
@@ -747,7 +985,12 @@ def _transformed_source_profile(
             source_diagnostics,
             model_level_count=model_level_count,
         )
-    return result
+    final_diagnostics = _diagnose_final_initialized_state(
+        result[0],
+        result[1],
+        model_level_count=model_level_count,
+    )[1]
+    return result[0], result[1], final_diagnostics
 
 
 def _source_relative_transformed_profile(
@@ -1356,6 +1599,24 @@ def emulate_cm1_isnd7_initialization(
     ]
 
 
+def _diagnose_final_initialized_state(
+    surface: SupercellsSoundingSurface,
+    sounding: list[SupercellsProfileLevel],
+    *,
+    model_level_count: int,
+) -> tuple[list[SupercellsProfileLevel], _ThermodynamicDiagnostics]:
+    initialized = emulate_cm1_isnd7_initialization(
+        surface,
+        sounding,
+        [level.height_m for level in sounding[:model_level_count]],
+    )
+    return _diagnose_thermodynamics(
+        surface,
+        initialized,
+        model_level_count=model_level_count,
+    )
+
+
 def _cm1_saturation_mixing_ratio(
     pressure_pa: float,
     temperature_k: float,
@@ -1462,17 +1723,23 @@ def _achieved_controls(
     controls: SupercellsControls,
     sounding: list[SupercellsProfileLevel],
     thermo: _ThermodynamicDiagnostics,
+    *,
+    authored_wind_controls: SupercellsControls,
 ) -> dict[str, Any]:
-    del sounding
+    wind = _diagnose_wind_metrics(sounding)
+    family, turning_depth = _readback_hodograph_geometry(
+        sounding,
+        authored_wind_controls=authored_wind_controls,
+    )
     return {
-        "hodograph_family": controls.hodograph_family,
-        "shear_0_6_km_m_s": controls.shear_0_6_km_m_s,
-        "shear_0_2_km_m_s": controls.shear_0_2_km_m_s,
-        "turning_depth_km_agl": controls.turning_depth_km_agl,
-        "shear_6_12_km_m_s": controls.shear_6_12_km_m_s,
-        "upper_shear_direction_relative_deg": controls.upper_shear_direction_relative_deg,
-        "mean_wind_0_6_km_speed_m_s": controls.mean_wind_0_6_km_speed_m_s,
-        "mean_wind_0_6_km_direction_deg": controls.mean_wind_0_6_km_direction_deg,
+        "hodograph_family": family,
+        "shear_0_6_km_m_s": wind["shear_0_6_km_m_s"],
+        "shear_0_2_km_m_s": wind["shear_0_2_km_m_s"],
+        "turning_depth_km_agl": turning_depth,
+        "shear_6_12_km_m_s": wind["shear_6_12_km_m_s"],
+        "upper_shear_direction_relative_deg": wind["upper_direction_relative_deg"],
+        "mean_wind_0_6_km_speed_m_s": wind["mean_speed_m_s"],
+        "mean_wind_0_6_km_direction_deg": wind["mean_direction_deg"],
         "surface_based_cape_j_kg": thermo["cape_j_kg"],
         "buoyancy_distribution": controls.buoyancy_distribution,
         "lcl_height_m_agl": thermo["lcl_height_m_agl"],
@@ -1487,12 +1754,39 @@ def _achieved_controls(
     }
 
 
+def _readback_hodograph_geometry(
+    sounding: list[SupercellsProfileLevel],
+    *,
+    authored_wind_controls: SupercellsControls,
+) -> tuple[HodographFamily, float]:
+    heights = [level.height_m for level in sounding]
+    observed = np.asarray(
+        [(level.u_m_s, level.v_m_s) for level in sounding],
+        dtype=float,
+    )
+    generated = np.asarray(
+        _wind_profile(authored_wind_controls, heights),
+        dtype=float,
+    )
+    residual = float(np.sqrt(np.mean(np.square(generated - observed))))
+    if residual > 1.0e-7:
+        raise ValueError("Initialized wind does not read back to an approved hodograph geometry.")
+    return (
+        authored_wind_controls.hodograph_family,
+        authored_wind_controls.turning_depth_km_agl,
+    )
+
+
 def _target_errors(
     requested: SupercellsControls,
     achieved: dict[str, Any],
 ) -> list[str]:
     errors: list[str] = []
     for key, target in requested.model_dump(mode="json").items():
+        if key == "upper_shear_direction_relative_deg" and requested.shear_6_12_km_m_s == 0.0:
+            continue
+        if key == "mean_wind_0_6_km_direction_deg" and requested.mean_wind_0_6_km_speed_m_s == 0.0:
+            continue
         actual = achieved[key]
         if isinstance(target, str):
             if actual != target:
@@ -1592,17 +1886,17 @@ def _resolved_differences(
     return differences
 
 
-def _translation_for_controls(
-    controls: SupercellsControls,
+def _translation_for_achieved_mean(
+    mean_u_m_s: float,
+    mean_v_m_s: float,
 ) -> tuple[float, float]:
-    normalized = normalize_controls(controls)
-    direction = math.radians(normalized.mean_wind_0_6_km_direction_deg % 360.0)
-    mean_u = normalized.mean_wind_0_6_km_speed_m_s * math.cos(direction)
-    mean_v = normalized.mean_wind_0_6_km_speed_m_s * math.sin(direction)
-    return (
-        REFERENCE_TRANSLATION_U_M_S + mean_u - REFERENCE_MEAN_U_M_S,
-        REFERENCE_TRANSLATION_V_M_S + mean_v - REFERENCE_MEAN_V_M_S,
-    )
+    delta_u = mean_u_m_s - REFERENCE_MEAN_U_M_S
+    delta_v = mean_v_m_s - REFERENCE_MEAN_V_M_S
+    if abs(delta_u) < 1.0e-8:
+        delta_u = 0.0
+    if abs(delta_v) < 1.0e-8:
+        delta_v = 0.0
+    return REFERENCE_TRANSLATION_U_M_S + delta_u, REFERENCE_TRANSLATION_V_M_S + delta_v
 
 
 def _scientific_warnings(controls: SupercellsControls) -> list[str]:
@@ -1836,7 +2130,23 @@ def _interpolated_level(
     height_m: float,
 ) -> SupercellsProfileLevel:
     if height_m <= levels[0].height_m:
-        return levels[0]
+        lower, upper = levels[0], levels[1]
+        fraction = (height_m - lower.height_m) / (upper.height_m - lower.height_m)
+        values = {
+            key: getattr(lower, key) + fraction * (getattr(upper, key) - getattr(lower, key))
+            for key in (
+                "pressure_pa",
+                "theta_k",
+                "temperature_k",
+                "qv_g_kg",
+                "relative_humidity_percent",
+                "parcel_temperature_k",
+                "parcel_buoyancy_m_s2",
+                "u_m_s",
+                "v_m_s",
+            )
+        }
+        return SupercellsProfileLevel(height_m=height_m, **values)
     for lower, upper in zip(levels, levels[1:], strict=False):
         if lower.height_m <= height_m <= upper.height_m:
             if math.isclose(lower.height_m, upper.height_m):
@@ -1881,7 +2191,9 @@ def _interpolate_points(
     height_m: float,
 ) -> float:
     if height_m <= points[0][0]:
-        return points[0][1]
+        lower, upper = points[0], points[1]
+        fraction = (height_m - lower[0]) / max(upper[0] - lower[0], 1.0e-12)
+        return lower[1] + fraction * (upper[1] - lower[1])
     for lower, upper in zip(points, points[1:], strict=False):
         if lower[0] <= height_m <= upper[0]:
             fraction = (height_m - lower[0]) / max(upper[0] - lower[0], 1.0e-12)
