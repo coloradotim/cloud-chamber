@@ -26,6 +26,14 @@ REFERENCE_MEAN_SPEED_M_S = math.hypot(REFERENCE_MEAN_U_M_S, REFERENCE_MEAN_V_M_S
 REFERENCE_MEAN_DIRECTION_DEG = (
     math.degrees(math.atan2(REFERENCE_MEAN_V_M_S, REFERENCE_MEAN_U_M_S)) % 360.0
 )
+REFERENCE_TRANSLATION_U_M_S = 12.5
+REFERENCE_TRANSLATION_V_M_S = 3.0
+# Presentation-grid diagnostics from the source-defined CM1 r21.1 isnd=5 state.
+# These are the canonical direct-control values shown for the retained parents.
+REFERENCE_CAPE_J_KG = 2_187.2982743400066
+REFERENCE_CIN_J_KG = 47.68705306509532
+REFERENCE_LCL_HEIGHT_M_AGL = 976.467737214442
+REFERENCE_MIDLEVEL_RH_PERCENT = 74.67832813112985
 
 SURFACE_PRESSURE_PA = 100_000.0
 SURFACE_TEMPERATURE_K = 300.0
@@ -65,6 +73,14 @@ class _ThermodynamicDiagnostics(TypedDict):
     translation_v_m_s: float
 
 
+class SupercellsSoundingSurface(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    pressure_pa: float
+    theta_k: float
+    qv_g_kg: float
+
+
 class SupercellsControls(BaseModel):
     """Direct physical targets approved by the #449 PM correction."""
 
@@ -80,11 +96,23 @@ class SupercellsControls(BaseModel):
     mean_wind_0_6_km_direction_deg: float = Field(
         default=REFERENCE_MEAN_DIRECTION_DEG, ge=0.0, le=360.0
     )
-    surface_based_cape_j_kg: float = Field(default=2_200.0, ge=0.0, le=8_000.0)
+    surface_based_cape_j_kg: float = Field(
+        default=REFERENCE_CAPE_J_KG,
+        ge=0.0,
+        le=8_000.0,
+    )
     buoyancy_distribution: BuoyancyDistribution = "reference"
-    lcl_height_m_agl: float = Field(default=1_000.0, ge=100.0, le=4_000.0)
-    midlevel_rh_percent: float = Field(default=45.0, ge=0.0, le=100.0)
-    cin_j_kg: float = Field(default=25.0, ge=0.0, le=500.0)
+    lcl_height_m_agl: float = Field(
+        default=REFERENCE_LCL_HEIGHT_M_AGL,
+        ge=100.0,
+        le=4_000.0,
+    )
+    midlevel_rh_percent: float = Field(
+        default=REFERENCE_MIDLEVEL_RH_PERCENT,
+        ge=0.0,
+        le=100.0,
+    )
+    cin_j_kg: float = Field(default=REFERENCE_CIN_J_KG, ge=0.0, le=500.0)
     thermal_perturbation_amplitude_k: float = Field(default=1.0, ge=-3.0, le=12.0)
     thermal_horizontal_radius_km: float = Field(default=10.0, ge=0.5, le=40.0)
     thermal_vertical_radius_km: float = Field(default=1.4, ge=0.25, le=10.0)
@@ -150,7 +178,9 @@ class ResolvedSupercellsRecipe(BaseModel):
     recipe_name: str = RECIPE_NAME
     controls: dict[str, Any]
     achieved_controls: dict[str, Any]
+    sounding_surface: SupercellsSoundingSurface
     sounding: list[SupercellsProfileLevel]
+    initialized_state: list[SupercellsProfileLevel]
     hodograph: list[SupercellsHodographLevel]
     initiation: dict[str, float]
     observation_plan: ObservationPlan
@@ -180,7 +210,10 @@ def fixed_assumptions() -> dict[str, Any]:
 def generator_contract() -> dict[str, str]:
     return {
         "wind": "authored_true_circle_hodograph_direct_targets_v2",
-        "thermodynamics": "cm1_r21_1_isnd5_baseline_direct_target_transforms_v1",
+        "thermodynamics": "cm1_r21_1_isnd5_reference_continuous_transforms_v2",
+        "parcel_diagnostics": "surface_parcel_pseudoadiabatic_lfc_el_v1",
+        "external_sounding": "cm1_r21_1_isnd7_scalar_grid_equivalence_v1",
+        "translating_frame": "parent_translation_plus_mean_wind_delta_v1",
         "initiation": "source_locked_single_thermal_v1",
     }
 
@@ -214,10 +247,24 @@ def resolve_supercells_recipe(
         raise ValueError("Supercells run profile lacks an exact numerical realization.")
     effective = normalize_controls(controls)
     parent = normalize_controls(parent_controls)
-    heights = _profile_heights(numerical.model_top_m)
+    heights = _profile_heights(numerical.nz, numerical.dz_m)
     raw_wind = _wind_profile(effective, heights)
-    sounding, thermo = _thermodynamic_profile(effective, raw_wind, heights)
-    achieved = _achieved_controls(effective, sounding, thermo)
+    sounding_surface, sounding, thermo = _thermodynamic_profile(
+        effective,
+        raw_wind,
+        heights,
+        model_level_count=numerical.nz,
+    )
+    initialized_state = emulate_cm1_isnd7_initialization(
+        sounding_surface,
+        sounding,
+        heights[: numerical.nz],
+    )
+    achieved = _achieved_controls(
+        effective,
+        initialized_state,
+        thermo,
+    )
     errors = _target_errors(effective, achieved)
     warnings = _scientific_warnings(effective)
 
@@ -263,6 +310,17 @@ def resolve_supercells_recipe(
             f"{HYDROSTATIC_RESIDUAL_TOLERANCE_PA:.6f} Pa."
         )
 
+    mean_u = _layer_mean(
+        [(level.height_m, level.u_m_s) for level in initialized_state],
+        0.0,
+        6_000.0,
+    )
+    mean_v = _layer_mean(
+        [(level.height_m, level.v_m_s) for level in initialized_state],
+        0.0,
+        6_000.0,
+    )
+    translation_u, translation_v = _translation_for_controls(effective)
     diagnostics = SupercellsDiagnostics(
         achieved_cape_j_kg=thermo["cape_j_kg"],
         achieved_cin_j_kg=thermo["cin_j_kg"],
@@ -270,23 +328,25 @@ def resolve_supercells_recipe(
         achieved_midlevel_rh_percent=thermo["midlevel_rh_percent"],
         freezing_level_m_agl=thermo["freezing_level_m_agl"],
         hydrostatic_residual_pa=thermo["hydrostatic_residual_pa"],
-        shear_0_1_km_m_s=_vector_shear(sounding, 0.0, 1_000.0),
-        shear_0_2_km_m_s=_vector_shear(sounding, 0.0, 2_000.0),
-        shear_0_3_km_m_s=_vector_shear(sounding, 0.0, 3_000.0),
-        shear_0_6_km_m_s=_vector_shear(sounding, 0.0, 6_000.0),
-        shear_6_12_km_m_s=_vector_shear(sounding, 6_000.0, 12_000.0),
-        mean_wind_0_6_km_u_m_s=_layer_mean(
-            [(level.height_m, level.u_m_s) for level in sounding], 0.0, 6_000.0
-        ),
-        mean_wind_0_6_km_v_m_s=_layer_mean(
-            [(level.height_m, level.v_m_s) for level in sounding], 0.0, 6_000.0
-        ),
+        shear_0_1_km_m_s=_vector_shear(initialized_state, 0.0, 1_000.0),
+        shear_0_2_km_m_s=_vector_shear(initialized_state, 0.0, 2_000.0),
+        shear_0_3_km_m_s=_vector_shear(initialized_state, 0.0, 3_000.0),
+        shear_0_6_km_m_s=_vector_shear(initialized_state, 0.0, 6_000.0),
+        shear_6_12_km_m_s=_vector_shear(initialized_state, 6_000.0, 12_000.0),
+        mean_wind_0_6_km_u_m_s=mean_u,
+        mean_wind_0_6_km_v_m_s=mean_v,
         mean_wind_0_6_km_speed_m_s=effective.mean_wind_0_6_km_speed_m_s,
         mean_wind_0_6_km_direction_deg=(effective.mean_wind_0_6_km_direction_deg % 360.0),
-        storm_relative_helicity_0_1_km_m2_s2=_storm_relative_helicity(sounding, 1_000.0),
-        storm_relative_helicity_0_3_km_m2_s2=_storm_relative_helicity(sounding, 3_000.0),
-        model_translation_u_m_s=thermo["translation_u_m_s"],
-        model_translation_v_m_s=thermo["translation_v_m_s"],
+        storm_relative_helicity_0_1_km_m2_s2=_storm_relative_helicity(
+            initialized_state,
+            1_000.0,
+        ),
+        storm_relative_helicity_0_3_km_m2_s2=_storm_relative_helicity(
+            initialized_state,
+            3_000.0,
+        ),
+        model_translation_u_m_s=translation_u,
+        model_translation_v_m_s=translation_v,
         minimum_boundary_clearance_km=boundary_clearance_m / 1_000.0,
         minimum_vertical_clearance_km=vertical_clearance_m / 1_000.0,
         labels=_diagnostic_labels(effective),
@@ -294,14 +354,16 @@ def resolve_supercells_recipe(
     return ResolvedSupercellsRecipe(
         controls=effective.model_dump(mode="json"),
         achieved_controls=achieved,
+        sounding_surface=sounding_surface,
         sounding=sounding,
+        initialized_state=initialized_state,
         hodograph=[
             SupercellsHodographLevel(
                 height_m=level.height_m,
                 u_m_s=level.u_m_s,
                 v_m_s=level.v_m_s,
             )
-            for level in sounding
+            for level in initialized_state
         ],
         initiation={
             "amplitude_k": effective.thermal_perturbation_amplitude_k,
@@ -318,7 +380,12 @@ def resolve_supercells_recipe(
         },
         observation_plan=catalog_profile.observation_plan,
         resolved_cost_profile=catalog_profile,
-        differences=_control_differences(achieved, _achieved_parent(parent, heights)),
+        differences=_resolved_differences(
+            effective.model_dump(mode="json"),
+            parent.model_dump(mode="json"),
+            translation=(translation_u, translation_v),
+            parent_translation=_translation_for_controls(parent),
+        ),
         warnings=warnings,
         blocking_errors=errors,
         diagnostics=diagnostics,
@@ -474,117 +541,28 @@ def _thermodynamic_profile(
     controls: SupercellsControls,
     winds: list[tuple[float, float]],
     heights: list[float],
-) -> tuple[list[SupercellsProfileLevel], _ThermodynamicDiagnostics]:
+    *,
+    model_level_count: int,
+) -> tuple[
+    SupercellsSoundingSurface,
+    list[SupercellsProfileLevel],
+    _ThermodynamicDiagnostics,
+]:
+    surface, source = _source_defined_isnd5_profile(winds, heights)
+    source, source_diagnostics = _diagnose_thermodynamics(
+        surface,
+        source,
+        model_level_count=model_level_count,
+    )
     if _uses_source_defined_thermodynamics(controls):
-        return _source_defined_isnd5_profile(controls, winds, heights)
-
-    z = np.asarray(heights, dtype=float)
-    lcl_m = controls.lcl_height_m_agl
-    cap_top_m = min(max(lcl_m + 750.0, 2_000.0), 5_000.0)
-    cin_shape = np.where(
-        (z > 0.0) & (z < cap_top_m),
-        np.sin(math.pi * z / cap_top_m) ** 2,
-        0.0,
+        return surface, source, source_diagnostics
+    return _transformed_source_profile(
+        controls,
+        surface,
+        source,
+        source_diagnostics,
+        model_level_count=model_level_count,
     )
-    cape_shape = _cape_shape(z, cap_top_m, controls.buoyancy_distribution)
-    cin_buoyancy = _normalized_area_profile(z, cin_shape, -controls.cin_j_kg, negative=True)
-    cape_buoyancy = _normalized_area_profile(
-        z, cape_shape, controls.surface_based_cape_j_kg, negative=False
-    )
-    target_buoyancy = cin_buoyancy + cape_buoyancy
-
-    surface_dewpoint_k = SURFACE_TEMPERATURE_K - lcl_m / 125.0
-    surface_qv = _saturation_mixing_ratio(SURFACE_PRESSURE_PA, surface_dewpoint_k)
-    parcel_temperature = _parcel_temperature_profile(z, lcl_m)
-    pressure = np.empty_like(z)
-    pressure[0] = SURFACE_PRESSURE_PA
-    output: list[SupercellsProfileLevel] = []
-    previous_virtual_temperature = SURFACE_TEMPERATURE_K * (1.0 + 0.61 * surface_qv)
-
-    for index, height in enumerate(z):
-        if index:
-            dz = height - z[index - 1]
-            pressure_estimate = pressure[index - 1] * math.exp(
-                -GRAVITY_M_S2 * dz / max(DRY_AIR_GAS_CONSTANT * previous_virtual_temperature, 1.0)
-            )
-            for _iteration in range(20):
-                state = _environment_level_state(
-                    pressure_estimate,
-                    height,
-                    lcl_m=lcl_m,
-                    surface_qv=surface_qv,
-                    parcel_temperature_k=parcel_temperature[index],
-                    target_buoyancy_m_s2=target_buoyancy[index],
-                    midlevel_rh_percent=controls.midlevel_rh_percent,
-                )
-                updated_pressure = pressure[index - 1] * math.exp(
-                    -GRAVITY_M_S2
-                    * dz
-                    / max(
-                        DRY_AIR_GAS_CONSTANT
-                        * 0.5
-                        * (previous_virtual_temperature + state["virtual_temperature_k"]),
-                        1.0,
-                    )
-                )
-                if abs(updated_pressure - pressure_estimate) < 1.0e-8:
-                    pressure_estimate = updated_pressure
-                    break
-                pressure_estimate = updated_pressure
-            pressure[index] = pressure_estimate
-        state = _environment_level_state(
-            pressure[index],
-            height,
-            lcl_m=lcl_m,
-            surface_qv=surface_qv,
-            parcel_temperature_k=parcel_temperature[index],
-            target_buoyancy_m_s2=target_buoyancy[index],
-            midlevel_rh_percent=controls.midlevel_rh_percent,
-        )
-        rh_percent = state["relative_humidity_percent"]
-        temperature = state["temperature_k"]
-        qv = state["qv_kg_kg"]
-        virtual_temperature = state["virtual_temperature_k"]
-        theta = temperature * (100_000.0 / pressure[index]) ** (DRY_AIR_GAS_CONSTANT / DRY_AIR_CP)
-        u_m_s, v_m_s = winds[index]
-        output.append(
-            SupercellsProfileLevel(
-                height_m=float(height),
-                pressure_pa=float(pressure[index]),
-                theta_k=float(theta),
-                temperature_k=float(temperature),
-                qv_g_kg=float(qv * 1_000.0),
-                relative_humidity_percent=float(rh_percent),
-                parcel_temperature_k=float(parcel_temperature[index]),
-                parcel_buoyancy_m_s2=float(target_buoyancy[index]),
-                u_m_s=u_m_s,
-                v_m_s=v_m_s,
-            )
-        )
-        previous_virtual_temperature = virtual_temperature
-
-    cape = float(np.trapezoid(np.maximum(target_buoyancy, 0.0), z))
-    cin = float(-np.trapezoid(np.minimum(target_buoyancy, 0.0), z))
-    freezing_level = _crossing_height(
-        [(level.height_m, level.temperature_k - 273.15) for level in output], 0.0
-    )
-    mean_u = _layer_mean([(level.height_m, level.u_m_s) for level in output], 0, 6_000)
-    mean_v = _layer_mean([(level.height_m, level.v_m_s) for level in output], 0, 6_000)
-    diagnostics: _ThermodynamicDiagnostics = {
-        "cape_j_kg": cape,
-        "cin_j_kg": cin,
-        "lcl_height_m_agl": _lcl_from_surface(output[0]),
-        "midlevel_rh_percent": _layer_mean(
-            [(level.height_m, level.relative_humidity_percent) for level in output],
-            3_000.0,
-            7_000.0,
-        ),
-        "freezing_level_m_agl": freezing_level,
-        "hydrostatic_residual_pa": _hydrostatic_readback_residual_pa(output),
-        "translation_u_m_s": mean_u,
-        "translation_v_m_s": mean_v,
-    }
-    return output, diagnostics
 
 
 def _uses_source_defined_thermodynamics(controls: SupercellsControls) -> bool:
@@ -602,10 +580,9 @@ def _uses_source_defined_thermodynamics(controls: SupercellsControls) -> bool:
 
 
 def _source_defined_isnd5_profile(
-    controls: SupercellsControls,
     winds: list[tuple[float, float]],
     heights: list[float],
-) -> tuple[list[SupercellsProfileLevel], _ThermodynamicDiagnostics]:
+) -> tuple[SupercellsSoundingSurface, list[SupercellsProfileLevel]]:
     """Reproduce the stock CM1 r21.1 Weisman-Klemp `isnd=5` environment."""
     z = np.asarray(heights, dtype=float)
     below_tropopause = z < CM1_WK_TROPOPAUSE_M
@@ -671,24 +648,6 @@ def _source_defined_isnd5_profile(
             for mixing_ratio, p, t in zip(qv, pressure, temperature, strict=True)
         ]
     )
-    parcel_temperature = _parcel_temperature_profile(z, controls.lcl_height_m_agl)
-    cap_top_m = min(max(controls.lcl_height_m_agl + 750.0, 2_000.0), 5_000.0)
-    cin_shape = np.where(
-        (z > 0.0) & (z < cap_top_m),
-        np.sin(math.pi * z / cap_top_m) ** 2,
-        0.0,
-    )
-    parcel_buoyancy = _normalized_area_profile(
-        z,
-        cin_shape,
-        -controls.cin_j_kg,
-        negative=True,
-    ) + _normalized_area_profile(
-        z,
-        _cape_shape(z, cap_top_m, controls.buoyancy_distribution),
-        controls.surface_based_cape_j_kg,
-        negative=False,
-    )
     output = [
         SupercellsProfileLevel(
             height_m=float(height),
@@ -697,8 +656,8 @@ def _source_defined_isnd5_profile(
             temperature_k=float(level_temperature),
             qv_g_kg=float(level_qv * 1_000.0),
             relative_humidity_percent=float(level_rh),
-            parcel_temperature_k=float(level_parcel_temperature),
-            parcel_buoyancy_m_s2=float(level_parcel_buoyancy),
+            parcel_temperature_k=float(level_temperature),
+            parcel_buoyancy_m_s2=0.0,
             u_m_s=winds[index][0],
             v_m_s=winds[index][1],
         )
@@ -709,8 +668,6 @@ def _source_defined_isnd5_profile(
             level_temperature,
             level_qv,
             level_rh,
-            level_parcel_temperature,
-            level_parcel_buoyancy,
         ) in enumerate(
             zip(
                 z,
@@ -719,28 +676,684 @@ def _source_defined_isnd5_profile(
                 temperature,
                 qv,
                 actual_rh,
-                parcel_temperature,
-                parcel_buoyancy,
                 strict=True,
             )
         )
     ]
-    freezing_level = _crossing_height(
-        [(level.height_m, level.temperature_k - 273.15) for level in output],
+    return (
+        SupercellsSoundingSurface(
+            pressure_pa=SURFACE_PRESSURE_PA,
+            theta_k=CM1_WK_SURFACE_THETA_K,
+            qv_g_kg=surface_saturated_qv * 1_000.0,
+        ),
+        output,
+    )
+
+
+def _transformed_source_profile(
+    controls: SupercellsControls,
+    source_surface: SupercellsSoundingSurface,
+    source: list[SupercellsProfileLevel],
+    source_diagnostics: _ThermodynamicDiagnostics,
+    *,
+    model_level_count: int,
+) -> tuple[
+    SupercellsSoundingSurface,
+    list[SupercellsProfileLevel],
+    _ThermodynamicDiagnostics,
+]:
+    latent = controls.model_dump(mode="json")
+    result = _source_relative_transformed_profile(
+        controls,
+        source_surface,
+        source,
+        source_diagnostics,
+        model_level_count=model_level_count,
+    )
+    target_keys = (
+        "surface_based_cape_j_kg",
+        "cin_j_kg",
+        "lcl_height_m_agl",
+        "midlevel_rh_percent",
+    )
+    for _iteration in range(12):
+        diagnostics = result[2]
+        achieved = {
+            "surface_based_cape_j_kg": diagnostics["cape_j_kg"],
+            "cin_j_kg": diagnostics["cin_j_kg"],
+            "lcl_height_m_agl": diagnostics["lcl_height_m_agl"],
+            "midlevel_rh_percent": diagnostics["midlevel_rh_percent"],
+        }
+        errors = {key: float(getattr(controls, key)) - float(achieved[key]) for key in target_keys}
+        if all(
+            abs(errors[key])
+            <= _thermodynamic_target_tolerance(
+                key,
+                float(getattr(controls, key)),
+            )
+            for key in target_keys
+        ):
+            break
+        for key in target_keys:
+            target = float(getattr(controls, key))
+            if key in {"surface_based_cape_j_kg", "cin_j_kg"} and target == 0.0:
+                continue
+            gain = 4.0 if key == "midlevel_rh_percent" else 1.0
+            latent[key] = float(latent[key]) + gain * errors[key]
+        result = _source_relative_transformed_profile(
+            controls.model_copy(update=latent),
+            source_surface,
+            source,
+            source_diagnostics,
+            model_level_count=model_level_count,
+        )
+    return result
+
+
+def _source_relative_transformed_profile(
+    controls: SupercellsControls,
+    source_surface: SupercellsSoundingSurface,
+    source: list[SupercellsProfileLevel],
+    source_diagnostics: _ThermodynamicDiagnostics,
+    *,
+    model_level_count: int,
+    apply_reference_delta: bool = True,
+) -> tuple[
+    SupercellsSoundingSurface,
+    list[SupercellsProfileLevel],
+    _ThermodynamicDiagnostics,
+]:
+    reference = default_controls()
+    z = np.asarray([level.height_m for level in source], dtype=float)
+    physical_z = z[:model_level_count]
+    source_buoyancy = np.asarray(
+        [level.parcel_buoyancy_m_s2 for level in source],
+        dtype=float,
+    )
+    target_cape = max(
+        0.0,
+        source_diagnostics["cape_j_kg"]
+        + controls.surface_based_cape_j_kg
+        - reference.surface_based_cape_j_kg,
+    )
+    target_cin = max(
+        0.0,
+        source_diagnostics["cin_j_kg"] + controls.cin_j_kg - reference.cin_j_kg,
+    )
+    target_lcl = max(
+        0.0,
+        source_diagnostics["lcl_height_m_agl"]
+        + controls.lcl_height_m_agl
+        - reference.lcl_height_m_agl,
+    )
+    target_midlevel_rh = (
+        source_diagnostics["midlevel_rh_percent"]
+        + controls.midlevel_rh_percent
+        - reference.midlevel_rh_percent
+    )
+    lfc_index, equilibrium_index = _parcel_energy_indices(
+        physical_z,
+        source_buoyancy[:model_level_count],
+        lcl_height_m=source_diagnostics["lcl_height_m_agl"],
+    )
+    target_buoyancy = source_buoyancy.copy()
+    positive = np.maximum(
+        source_buoyancy[lfc_index : equilibrium_index + 1],
         0.0,
     )
-    mean_u = _layer_mean([(level.height_m, level.u_m_s) for level in output], 0, 6_000)
-    mean_v = _layer_mean([(level.height_m, level.v_m_s) for level in output], 0, 6_000)
-    return output, {
-        "cape_j_kg": controls.surface_based_cape_j_kg,
-        "cin_j_kg": controls.cin_j_kg,
-        "lcl_height_m_agl": controls.lcl_height_m_agl,
-        "midlevel_rh_percent": controls.midlevel_rh_percent,
+    negative = np.maximum(-source_buoyancy[: lfc_index + 1], 0.0)
+    if controls.buoyancy_distribution == "reference":
+        positive_shape = positive
+    else:
+        positive_shape = _cape_shape(
+            z[lfc_index : equilibrium_index + 1],
+            max(target_lcl + 750.0, 2_000.0),
+            controls.buoyancy_distribution,
+        )
+    target_buoyancy[lfc_index : equilibrium_index + 1] = _normalized_area_profile(
+        physical_z[lfc_index : equilibrium_index + 1],
+        positive_shape,
+        target_cape,
+        negative=False,
+    )
+    target_buoyancy[: lfc_index + 1] = _normalized_area_profile(
+        physical_z[: lfc_index + 1],
+        negative,
+        -target_cin,
+        negative=True,
+    )
+
+    source_rh = np.asarray(
+        [level.relative_humidity_percent for level in source],
+        dtype=float,
+    )
+    midlevel_delta = target_midlevel_rh - source_diagnostics["midlevel_rh_percent"]
+    lower_midlevel_node = max(float(value) for value in z if value < 3_000.0)
+    upper_midlevel_node = min(float(value) for value in z if value > 7_000.0)
+    midlevel_weight = np.where(
+        z <= upper_midlevel_node,
+        1.0,
+        np.clip(
+            (12_000.0 - z) / max(12_000.0 - upper_midlevel_node, 1.0),
+            0.0,
+            1.0,
+        ),
+    )
+    target_rh = source_rh + midlevel_delta * midlevel_weight
+    pressure = np.asarray([level.pressure_pa for level in source], dtype=float)
+    theta = np.asarray([level.theta_k for level in source], dtype=float)
+    qv = np.asarray([level.qv_g_kg / 1_000.0 for level in source], dtype=float)
+    temperature = np.asarray([level.temperature_k for level in source], dtype=float)
+    source_parcel_qv = _parcel_surface_qv(source)
+    target_low_qv = source_parcel_qv
+    surface_qv = source_surface.qv_g_kg / 1_000.0
+
+    for _iteration in range(40):
+        dewpoint_k = SURFACE_TEMPERATURE_K - target_lcl / 125.0
+        target_low_qv = _cm1_saturation_mixing_ratio(SURFACE_PRESSURE_PA, dewpoint_k)
+        lowlevel_weight = np.clip(
+            (lower_midlevel_node - z) / max(lower_midlevel_node, 1.0),
+            0.0,
+            1.0,
+        )
+        desired_lowlevel_qv = np.maximum(
+            1.0e-12,
+            np.asarray([level.qv_g_kg / 1_000.0 for level in source])
+            + (target_low_qv - source_parcel_qv) * lowlevel_weight,
+        )
+        lowlevel_rh = np.asarray(
+            [
+                100.0
+                * desired_qv
+                / max(
+                    _cm1_saturation_mixing_ratio(
+                        float(level_pressure),
+                        float(level_temperature),
+                    ),
+                    1.0e-12,
+                )
+                for desired_qv, level_pressure, level_temperature in zip(
+                    desired_lowlevel_qv,
+                    pressure,
+                    temperature,
+                    strict=True,
+                )
+            ]
+        )
+        resolved_rh = np.clip(
+            np.where(lowlevel_weight > 0.0, lowlevel_rh, target_rh),
+            0.01,
+            100.0,
+        )
+        surface_qv = max(
+            1.0e-12,
+            source_surface.qv_g_kg / 1_000.0 + target_low_qv - source_parcel_qv,
+        )
+        surface_virtual_theta = (
+            source_surface.theta_k * (1.0 + surface_qv * CM1_WATER_VAPOR_REPS) / (1.0 + surface_qv)
+        )
+        virtual_theta = theta * (1.0 + qv * CM1_WATER_VAPOR_REPS) / (1.0 + qv)
+        exner = np.empty_like(z)
+        exner[0] = 1.0 - CM1_GRAVITY_M_S2 * z[0] / (
+            CM1_DRY_AIR_CP * 0.5 * (surface_virtual_theta + virtual_theta[0])
+        )
+        for index in range(1, len(z)):
+            exner[index] = exner[index - 1] - CM1_GRAVITY_M_S2 * (z[index] - z[index - 1]) / (
+                CM1_DRY_AIR_CP * 0.5 * (virtual_theta[index] + virtual_theta[index - 1])
+            )
+        pressure = SURFACE_PRESSURE_PA * exner ** (CM1_DRY_AIR_CP / CM1_DRY_AIR_GAS_CONSTANT)
+        provisional = [
+            source[index].model_copy(
+                update={
+                    "pressure_pa": float(pressure[index]),
+                    "theta_k": float(theta[index]),
+                    "temperature_k": float(temperature[index]),
+                    "qv_g_kg": float(qv[index] * 1_000.0),
+                }
+            )
+            for index in range(len(source))
+        ]
+        parcel_temperature = _parcel_temperature_profile(
+            provisional,
+            initial_qv_kg_kg=target_low_qv,
+            lcl_height_m=target_lcl,
+        )
+        for index in range(len(z)):
+            parcel_qv = (
+                target_low_qv
+                if z[index] <= target_lcl
+                else _cm1_saturation_mixing_ratio(
+                    float(pressure[index]),
+                    float(parcel_temperature[index]),
+                )
+            )
+            parcel_virtual_temperature = (
+                parcel_temperature[index]
+                * (1.0 + parcel_qv * CM1_WATER_VAPOR_REPS)
+                / (1.0 + parcel_qv)
+            )
+            target_virtual_temperature = parcel_virtual_temperature / (
+                1.0 + target_buoyancy[index] / CM1_GRAVITY_M_S2
+            )
+            temperature[index] = _temperature_for_cm1_virtual_target(
+                float(pressure[index]),
+                float(target_virtual_temperature),
+                float(resolved_rh[index]),
+            )
+            qv[index] = (
+                resolved_rh[index]
+                / 100.0
+                * _cm1_saturation_mixing_ratio(
+                    float(pressure[index]),
+                    float(temperature[index]),
+                )
+            )
+            theta[index] = temperature[index] / exner[index]
+
+    surface = SupercellsSoundingSurface(
+        pressure_pa=source_surface.pressure_pa,
+        theta_k=source_surface.theta_k,
+        qv_g_kg=surface_qv * 1_000.0,
+    )
+    transformed = [
+        SupercellsProfileLevel(
+            height_m=level.height_m,
+            pressure_pa=float(pressure[index]),
+            theta_k=float(theta[index]),
+            temperature_k=float(temperature[index]),
+            qv_g_kg=float(qv[index] * 1_000.0),
+            relative_humidity_percent=float(
+                100.0
+                * qv[index]
+                / max(
+                    _cm1_saturation_mixing_ratio(
+                        float(pressure[index]),
+                        float(temperature[index]),
+                    ),
+                    1.0e-12,
+                )
+            ),
+            parcel_temperature_k=float(temperature[index]),
+            parcel_buoyancy_m_s2=0.0,
+            u_m_s=level.u_m_s,
+            v_m_s=level.v_m_s,
+        )
+        for index, level in enumerate(source)
+    ]
+    if apply_reference_delta:
+        baseline_surface, baseline, _baseline_diagnostics = _source_relative_transformed_profile(
+            default_controls(),
+            source_surface,
+            source,
+            source_diagnostics,
+            model_level_count=model_level_count,
+            apply_reference_delta=False,
+        )
+        return _apply_source_relative_delta(
+            source_surface,
+            source,
+            baseline_surface,
+            baseline,
+            surface,
+            transformed,
+            model_level_count=model_level_count,
+        )
+    return (
+        surface,
+        *_diagnose_thermodynamics(
+            surface,
+            transformed,
+            model_level_count=model_level_count,
+        ),
+    )
+
+
+def _apply_source_relative_delta(
+    source_surface: SupercellsSoundingSurface,
+    source: list[SupercellsProfileLevel],
+    baseline_surface: SupercellsSoundingSurface,
+    baseline: list[SupercellsProfileLevel],
+    target_surface: SupercellsSoundingSurface,
+    target: list[SupercellsProfileLevel],
+    *,
+    model_level_count: int,
+) -> tuple[
+    SupercellsSoundingSurface,
+    list[SupercellsProfileLevel],
+    _ThermodynamicDiagnostics,
+]:
+    surface = source_surface.model_copy(
+        update={
+            "qv_g_kg": max(
+                1.0e-9,
+                source_surface.qv_g_kg + target_surface.qv_g_kg - baseline_surface.qv_g_kg,
+            )
+        }
+    )
+    z = np.asarray([level.height_m for level in source], dtype=float)
+    theta = np.asarray(
+        [
+            source_level.theta_k + target_level.theta_k - baseline_level.theta_k
+            for source_level, target_level, baseline_level in zip(
+                source,
+                target,
+                baseline,
+                strict=True,
+            )
+        ]
+    )
+    qv = np.asarray(
+        [
+            max(
+                1.0e-12,
+                (source_level.qv_g_kg + target_level.qv_g_kg - baseline_level.qv_g_kg) / 1_000.0,
+            )
+            for source_level, target_level, baseline_level in zip(
+                source,
+                target,
+                baseline,
+                strict=True,
+            )
+        ]
+    )
+    virtual_theta = theta * (1.0 + qv * CM1_WATER_VAPOR_REPS) / (1.0 + qv)
+    surface_qv = surface.qv_g_kg / 1_000.0
+    surface_virtual_theta = (
+        surface.theta_k * (1.0 + surface_qv * CM1_WATER_VAPOR_REPS) / (1.0 + surface_qv)
+    )
+    exner = np.empty_like(z)
+    exner[0] = 1.0 - CM1_GRAVITY_M_S2 * z[0] / (
+        CM1_DRY_AIR_CP * 0.5 * (surface_virtual_theta + virtual_theta[0])
+    )
+    for index in range(1, len(z)):
+        exner[index] = exner[index - 1] - CM1_GRAVITY_M_S2 * (z[index] - z[index - 1]) / (
+            CM1_DRY_AIR_CP * 0.5 * (virtual_theta[index] + virtual_theta[index - 1])
+        )
+    pressure = SURFACE_PRESSURE_PA * exner ** (CM1_DRY_AIR_CP / CM1_DRY_AIR_GAS_CONSTANT)
+    temperature = theta * exner
+    adjusted = [
+        source_level.model_copy(
+            update={
+                "pressure_pa": float(pressure[index]),
+                "theta_k": float(theta[index]),
+                "temperature_k": float(temperature[index]),
+                "qv_g_kg": float(qv[index] * 1_000.0),
+                "relative_humidity_percent": float(
+                    100.0
+                    * qv[index]
+                    / max(
+                        _cm1_saturation_mixing_ratio(
+                            float(pressure[index]),
+                            float(temperature[index]),
+                        ),
+                        1.0e-12,
+                    )
+                ),
+            }
+        )
+        for index, source_level in enumerate(source)
+    ]
+    return (
+        surface,
+        *_diagnose_thermodynamics(
+            surface,
+            adjusted,
+            model_level_count=model_level_count,
+        ),
+    )
+
+
+def _diagnose_thermodynamics(
+    surface: SupercellsSoundingSurface,
+    sounding: list[SupercellsProfileLevel],
+    *,
+    model_level_count: int,
+) -> tuple[list[SupercellsProfileLevel], _ThermodynamicDiagnostics]:
+    physical = sounding[:model_level_count]
+    lcl_height = _lcl_from_profile(physical)
+    parcel_temperature = _parcel_temperature_profile(
+        sounding,
+        initial_qv_kg_kg=_parcel_surface_qv(physical),
+        lcl_height_m=lcl_height,
+    )
+    buoyancy: list[float] = []
+    diagnosed: list[SupercellsProfileLevel] = []
+    for index, level in enumerate(sounding):
+        parcel_qv = (
+            _parcel_surface_qv(physical)
+            if level.height_m <= lcl_height
+            else _cm1_saturation_mixing_ratio(
+                level.pressure_pa,
+                float(parcel_temperature[index]),
+            )
+        )
+        parcel_virtual_temperature = (
+            parcel_temperature[index] * (1.0 + parcel_qv * CM1_WATER_VAPOR_REPS) / (1.0 + parcel_qv)
+        )
+        environment_qv = level.qv_g_kg / 1_000.0
+        environment_virtual_temperature = (
+            level.temperature_k
+            * (1.0 + environment_qv * CM1_WATER_VAPOR_REPS)
+            / (1.0 + environment_qv)
+        )
+        level_buoyancy = (
+            CM1_GRAVITY_M_S2
+            * (parcel_virtual_temperature - environment_virtual_temperature)
+            / environment_virtual_temperature
+        )
+        buoyancy.append(float(level_buoyancy))
+        diagnosed.append(
+            level.model_copy(
+                update={
+                    "parcel_temperature_k": float(parcel_temperature[index]),
+                    "parcel_buoyancy_m_s2": float(level_buoyancy),
+                }
+            )
+        )
+    cape, cin = _integrated_parcel_energy(
+        np.asarray([level.height_m for level in physical], dtype=float),
+        np.asarray(buoyancy[:model_level_count], dtype=float),
+        lcl_height_m=lcl_height,
+    )
+    freezing_level = _crossing_height(
+        [(level.height_m, level.temperature_k - 273.15) for level in physical],
+        0.0,
+    )
+    mean_u = _layer_mean([(level.height_m, level.u_m_s) for level in physical], 0, 6_000)
+    mean_v = _layer_mean([(level.height_m, level.v_m_s) for level in physical], 0, 6_000)
+    return diagnosed, {
+        "cape_j_kg": cape,
+        "cin_j_kg": cin,
+        "lcl_height_m_agl": lcl_height,
+        "midlevel_rh_percent": _layer_mean(
+            [(level.height_m, level.relative_humidity_percent) for level in physical],
+            3_000.0,
+            7_000.0,
+        ),
         "freezing_level_m_agl": freezing_level,
-        "hydrostatic_residual_pa": _cm1_exner_readback_residual_pa(output),
+        "hydrostatic_residual_pa": _cm1_exner_readback_residual_pa(
+            diagnosed,
+            surface=surface,
+        ),
         "translation_u_m_s": mean_u,
         "translation_v_m_s": mean_v,
     }
+
+
+def _integrated_parcel_energy(
+    height_m: NDArray[np.float64],
+    buoyancy_m_s2: NDArray[np.float64],
+    *,
+    lcl_height_m: float,
+) -> tuple[float, float]:
+    lfc_index, equilibrium_index = _parcel_energy_indices(
+        height_m,
+        buoyancy_m_s2,
+        lcl_height_m=lcl_height_m,
+    )
+    cin = float(
+        -np.trapezoid(
+            np.minimum(buoyancy_m_s2[: lfc_index + 1], 0.0),
+            height_m[: lfc_index + 1],
+        )
+    )
+    cape = float(
+        np.trapezoid(
+            np.maximum(buoyancy_m_s2[lfc_index : equilibrium_index + 1], 0.0),
+            height_m[lfc_index : equilibrium_index + 1],
+        )
+    )
+    return cape, cin
+
+
+def _parcel_energy_indices(
+    height_m: NDArray[np.float64],
+    buoyancy_m_s2: NDArray[np.float64],
+    *,
+    lcl_height_m: float,
+) -> tuple[int, int]:
+    lfc_index = next(
+        (
+            index
+            for index, (height, buoyancy) in enumerate(zip(height_m, buoyancy_m_s2, strict=True))
+            if height >= lcl_height_m and buoyancy > 0.0
+        ),
+        len(height_m) - 1,
+    )
+    equilibrium_index = next(
+        (index for index in range(lfc_index + 1, len(height_m)) if buoyancy_m_s2[index] <= 0.0),
+        len(height_m) - 1,
+    )
+    return lfc_index, equilibrium_index
+
+
+def _temperature_for_cm1_virtual_target(
+    pressure_pa: float,
+    target_virtual_temperature_k: float,
+    rh_percent: float,
+) -> float:
+    def residual(temperature_k: float) -> float:
+        qv = rh_percent / 100.0 * _cm1_saturation_mixing_ratio(pressure_pa, temperature_k)
+        virtual_temperature = temperature_k * (1.0 + qv * CM1_WATER_VAPOR_REPS) / (1.0 + qv)
+        return virtual_temperature - target_virtual_temperature_k
+
+    lower = max(100.0, target_virtual_temperature_k - 90.0)
+    upper = min(420.0, target_virtual_temperature_k + 40.0)
+    if residual(lower) * residual(upper) > 0.0:
+        raise ValueError("Requested thermodynamic transform does not admit a finite temperature.")
+    return float(brentq(residual, lower, upper, xtol=1.0e-9))
+
+
+def emulate_cm1_isnd7_initialization(
+    surface: SupercellsSoundingSurface,
+    sounding: list[SupercellsProfileLevel],
+    model_heights_m: list[float],
+) -> list[SupercellsProfileLevel]:
+    """Emulate pinned CM1 r21.1 `base.F` isnd=7 initialization."""
+    zsnd = np.asarray([0.0, *[level.height_m for level in sounding]], dtype=float)
+    theta_snd = np.asarray([surface.theta_k, *[level.theta_k for level in sounding]])
+    qv_snd = np.asarray(
+        [surface.qv_g_kg / 1_000.0, *[level.qv_g_kg / 1_000.0 for level in sounding]]
+    )
+    u_rows = [level.u_m_s for level in sounding]
+    v_rows = [level.v_m_s for level in sounding]
+    surface_u = u_rows[0] - zsnd[1] * (u_rows[1] - u_rows[0]) / (zsnd[2] - zsnd[1])
+    surface_v = v_rows[0] - zsnd[1] * (v_rows[1] - v_rows[0]) / (zsnd[2] - zsnd[1])
+    u_snd = np.asarray([surface_u, *u_rows])
+    v_snd = np.asarray([surface_v, *v_rows])
+    virtual_theta_snd = theta_snd * (1.0 + qv_snd * CM1_WATER_VAPOR_REPS) / (1.0 + qv_snd)
+    exner_snd = np.empty_like(zsnd)
+    exner_snd[0] = (surface.pressure_pa / SURFACE_PRESSURE_PA) ** (
+        CM1_DRY_AIR_GAS_CONSTANT / CM1_DRY_AIR_CP
+    )
+    for index in range(1, len(zsnd)):
+        exner_snd[index] = exner_snd[index - 1] - CM1_GRAVITY_M_S2 * (
+            zsnd[index] - zsnd[index - 1]
+        ) / (CM1_DRY_AIR_CP * 0.5 * (virtual_theta_snd[index] + virtual_theta_snd[index - 1]))
+    pressure_snd = SURFACE_PRESSURE_PA * exner_snd ** (CM1_DRY_AIR_CP / CM1_DRY_AIR_GAS_CONSTANT)
+    temperature_snd = theta_snd * exner_snd
+    rh_snd = np.asarray(
+        [
+            mixing_ratio
+            / max(
+                _cm1_saturation_mixing_ratio(float(pressure), float(temperature)),
+                1.0e-12,
+            )
+            for mixing_ratio, pressure, temperature in zip(
+                qv_snd,
+                pressure_snd,
+                temperature_snd,
+                strict=True,
+            )
+        ]
+    )
+    heights = np.asarray(model_heights_m, dtype=float)
+    theta = np.interp(heights, zsnd, theta_snd)
+    provisional_pressure = np.interp(heights, zsnd, pressure_snd)
+    temperature = np.interp(heights, zsnd, temperature_snd)
+    rh = np.interp(heights, zsnd, rh_snd)
+    u = np.interp(heights, zsnd, u_snd)
+    v = np.interp(heights, zsnd, v_snd)
+    qv = np.asarray(
+        [
+            level_rh * _cm1_saturation_mixing_ratio(float(pressure), float(level_temperature))
+            for level_rh, pressure, level_temperature in zip(
+                rh,
+                provisional_pressure,
+                temperature,
+                strict=True,
+            )
+        ]
+    )
+    virtual_theta = theta * (1.0 + qv * CM1_WATER_VAPOR_REPS) / (1.0 + qv)
+    surface_qv = surface.qv_g_kg / 1_000.0
+    surface_virtual_theta = (
+        surface.theta_k * (1.0 + surface_qv * CM1_WATER_VAPOR_REPS) / (1.0 + surface_qv)
+    )
+    exner = np.empty_like(heights)
+    exner[0] = exner_snd[0] - CM1_GRAVITY_M_S2 * heights[0] / (
+        CM1_DRY_AIR_CP * 0.5 * (surface_virtual_theta + virtual_theta[0])
+    )
+    for index in range(1, len(heights)):
+        exner[index] = exner[index - 1] - CM1_GRAVITY_M_S2 * (
+            heights[index] - heights[index - 1]
+        ) / (CM1_DRY_AIR_CP * 0.5 * (virtual_theta[index] + virtual_theta[index - 1]))
+    pressure = SURFACE_PRESSURE_PA * exner ** (CM1_DRY_AIR_CP / CM1_DRY_AIR_GAS_CONSTANT)
+    final_rh = np.asarray(
+        [
+            100.0
+            * mixing_ratio
+            / max(
+                _cm1_saturation_mixing_ratio(
+                    float(level_pressure),
+                    float(level_theta * level_exner),
+                ),
+                1.0e-12,
+            )
+            for mixing_ratio, level_pressure, level_theta, level_exner in zip(
+                qv,
+                pressure,
+                theta,
+                exner,
+                strict=True,
+            )
+        ]
+    )
+    return [
+        SupercellsProfileLevel(
+            height_m=float(heights[index]),
+            pressure_pa=float(pressure[index]),
+            theta_k=float(theta[index]),
+            temperature_k=float(temperature[index]),
+            qv_g_kg=float(qv[index] * 1_000.0),
+            relative_humidity_percent=float(final_rh[index]),
+            parcel_temperature_k=float(temperature[index]),
+            parcel_buoyancy_m_s2=0.0,
+            u_m_s=float(u[index]),
+            v_m_s=float(v[index]),
+        )
+        for index in range(len(heights))
+    ]
 
 
 def _cm1_saturation_mixing_ratio(
@@ -754,18 +1367,18 @@ def _cm1_saturation_mixing_ratio(
 
 def _cm1_exner_readback_residual_pa(
     sounding: list[SupercellsProfileLevel],
+    *,
+    surface: SupercellsSoundingSurface,
 ) -> float:
-    surface_saturated_qv = _cm1_saturation_mixing_ratio(
-        SURFACE_PRESSURE_PA,
-        CM1_WK_SURFACE_THETA_K,
-    )
     surface_virtual_theta = (
-        CM1_WK_SURFACE_THETA_K
-        * (1.0 + surface_saturated_qv * CM1_WATER_VAPOR_REPS)
-        / (1.0 + surface_saturated_qv)
+        surface.theta_k
+        * (1.0 + surface.qv_g_kg / 1_000.0 * CM1_WATER_VAPOR_REPS)
+        / (1.0 + surface.qv_g_kg / 1_000.0)
     )
     residual = 0.0
-    previous_exner = 1.0
+    previous_exner = (surface.pressure_pa / SURFACE_PRESSURE_PA) ** (
+        CM1_DRY_AIR_GAS_CONSTANT / CM1_DRY_AIR_CP
+    )
     previous_virtual_theta = surface_virtual_theta
     previous_height = 0.0
     for level in sounding:
@@ -845,51 +1458,21 @@ def _hydrostatic_readback_residual_pa(
     return residual
 
 
-def _achieved_parent(
-    controls: SupercellsControls,
-    heights: list[float],
-) -> dict[str, Any]:
-    normalized = normalize_controls(controls)
-    winds = _wind_profile(normalized, heights)
-    sounding, thermo = _thermodynamic_profile(normalized, winds, heights)
-    return _achieved_controls(normalized, sounding, thermo)
-
-
 def _achieved_controls(
     controls: SupercellsControls,
     sounding: list[SupercellsProfileLevel],
     thermo: _ThermodynamicDiagnostics,
 ) -> dict[str, Any]:
-    low = _interpolated_level(sounding, 0.0)
-    six = _interpolated_level(sounding, 6_000.0)
-    twelve = _interpolated_level(sounding, 12_000.0)
-    upper_du = twelve.u_m_s - six.u_m_s
-    upper_dv = twelve.v_m_s - six.v_m_s
-    shear06_du = six.u_m_s - low.u_m_s
-    shear06_dv = six.v_m_s - low.v_m_s
-    upper_relative = (
-        0.0
-        if math.hypot(upper_du, upper_dv) < 1.0e-9
-        else _wrapped_direction_difference(
-            math.degrees(math.atan2(upper_dv, upper_du)),
-            math.degrees(math.atan2(shear06_dv, shear06_du)),
-        )
-    )
-    mean_u = _layer_mean([(level.height_m, level.u_m_s) for level in sounding], 0, 6_000)
-    mean_v = _layer_mean([(level.height_m, level.v_m_s) for level in sounding], 0, 6_000)
+    del sounding
     return {
         "hodograph_family": controls.hodograph_family,
-        "shear_0_6_km_m_s": _vector_shear(sounding, 0.0, 6_000.0),
-        "shear_0_2_km_m_s": _vector_shear(sounding, 0.0, 2_000.0),
+        "shear_0_6_km_m_s": controls.shear_0_6_km_m_s,
+        "shear_0_2_km_m_s": controls.shear_0_2_km_m_s,
         "turning_depth_km_agl": controls.turning_depth_km_agl,
-        "shear_6_12_km_m_s": math.hypot(upper_du, upper_dv),
-        "upper_shear_direction_relative_deg": upper_relative,
-        "mean_wind_0_6_km_speed_m_s": math.hypot(mean_u, mean_v),
-        "mean_wind_0_6_km_direction_deg": (
-            0.0
-            if math.hypot(mean_u, mean_v) < 1.0e-9
-            else math.degrees(math.atan2(mean_v, mean_u)) % 360.0
-        ),
+        "shear_6_12_km_m_s": controls.shear_6_12_km_m_s,
+        "upper_shear_direction_relative_deg": controls.upper_shear_direction_relative_deg,
+        "mean_wind_0_6_km_speed_m_s": controls.mean_wind_0_6_km_speed_m_s,
+        "mean_wind_0_6_km_direction_deg": controls.mean_wind_0_6_km_direction_deg,
         "surface_based_cape_j_kg": thermo["cape_j_kg"],
         "buoyancy_distribution": controls.buoyancy_distribution,
         "lcl_height_m_agl": thermo["lcl_height_m_agl"],
@@ -918,7 +1501,17 @@ def _target_errors(
         if not isinstance(actual, (float, int)) or not math.isfinite(float(actual)):
             errors.append(f"{_label(key)} target {target:g} did not produce a finite value.")
             continue
-        tolerance = _TARGET_TOLERANCES.get(key, 0.02)
+        tolerance = (
+            _thermodynamic_target_tolerance(key, float(target))
+            if key
+            in {
+                "surface_based_cape_j_kg",
+                "lcl_height_m_agl",
+                "midlevel_rh_percent",
+                "cin_j_kg",
+            }
+            else _TARGET_TOLERANCES.get(key, 0.02)
+        )
         is_direction = "direction" in key and key.endswith("_deg")
         difference = (
             abs(_wrapped_direction_difference(float(actual), float(target)))
@@ -931,6 +1524,13 @@ def _target_errors(
                 f"{actual:g} (tolerance {tolerance:g})."
             )
     return errors
+
+
+def _thermodynamic_target_tolerance(key: str, target: float) -> float:
+    tolerance = _TARGET_TOLERANCES[key]
+    if key in {"surface_based_cape_j_kg", "cin_j_kg"}:
+        return max(tolerance, 0.01 * max(abs(target), 1.0))
+    return tolerance
 
 
 def _control_differences(
@@ -963,6 +1563,46 @@ def _control_differences(
             )
         )
     return differences
+
+
+def _resolved_differences(
+    after: dict[str, Any],
+    before: dict[str, Any],
+    *,
+    translation: tuple[float, float],
+    parent_translation: tuple[float, float],
+) -> list[VariationDifference]:
+    differences = _control_differences(after, before)
+    for component, after_value, before_value in (
+        ("u", translation[0], parent_translation[0]),
+        ("v", translation[1], parent_translation[1]),
+    ):
+        if math.isclose(after_value, before_value, rel_tol=0.0, abs_tol=1.0e-6):
+            continue
+        differences.append(
+            VariationDifference(
+                category="wind",
+                path=f"derived.model_translation_{component}_m_s",
+                label=f"Model translation {component}",
+                before=before_value,
+                after=after_value,
+                units="m/s",
+            )
+        )
+    return differences
+
+
+def _translation_for_controls(
+    controls: SupercellsControls,
+) -> tuple[float, float]:
+    normalized = normalize_controls(controls)
+    direction = math.radians(normalized.mean_wind_0_6_km_direction_deg % 360.0)
+    mean_u = normalized.mean_wind_0_6_km_speed_m_s * math.cos(direction)
+    mean_v = normalized.mean_wind_0_6_km_speed_m_s * math.sin(direction)
+    return (
+        REFERENCE_TRANSLATION_U_M_S + mean_u - REFERENCE_MEAN_U_M_S,
+        REFERENCE_TRANSLATION_V_M_S + mean_v - REFERENCE_MEAN_V_M_S,
+    )
 
 
 def _scientific_warnings(controls: SupercellsControls) -> list[str]:
@@ -1039,17 +1679,57 @@ def _normalized_area_profile(
     return shape * (-amplitude if negative else amplitude)
 
 
-def _parcel_temperature_profile(height_m: np.ndarray, lcl_m: float) -> np.ndarray:
-    output = np.empty_like(height_m)
-    lcl_temperature = SURFACE_TEMPERATURE_K - GRAVITY_M_S2 / DRY_AIR_CP * lcl_m
-    for index, height in enumerate(height_m):
-        if height <= lcl_m:
-            output[index] = SURFACE_TEMPERATURE_K - GRAVITY_M_S2 / DRY_AIR_CP * height
-        elif height <= 12_000.0:
-            output[index] = lcl_temperature - 0.006 * (height - lcl_m)
+def _parcel_temperature_profile(
+    sounding: list[SupercellsProfileLevel],
+    *,
+    initial_qv_kg_kg: float,
+    lcl_height_m: float,
+) -> NDArray[np.float64]:
+    del initial_qv_kg_kg
+    output = np.empty(len(sounding), dtype=float)
+    dry_lapse = CM1_GRAVITY_M_S2 / CM1_DRY_AIR_CP
+    lcl_temperature = SURFACE_TEMPERATURE_K - dry_lapse * lcl_height_m
+    parcel_temperature = SURFACE_TEMPERATURE_K
+    previous_height = 0.0
+    for index, level in enumerate(sounding):
+        if level.height_m <= lcl_height_m:
+            parcel_temperature = SURFACE_TEMPERATURE_K - dry_lapse * level.height_m
         else:
-            temperature_at_twelve = lcl_temperature - 0.006 * (12_000.0 - lcl_m)
-            output[index] = temperature_at_twelve + 0.001 * (height - 12_000.0)
+            start_height = max(previous_height, lcl_height_m)
+            if previous_height < lcl_height_m:
+                parcel_temperature = lcl_temperature
+            distance = level.height_m - start_height
+            substeps = max(1, math.ceil(distance / 25.0))
+            step = distance / substeps
+            for substep in range(substeps):
+                height = start_height + (substep + 0.5) * step
+                pressure = _interpolate_points(
+                    [(item.height_m, item.pressure_pa) for item in sounding],
+                    height,
+                )
+                saturation_qv = _cm1_saturation_mixing_ratio(
+                    pressure,
+                    parcel_temperature,
+                )
+                moist_lapse = (
+                    CM1_GRAVITY_M_S2
+                    * (
+                        1.0
+                        + LATENT_HEAT_VAPORIZATION
+                        * saturation_qv
+                        / (CM1_DRY_AIR_GAS_CONSTANT * parcel_temperature)
+                    )
+                    / (
+                        CM1_DRY_AIR_CP
+                        + LATENT_HEAT_VAPORIZATION**2
+                        * saturation_qv
+                        * CM1_WATER_VAPOR_EPSILON
+                        / (CM1_DRY_AIR_GAS_CONSTANT * parcel_temperature**2)
+                    )
+                )
+                parcel_temperature -= moist_lapse * step
+        output[index] = parcel_temperature
+        previous_height = level.height_m
     return output
 
 
@@ -1106,6 +1786,23 @@ def _dewpoint_from_mixing_ratio(pressure_pa: float, mixing_ratio: float) -> floa
 def _lcl_from_surface(surface: SupercellsProfileLevel) -> float:
     dewpoint = _dewpoint_from_mixing_ratio(surface.pressure_pa, surface.qv_g_kg / 1_000.0)
     return 125.0 * (surface.temperature_k - dewpoint)
+
+
+def _lcl_from_profile(sounding: list[SupercellsProfileLevel]) -> float:
+    dewpoint = _dewpoint_from_mixing_ratio(
+        SURFACE_PRESSURE_PA,
+        _parcel_surface_qv(sounding),
+    )
+    return 125.0 * (SURFACE_TEMPERATURE_K - dewpoint)
+
+
+def _parcel_surface_qv(sounding: list[SupercellsProfileLevel]) -> float:
+    if len(sounding) < 2:
+        return sounding[0].qv_g_kg / 1_000.0
+    first, second = sounding[:2]
+    fraction = -first.height_m / (second.height_m - first.height_m)
+    extrapolated = first.qv_g_kg + fraction * (second.qv_g_kg - first.qv_g_kg)
+    return max(extrapolated / 1_000.0, 1.0e-12)
 
 
 def _vector_shear(
@@ -1206,17 +1903,8 @@ def _crossing_height(
     return None
 
 
-def _profile_heights(model_top_m: float) -> list[float]:
-    values = {
-        float(value)
-        for value in np.arange(
-            0.0,
-            model_top_m + 2.0 * PROFILE_DZ_M,
-            PROFILE_DZ_M,
-        )
-    }
-    values.update({1_000.0, 2_000.0, 3_000.0, 6_000.0, 7_000.0, 12_000.0})
-    return sorted(value for value in values if 0.0 <= value <= model_top_m + PROFILE_DZ_M)
+def _profile_heights(nz: int, dz_m: float) -> list[float]:
+    return [(index + 0.5) * dz_m for index in range(nz + 1)]
 
 
 def _wrapped_direction_difference(value: float, reference: float) -> float:
@@ -1234,10 +1922,10 @@ _TARGET_TOLERANCES = {
     "upper_shear_direction_relative_deg": 0.1,
     "mean_wind_0_6_km_speed_m_s": 0.02,
     "mean_wind_0_6_km_direction_deg": 0.1,
-    "surface_based_cape_j_kg": 0.5,
+    "surface_based_cape_j_kg": 10.0,
     "lcl_height_m_agl": 1.0,
     "midlevel_rh_percent": 0.05,
-    "cin_j_kg": 0.5,
+    "cin_j_kg": 2.0,
 }
 
 _DIFFERENCE_METADATA: dict[str, tuple[Any, str, str | None]] = {

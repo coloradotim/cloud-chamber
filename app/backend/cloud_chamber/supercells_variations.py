@@ -65,7 +65,9 @@ from cloud_chamber.supercells_recipes import (
     ResolvedSupercellsRecipe,
     SupercellsControls,
     SupercellsProfileLevel,
+    SupercellsSoundingSurface,
     default_controls,
+    emulate_cm1_isnd7_initialization,
     fixed_assumptions,
     generator_contract,
     normalize_controls,
@@ -79,6 +81,7 @@ from cloud_chamber.supercells_source_customization import (
 )
 from cloud_chamber.variation_envelope import (
     AttemptRelationship,
+    ImmutableVariationLayer,
     VariationAttempt,
     VariationDifference,
     VariationEnvelope,
@@ -252,23 +255,36 @@ def create_supercells_variation(
         "generators": generator_contract(),
         "fixed_assumptions": assumptions,
     }
-    identity = canonical_payload_sha256(
-        {
-            "scientific_design": scientific_design,
-            "numerical_realization": numerical_payload,
-        }
-    )
     relationship = classify_relationship(differences)
     slug = _slug(request.simulation_name)
     observation_only = relationship == "observation_only_attempt"
-    simulation_id = (
-        request.parent_simulation_id if observation_only else f"supercells_{slug}_{identity[:8]}"
-    )
-    simulation_display_name = (
-        context.template.parent_display_name
-        if observation_only
-        else request.simulation_name.strip()
-    )
+    if observation_only:
+        simulation_contract = _parent_simulation_contract(context)
+        identity = simulation_contract.sha256
+        simulation_id = request.parent_simulation_id
+        simulation_display_name = str(simulation_contract.payload["display_name"])
+        simulation_question = simulation_contract.payload.get("question")
+        envelope_scientific_design = simulation_contract.payload["scientific_design"]
+        envelope_numerical_realization = simulation_contract.payload["numerical_realization"]
+    else:
+        simulation_display_name = request.simulation_name.strip()
+        simulation_question = _optional_text(request.user_question)
+        simulation_contract = immutable_layer(
+            _simulation_contract_payload(
+                parent_simulation_id=request.parent_simulation_id,
+                display_name=simulation_display_name,
+                question=simulation_question,
+                scientific_design=scientific_design,
+                numerical_realization=numerical_payload,
+                differences=differences,
+                relationship=relationship,
+                resolved=resolved,
+            )
+        )
+        identity = simulation_contract.sha256
+        simulation_id = f"supercells_{slug}_{identity[:8]}"
+        envelope_scientific_design = scientific_design
+        envelope_numerical_realization = numerical_payload
     envelope_parent_simulation_id = (
         simulation_id if observation_only else request.parent_simulation_id
     )
@@ -300,7 +316,12 @@ def create_supercells_variation(
         paths["namelist"].write_text(
             _render_variation_namelist(parent_namelist.read_text(), resolved)
         )
-        paths["sounding"].write_text(_render_input_sounding(resolved.sounding))
+        paths["sounding"].write_text(
+            _render_input_sounding(
+                resolved.sounding_surface,
+                resolved.sounding,
+            )
+        )
         init3d_path = _configured_init3d_path(settings)
         customization = supercells_source_customization_artifact(
             init3d_path.read_text(),
@@ -343,17 +364,22 @@ def create_supercells_variation(
             parent_simulation_id=envelope_parent_simulation_id,
             reference_simulation_id=REFERENCE_SIMULATION_ID,
             display_name=simulation_display_name,
-            question=_optional_text(request.user_question),
-            scientific_design=immutable_layer(scientific_design),
-            numerical_realization=immutable_layer(numerical_payload),
+            question=simulation_question,
+            scientific_design=immutable_layer(envelope_scientific_design),
+            numerical_realization=immutable_layer(envelope_numerical_realization),
             observation_plan=immutable_layer(observation_payload),
+            simulation_contract=simulation_contract,
             world_payload={
                 "controls": resolved.controls,
                 "reference_controls": reference_controls,
                 "parent_controls": context.parent_controls.model_dump(mode="json"),
                 "requested_controls": request.controls.model_dump(mode="json"),
                 "achieved_controls": resolved.achieved_controls,
+                "sounding_surface": resolved.sounding_surface.model_dump(mode="json"),
                 "sounding": [level.model_dump(mode="json") for level in resolved.sounding],
+                "initialized_state": [
+                    level.model_dump(mode="json") for level in resolved.initialized_state
+                ],
                 "hodograph": [level.model_dump(mode="json") for level in resolved.hodograph],
                 "initiation": resolved.initiation,
                 "diagnostics": resolved.diagnostics.model_dump(mode="json"),
@@ -430,7 +456,11 @@ def create_supercells_variation(
                 "parent_controls": context.parent_controls.model_dump(mode="json"),
                 "requested_controls": request.controls.model_dump(mode="json"),
                 "achieved_controls": resolved.achieved_controls,
+                "sounding_surface": resolved.sounding_surface.model_dump(mode="json"),
                 "sounding": [level.model_dump(mode="json") for level in resolved.sounding],
+                "initialized_state": [
+                    level.model_dump(mode="json") for level in resolved.initialized_state
+                ],
                 "hodograph": [level.model_dump(mode="json") for level in resolved.hodograph],
                 "initiation": resolved.initiation,
                 "diagnostics": resolved.diagnostics.model_dump(mode="json"),
@@ -616,6 +646,7 @@ def preflight_supercells_variation(manifest_path: Path) -> dict[str, Any]:
         "no_existing_cm1_output": not outputs,
         "namelist_contract_matches": readback["namelist_contract_matches"],
         "sounding_profile_matches": readback["sounding_profile_matches"],
+        "initialized_state_matches": readback["initialized_state_matches"],
         "sounding_extends_above_model_top": readback["sounding_extends_above_model_top"],
         "source_customization_matches": readback["source_customization_matches"],
         "launch_specification_bound": isinstance(
@@ -723,6 +754,160 @@ def _resolve_request(
             )
         )
     return resolved, differences
+
+
+def _simulation_contract_payload(
+    *,
+    parent_simulation_id: str,
+    display_name: str,
+    question: str | None,
+    scientific_design: dict[str, Any],
+    numerical_realization: dict[str, Any],
+    differences: list[VariationDifference],
+    relationship: str,
+    resolved: ResolvedSupercellsRecipe,
+) -> dict[str, Any]:
+    core_differences = [
+        difference for difference in differences if difference.category != "observation_plan"
+    ]
+    core_relationship = (
+        classify_relationship(core_differences) if core_differences else relationship
+    )
+    return {
+        "schema_version": "cloud_world_simulation_contract_v1",
+        "world_id": WORLD_ID,
+        "recipe_id": RECIPE_ID,
+        "recipe_contract_version": RECIPE_CONTRACT_VERSION,
+        "parent_simulation_id": parent_simulation_id,
+        "reference_simulation_id": REFERENCE_SIMULATION_ID,
+        "display_name": display_name,
+        "question": question,
+        "scientific_design": scientific_design,
+        "numerical_realization": numerical_realization,
+        "material_differences": [
+            difference.model_dump(mode="json")
+            for difference in core_differences
+            if difference.material
+        ],
+        "relationship_classification": core_relationship,
+        "world_semantics": {
+            "controls": resolved.controls,
+            "initiation": resolved.initiation,
+            "generators": generator_contract(),
+            "fixed_assumptions": fixed_assumptions(),
+            "model_translation": {
+                "u_m_s": resolved.diagnostics.model_translation_u_m_s,
+                "v_m_s": resolved.diagnostics.model_translation_v_m_s,
+            },
+        },
+    }
+
+
+def _parent_simulation_contract(
+    context: _ParentContext,
+) -> ImmutableVariationLayer:
+    if context.template.parent_simulation_id not in {
+        REFERENCE_SIMULATION_ID,
+        STRAIGHT_LINE_SIMULATION_ID,
+    }:
+        envelope = _manifest_envelope(context.parent_manifest)
+        if envelope.simulation_contract is not None:
+            return envelope.simulation_contract
+        return immutable_layer(
+            {
+                "schema_version": "cloud_world_simulation_contract_v1",
+                "world_id": envelope.world_id,
+                "recipe_id": envelope.recipe_id,
+                "recipe_contract_version": envelope.recipe_contract_version,
+                "parent_simulation_id": envelope.parent_simulation_id,
+                "reference_simulation_id": envelope.reference_simulation_id,
+                "display_name": envelope.display_name,
+                "question": envelope.question,
+                "scientific_design": envelope.scientific_design.payload,
+                "numerical_realization": envelope.numerical_realization.payload,
+                "material_differences": [
+                    difference.model_dump(mode="json")
+                    for difference in envelope.differences
+                    if difference.material and difference.category != "observation_plan"
+                ],
+                "relationship_classification": envelope.relationship_classification,
+                "world_semantics": {
+                    "controls": envelope.world_payload["controls"],
+                    "initiation": envelope.world_payload.get("initiation"),
+                    "generators": envelope.scientific_design.payload.get("generators"),
+                    "fixed_assumptions": envelope.scientific_design.payload.get(
+                        "fixed_assumptions"
+                    ),
+                    "model_translation": envelope.world_payload.get("diagnostics", {}),
+                },
+            }
+        )
+    controls = context.parent_controls.model_dump(mode="json")
+    resolved_parent = resolve_supercells_recipe(
+        controls=context.parent_controls,
+        parent_controls=context.parent_controls,
+        catalog_profile=profile_by_id("supercells_presentation_v1"),
+    )
+    if resolved_parent.blocking_errors:
+        raise SupercellsVariationError(
+            "The selected built-in parent no longer resolves against its canonical "
+            "scientific contract: " + " ".join(resolved_parent.blocking_errors)
+        )
+    parent_id = (
+        REFERENCE_SIMULATION_ID
+        if context.template.parent_simulation_id == STRAIGHT_LINE_SIMULATION_ID
+        else context.template.parent_simulation_id
+    )
+    differences: list[VariationDifference] = []
+    relationship = "replicate_realization"
+    if context.template.parent_simulation_id == STRAIGHT_LINE_SIMULATION_ID:
+        differences = [
+            VariationDifference(
+                category="wind",
+                path="controls.hodograph_family",
+                label="Hodograph family",
+                before="quarter_circle",
+                after="straight",
+            )
+        ]
+        relationship = "controlled_physical_variation"
+    return immutable_layer(
+        {
+            "schema_version": "cloud_world_simulation_contract_v1",
+            "world_id": WORLD_ID,
+            "recipe_id": RECIPE_ID,
+            "recipe_contract_version": RECIPE_CONTRACT_VERSION,
+            "parent_simulation_id": parent_id,
+            "reference_simulation_id": REFERENCE_SIMULATION_ID,
+            "display_name": context.template.parent_display_name,
+            "question": context.parent_manifest.physical_question,
+            "scientific_design": {
+                "world_id": WORLD_ID,
+                "recipe_id": RECIPE_ID,
+                "recipe_contract_version": RECIPE_CONTRACT_VERSION,
+                "reference_simulation_id": REFERENCE_SIMULATION_ID,
+                "controls": controls,
+                "achieved_controls": resolved_parent.achieved_controls,
+                "generators": generator_contract(),
+                "fixed_assumptions": fixed_assumptions(),
+            },
+            "numerical_realization": context.parent_numerical_realization,
+            "material_differences": [
+                difference.model_dump(mode="json") for difference in differences
+            ],
+            "relationship_classification": relationship,
+            "world_semantics": {
+                "controls": controls,
+                "initiation": None,
+                "generators": generator_contract(),
+                "fixed_assumptions": fixed_assumptions(),
+                "model_translation": {
+                    "u_m_s": resolved_parent.diagnostics.model_translation_u_m_s,
+                    "v_m_s": resolved_parent.diagnostics.model_translation_v_m_s,
+                },
+            },
+        }
+    )
 
 
 def _request_errors(
@@ -907,13 +1092,15 @@ def _render_variation_namelist(
     return rendered
 
 
-def _render_input_sounding(levels: list[SupercellsProfileLevel]) -> str:
-    surface = levels[0]
-    lines = [f"{surface.pressure_pa / 100.0:.6f} {surface.theta_k:.9f} {surface.qv_g_kg:.9f}"]
+def _render_input_sounding(
+    surface: SupercellsSoundingSurface,
+    levels: list[SupercellsProfileLevel],
+) -> str:
+    lines = [f"{surface.pressure_pa / 100.0:.17g} {surface.theta_k:.17g} {surface.qv_g_kg:.17g}"]
     for level in levels:
         lines.append(
-            f"{level.height_m:.3f} {level.theta_k:.9f} {level.qv_g_kg:.9f} "
-            f"{level.u_m_s:.9f} {level.v_m_s:.9f}"
+            f"{level.height_m:.17g} {level.theta_k:.17g} {level.qv_g_kg:.17g} "
+            f"{level.u_m_s:.17g} {level.v_m_s:.17g}"
         )
     return "\n".join(lines) + "\n"
 
@@ -935,6 +1122,8 @@ def _package_readback(
         "dtl": float(numerical["timestep_seconds"]),
         "timax": float(observation["duration_seconds"]),
         "tapfrq": float(observation["output_cadence_seconds"]),
+        "umove": float(envelope.world_payload["diagnostics"]["model_translation_u_m_s"]),
+        "vmove": float(envelope.world_payload["diagnostics"]["model_translation_v_m_s"]),
         "isnd": 7,
         "iwnd": 0,
         "iinit": 1,
@@ -944,8 +1133,18 @@ def _package_readback(
         math.isclose(float(namelist[key]), float(value), rel_tol=0.0, abs_tol=1.0e-6)
         for key, value in expected_namelist.items()
     )
+    expected_surface = envelope.world_payload["sounding_surface"]
     expected_sounding = envelope.world_payload["sounding"]
-    actual_sounding = _read_input_sounding(run_dir / "input_sounding")
+    actual_surface, actual_sounding = _read_input_sounding(run_dir / "input_sounding")
+    surface_matches = all(
+        math.isclose(
+            float(getattr(actual_surface, key)),
+            float(expected_surface[key]),
+            rel_tol=0.0,
+            abs_tol=2.0e-9,
+        )
+        for key in ("pressure_pa", "theta_k", "qv_g_kg")
+    )
     sounding_matches = len(actual_sounding) == len(expected_sounding) and all(
         all(
             math.isclose(
@@ -977,9 +1176,40 @@ def _package_readback(
             "center_y_m",
         )
     }
+    model_heights = [
+        (index + 0.5) * float(numerical["dz_m"]) for index in range(int(numerical["nz"]))
+    ]
+    initialized = emulate_cm1_isnd7_initialization(
+        actual_surface,
+        [SupercellsProfileLevel.model_validate(level) for level in actual_sounding],
+        model_heights,
+    )
+    expected_initialized = envelope.world_payload["initialized_state"]
+    initialized_matches = len(initialized) == len(expected_initialized) and all(
+        all(
+            math.isclose(
+                float(getattr(actual, key)),
+                float(expected[key]),
+                rel_tol=0.0,
+                abs_tol=2.0e-6,
+            )
+            for key in (
+                "height_m",
+                "pressure_pa",
+                "theta_k",
+                "temperature_k",
+                "qv_g_kg",
+                "u_m_s",
+                "v_m_s",
+            )
+        )
+        for actual, expected in zip(initialized, expected_initialized, strict=True)
+    )
     return {
         "namelist_contract_matches": namelist_matches,
-        "sounding_profile_matches": sounding_matches,
+        "sounding_surface_matches": surface_matches,
+        "sounding_profile_matches": sounding_matches and surface_matches,
+        "initialized_state_matches": initialized_matches,
         "source_customization_matches": source_matches,
         "sounding_level_count": len(actual_sounding),
         "sounding_top_m": actual_sounding[-1]["height_m"],
@@ -990,7 +1220,9 @@ def _package_readback(
     }
 
 
-def _read_input_sounding(path: Path) -> list[dict[str, float]]:
+def _read_input_sounding(
+    path: Path,
+) -> tuple[SupercellsSoundingSurface, list[dict[str, float]]]:
     rows = [
         [float(value) for value in line.split()]
         for line in path.read_text().splitlines()
@@ -1001,11 +1233,21 @@ def _read_input_sounding(path: Path) -> list[dict[str, float]]:
     profile = rows[1:]
     if any(len(row) != 5 for row in profile):
         raise SupercellsVariationError("Generated input_sounding profile row is malformed.")
-    return [
+    surface = SupercellsSoundingSurface(
+        pressure_pa=rows[0][0] * 100.0,
+        theta_k=rows[0][1],
+        qv_g_kg=rows[0][2],
+    )
+    return surface, [
         {
             "height_m": row[0],
+            "pressure_pa": 0.0,
             "theta_k": row[1],
+            "temperature_k": 0.0,
             "qv_g_kg": row[2],
+            "relative_humidity_percent": 0.0,
+            "parcel_temperature_k": 0.0,
+            "parcel_buoyancy_m_s2": 0.0,
             "u_m_s": row[3],
             "v_m_s": row[4],
         }

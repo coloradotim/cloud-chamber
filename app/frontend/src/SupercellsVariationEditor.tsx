@@ -167,6 +167,8 @@ type VariationPackage = {
   launch_review_snapshot_id: string;
 };
 
+const PARENT_RESTORED_STATUS = "Parent controls and run profile restored.";
+
 export function SupercellsVariationEditor({
   world,
   initialParentSimulationId,
@@ -306,7 +308,12 @@ export function SupercellsVariationEditor({
     !submitting;
 
   function update<K extends keyof SupercellsControls>(key: K, value: SupercellsControls[K]) {
+    clearParentRestoredStatus();
     setControls((current) => (current ? { ...current, [key]: value } : current));
+  }
+
+  function clearParentRestoredStatus() {
+    setStatus((current) => (current === PARENT_RESTORED_STATUS ? null : current));
   }
 
   function restoreParent() {
@@ -314,7 +321,7 @@ export function SupercellsVariationEditor({
     setControls({ ...template.controls });
     setRunProfileId(template.default_run_profile_id);
     setPackaged(null);
-    setStatus("Parent controls and run profile restored.");
+    setStatus(PARENT_RESTORED_STATUS);
   }
 
   async function packageVariation() {
@@ -442,7 +449,10 @@ export function SupercellsVariationEditor({
                   maxLength={120}
                   placeholder="e.g. Drier high-shear storm"
                   disabled={Boolean(packaged)}
-                  onChange={(event) => setSimulationName(event.target.value)}
+                  onChange={(event) => {
+                    clearParentRestoredStatus();
+                    setSimulationName(event.target.value);
+                  }}
                 />
               </label>
               <label>
@@ -452,7 +462,10 @@ export function SupercellsVariationEditor({
                   maxLength={500}
                   placeholder="What are you trying to learn?"
                   disabled={Boolean(packaged)}
-                  onChange={(event) => setUserQuestion(event.target.value)}
+                  onChange={(event) => {
+                    clearParentRestoredStatus();
+                    setUserQuestion(event.target.value);
+                  }}
                 />
               </label>
             </div>
@@ -722,7 +735,10 @@ export function SupercellsVariationEditor({
                     value={estimate.profile.profile_id}
                     checked={runProfileId === estimate.profile.profile_id}
                     disabled={Boolean(packaged)}
-                    onChange={() => setRunProfileId(estimate.profile.profile_id)}
+                    onChange={() => {
+                      clearParentRestoredStatus();
+                      setRunProfileId(estimate.profile.profile_id);
+                    }}
                   />
                   <span>
                     <strong>{estimate.profile.role}</strong>

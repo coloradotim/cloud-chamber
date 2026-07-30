@@ -119,6 +119,7 @@ class VariationEnvelope(BaseModel):
     scientific_design: ImmutableVariationLayer
     numerical_realization: ImmutableVariationLayer
     observation_plan: ImmutableVariationLayer
+    simulation_contract: ImmutableVariationLayer | None = None
     world_payload: dict[str, Any]
     differences: list[VariationDifference]
     relationship_classification: RelationshipClassification
@@ -141,6 +142,25 @@ class VariationEnvelope(BaseModel):
             raise ValueError(
                 "World controls do not match the immutable scientific-design controls."
             )
+        if self.simulation_contract is not None:
+            contract = self.simulation_contract.payload
+            bindings = {
+                "world_id": self.world_id,
+                "recipe_id": self.recipe_id,
+                "recipe_contract_version": self.recipe_contract_version,
+                "reference_simulation_id": self.reference_simulation_id,
+                "display_name": self.display_name,
+                "question": self.question,
+                "scientific_design": self.scientific_design.payload,
+                "numerical_realization": self.numerical_realization.payload,
+            }
+            mismatches = [key for key, value in bindings.items() if contract.get(key) != value]
+            if mismatches:
+                raise ValueError(
+                    "Variation envelope conflicts with its immutable Simulation contract: "
+                    + ", ".join(mismatches)
+                    + "."
+                )
         material_categories = {
             difference.category for difference in self.differences if difference.material
         }
@@ -151,12 +171,21 @@ class VariationEnvelope(BaseModel):
                 raise ValueError(
                     "Observation-only attempts must remain beneath the same Simulation."
                 )
+            if self.world_id == "supercells" and self.simulation_contract is None:
+                raise ValueError(
+                    "Supercells observation attempts must point to an immutable Simulation "
+                    "contract."
+                )
             return self
-        identity = canonical_payload_sha256(
-            {
-                "scientific_design": self.scientific_design.payload,
-                "numerical_realization": self.numerical_realization.payload,
-            }
+        identity = (
+            self.simulation_contract.sha256
+            if self.simulation_contract is not None
+            else canonical_payload_sha256(
+                {
+                    "scientific_design": self.scientific_design.payload,
+                    "numerical_realization": self.numerical_realization.payload,
+                }
+            )
         )
         if not self.simulation_id.endswith(f"_{identity[:8]}"):
             raise ValueError(

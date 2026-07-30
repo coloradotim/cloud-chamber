@@ -236,6 +236,28 @@ describe("SupercellsVariationEditor", () => {
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "Package variation" })).toBeDisabled();
   });
+
+  it("clears the parent-restored status after the next edit", async () => {
+    render(
+      <SupercellsVariationEditor
+        world={world}
+        initialParentSimulationId={referenceSimulation.simulation_id}
+        onCreated={vi.fn()}
+      />,
+    );
+
+    await screen.findByText("0 material changes");
+    fireEvent.click(screen.getByRole("button", { name: "Restore parent" }));
+    expect(screen.getByText("Parent controls and run profile restored.")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Mean-wind direction value"), {
+      target: { value: "90" },
+    });
+
+    expect(
+      screen.queryByText("Parent controls and run profile restored."),
+    ).not.toBeInTheDocument();
+  });
 });
 
 function simulation({

@@ -65,6 +65,7 @@ from cloud_chamber.supercells_recipes import (
     fixed_assumptions,
     generator_contract,
     normalize_controls,
+    resolve_supercells_recipe,
 )
 from cloud_chamber.supercells_source_customization import (
     PINNED_INIT3D_F_SHA256,
@@ -960,6 +961,22 @@ def _interaction_parent_reason(interactions: Any) -> str:
 
 
 def _intended_simulation_sha256(envelope: VariationEnvelope) -> str:
+    if envelope.simulation_contract is not None:
+        return canonical_payload_sha256(
+            {
+                "simulation_contract": envelope.simulation_contract.payload,
+                "contract_binding": {
+                    "world_id": envelope.world_id,
+                    "recipe_id": envelope.recipe_id,
+                    "recipe_contract_version": envelope.recipe_contract_version,
+                    "reference_simulation_id": envelope.reference_simulation_id,
+                    "display_name": envelope.display_name,
+                    "question": envelope.question,
+                    "scientific_design": envelope.scientific_design.payload,
+                    "numerical_realization": envelope.numerical_realization.payload,
+                },
+            }
+        )
     return canonical_payload_sha256(
         {
             "schema_version": envelope.schema_version,
@@ -967,9 +984,19 @@ def _intended_simulation_sha256(envelope: VariationEnvelope) -> str:
             "recipe_id": envelope.recipe_id,
             "recipe_contract_version": envelope.recipe_contract_version,
             "simulation_id": envelope.simulation_id,
+            "parent_simulation_id": envelope.parent_simulation_id,
             "reference_simulation_id": envelope.reference_simulation_id,
+            "display_name": envelope.display_name,
+            "question": envelope.question,
             "scientific_design": envelope.scientific_design.payload,
             "numerical_realization": envelope.numerical_realization.payload,
+            "material_differences": [
+                difference.model_dump(mode="json")
+                for difference in envelope.differences
+                if difference.material and difference.category != "observation_plan"
+            ],
+            "relationship_classification": envelope.relationship_classification,
+            "world_payload": envelope.world_payload,
         }
     )
 
@@ -990,6 +1017,16 @@ def _builtin_simulation_contract(
     controls = default_controls()
     if simulation_id == STRAIGHT_LINE_SIMULATION_ID:
         controls = controls.model_copy(update={"hodograph_family": "straight"})
+    resolved = resolve_supercells_recipe(
+        controls=controls,
+        parent_controls=controls,
+        catalog_profile=profile,
+    )
+    if resolved.blocking_errors:
+        raise ValueError(
+            "Built-in Supercells scientific contract no longer resolves: "
+            + " ".join(resolved.blocking_errors)
+        )
     controls_payload = controls.model_dump(mode="json")
     scientific = {
         "world_id": WORLD_ID,
@@ -997,7 +1034,7 @@ def _builtin_simulation_contract(
         "recipe_contract_version": RECIPE_CONTRACT_VERSION,
         "reference_simulation_id": REFERENCE_SIMULATION_ID,
         "controls": controls_payload,
-        "achieved_controls": controls_payload,
+        "achieved_controls": resolved.achieved_controls,
         "generators": generator_contract(),
         "fixed_assumptions": fixed_assumptions(),
     }
@@ -1027,7 +1064,8 @@ def _builtin_simulation_contract(
             "reference_controls": default_controls().model_dump(mode="json"),
             "parent_controls": controls_payload,
             "requested_controls": controls_payload,
-            "achieved_controls": controls_payload,
+            "achieved_controls": resolved.achieved_controls,
+            "diagnostics": resolved.diagnostics.model_dump(mode="json"),
             "useful_window_end_seconds": 10_800,
         },
         differences,

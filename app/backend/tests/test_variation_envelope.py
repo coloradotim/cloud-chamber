@@ -147,6 +147,18 @@ def test_observation_only_envelope_retains_simulation_identity() -> None:
         "scientific_design": immutable_layer(scientific),
         "numerical_realization": immutable_layer(numerical),
         "observation_plan": immutable_layer({"cadence_seconds": 60}),
+        "simulation_contract": immutable_layer(
+            {
+                "world_id": "supercells",
+                "recipe_id": "idealized_isolated_supercell",
+                "recipe_contract_version": "1",
+                "reference_simulation_id": "supercells_quarter_circle_reference",
+                "display_name": "Quarter-Circle Supercell",
+                "question": None,
+                "scientific_design": scientific,
+                "numerical_realization": numerical,
+            }
+        ),
         "world_payload": {"controls": scientific["controls"]},
         "differences": [difference("observation_plan")],
         "relationship_classification": "observation_only_attempt",

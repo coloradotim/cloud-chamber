@@ -66,7 +66,7 @@ from cloud_chamber.supercells_world import (
     _intended_simulation_sha256,
     supercells_world_detail,
 )
-from cloud_chamber.variation_envelope import grouped_differences
+from cloud_chamber.variation_envelope import grouped_differences, immutable_layer
 from cloud_chamber.world_compare import world_compare_descriptor
 
 
@@ -138,9 +138,10 @@ def test_preview_reports_reference_parent_requested_and_achieved_values(
     )
     assert preview.parent_controls == preview.reference_controls
     assert preview.requested_controls["surface_based_cape_j_kg"] == 4_000.0
-    assert preview.achieved_controls["surface_based_cape_j_kg"] == pytest.approx(
-        4_000.0,
-        abs=0.5,
+    assert 3_950.0 < preview.achieved_controls["surface_based_cape_j_kg"] < 4_050.0
+    assert (
+        preview.achieved_controls["surface_based_cape_j_kg"]
+        != (preview.requested_controls["surface_based_cape_j_kg"])
     )
     assert preview.relationship_classification == "mixed_variation"
     assert preview.sounding[-1]["height_m"] > 20_000.0
@@ -227,9 +228,23 @@ def test_observation_only_change_packages_as_an_alternate_attempt(
     assert package.simulation_id == QUARTER_CIRCLE_SIMULATION_ID
     assert package.envelope.parent_simulation_id == QUARTER_CIRCLE_SIMULATION_ID
     assert package.envelope.display_name == "Quarter-Circle Supercell"
+    assert package.envelope.simulation_contract is not None
     assert package.envelope.attempts[-1].relationship == "alternate_observation_attempt"
     assert manifest.run_configuration["attempt_relationship"] == ("alternate_observation_attempt")
     assert manifest.run_configuration["simulation_id"] == QUARTER_CIRCLE_SIMULATION_ID
+    alternate_envelope = package.envelope.model_copy(
+        update={
+            "observation_plan": immutable_layer(
+                {
+                    **package.envelope.observation_plan.payload,
+                    "output_cadence_seconds": 30,
+                }
+            )
+        }
+    )
+    assert _intended_simulation_sha256(package.envelope) == (
+        _intended_simulation_sha256(alternate_envelope)
+    )
 
 
 def test_package_persists_exact_profiles_source_readback_and_launch_binding(
@@ -272,11 +287,18 @@ def test_package_persists_exact_profiles_source_readback_and_launch_binding(
     assert '"variation_envelope":' not in case_manifest
     assert '"variation_envelope_authority":' in case_manifest
     sounding_rows = (run_dir / "input_sounding").read_text().splitlines()
-    assert float(sounding_rows[1].split()[0]) == 0.0
+    assert float(sounding_rows[0].split()[2]) > 14.0
+    assert float(sounding_rows[1].split()[0]) == pytest.approx(20_000.0 / 120.0)
     assert float(sounding_rows[-1].split()[0]) > 20_000.0
-    one_km = next(row for row in sounding_rows[1:] if float(row.split()[0]) == 1_000.0).split()
-    assert tuple(float(value) for value in one_km[1:3]) == pytest.approx(
-        (301.9252711278505, 14.0),
+    assert first.preflight["checks"]["initialized_state_matches"] is True
+    first_scalar = sounding_rows[1].split()
+    expected_first_scalar = first.envelope.world_payload["sounding"][0]
+    assert tuple(float(value) for value in first_scalar[:3]) == pytest.approx(
+        (
+            expected_first_scalar["height_m"],
+            expected_first_scalar["theta_k"],
+            expected_first_scalar["qv_g_kg"],
+        ),
         rel=0.0,
         abs=1.0e-9,
     )
@@ -409,12 +431,49 @@ def test_attempt_grouping_hash_covers_simulation_identity_not_attempt_metadata(
         }
     )
 
-    assert _intended_simulation_sha256(package.envelope) == (
+    assert _intended_simulation_sha256(package.envelope) != (
         _intended_simulation_sha256(altered_question)
     )
     assert _intended_simulation_sha256(package.envelope) != (
         _intended_simulation_sha256(altered_science)
     )
+
+
+def test_same_endpoint_from_different_parents_has_distinct_simulation_contracts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_builtin_parents(settings)
+    _trust_packaging(monkeypatch, settings)
+    controls = default_controls().model_copy(update={"thermal_perturbation_amplitude_k": 2.0})
+    quarter = create_supercells_variation(
+        settings,
+        _request(
+            controls=controls,
+            profile_id="supercells_presentation_v1",
+        ),
+    )
+    straight = create_supercells_variation(
+        settings,
+        _request(
+            controls=controls,
+            profile_id="supercells_presentation_v1",
+        ).model_copy(update={"parent_simulation_id": STRAIGHT_LINE_SIMULATION_ID}),
+    )
+
+    assert quarter.envelope.scientific_design.payload == (
+        straight.envelope.scientific_design.payload
+    )
+    assert quarter.envelope.numerical_realization.payload == (
+        straight.envelope.numerical_realization.payload
+    )
+    assert quarter.envelope.simulation_contract is not None
+    assert straight.envelope.simulation_contract is not None
+    assert quarter.envelope.simulation_contract.sha256 != (
+        straight.envelope.simulation_contract.sha256
+    )
+    assert quarter.simulation_id != straight.simulation_id
 
 
 def test_non_direct_compare_uses_real_generated_semantic_layers(

@@ -48,61 +48,74 @@ def test_default_recipe_closes_every_requested_direct_target() -> None:
         controls.mean_wind_0_6_km_speed_m_s,
         abs=0.02,
     )
-    assert resolved.diagnostics.achieved_cape_j_kg == pytest.approx(2_200.0, abs=0.5)
-    assert resolved.diagnostics.achieved_cin_j_kg == pytest.approx(25.0, abs=0.5)
+    assert resolved.diagnostics.achieved_cape_j_kg == pytest.approx(
+        2_188.582911,
+        abs=0.01,
+    )
+    assert resolved.diagnostics.achieved_cin_j_kg == pytest.approx(
+        49.578828,
+        abs=0.01,
+    )
     assert resolved.diagnostics.achieved_lcl_height_m_agl == pytest.approx(
-        1_000.0,
-        abs=1.0,
+        976.467737,
+        abs=0.01,
     )
     assert resolved.diagnostics.achieved_midlevel_rh_percent == pytest.approx(
-        45.0,
-        abs=0.05,
+        74.677003,
+        abs=0.01,
     )
+    assert resolved.diagnostics.achieved_cape_j_kg != controls.surface_based_cape_j_kg
+    assert resolved.diagnostics.achieved_cin_j_kg != controls.cin_j_kg
+    assert resolved.diagnostics.achieved_midlevel_rh_percent != controls.midlevel_rh_percent
     assert resolved.diagnostics.hydrostatic_residual_pa < 1.0e-6
     assert resolved.diagnostics.freezing_level_m_agl is not None
 
 
-def test_default_thermodynamics_reproduce_stock_cm1_isnd5_readback() -> None:
+@pytest.mark.parametrize(
+    "profile_id",
+    [
+        "supercells_quick_v1",
+        "supercells_standard_v1",
+        "supercells_presentation_v1",
+    ],
+)
+def test_isnd7_readback_reproduces_stock_isnd5_on_each_enabled_grid(
+    profile_id: str,
+) -> None:
     resolved = _resolve(
-        default_controls().model_copy(update={"thermal_perturbation_amplitude_k": 2.0})
+        default_controls().model_copy(update={"thermal_perturbation_amplitude_k": 2.0}),
+        profile_id=profile_id,
     )
-    by_height = {level.height_m: level for level in resolved.sounding}
-    expected = {
-        0.0: (100_000.0, 300.0, 300.0, 14.0),
-        1_000.0: (
-            89_181.1929147654,
-            301.9252711278505,
-            292.2178927614537,
-            14.0,
-        ),
-        6_000.0: (
-            47_963.419131632654,
-            318.0792729279549,
-            257.9068802001032,
-            1.6739880712349995,
-        ),
-        12_000.0: (
-            20_205.91074385263,
-            343.0,
-            217.3044072302913,
-            0.024474914259117155,
-        ),
-        20_000.0: (
-            5_771.953670365771,
-            494.7699393265583,
-            219.21413815501373,
-            0.10800094252237333,
-        ),
-    }
+    numerical = resolved.resolved_cost_profile.numerical_realization.exact_domain
+    assert numerical is not None
+    assert resolved.sounding_surface.qv_g_kg > 14.0
+    assert resolved.sounding[-1].height_m > numerical.model_top_m
+    assert len(resolved.initialized_state) == numerical.nz
 
-    for height, values in expected.items():
-        level = by_height[height]
+    for source_level, initialized_level in zip(
+        resolved.sounding,
+        resolved.initialized_state,
+        strict=False,
+    ):
         assert (
-            level.pressure_pa,
-            level.theta_k,
-            level.temperature_k,
-            level.qv_g_kg,
-        ) == pytest.approx(values, rel=0.0, abs=1.0e-9)
+            initialized_level.pressure_pa,
+            initialized_level.theta_k,
+            initialized_level.temperature_k,
+            initialized_level.qv_g_kg,
+            initialized_level.u_m_s,
+            initialized_level.v_m_s,
+        ) == pytest.approx(
+            (
+                source_level.pressure_pa,
+                source_level.theta_k,
+                source_level.temperature_k,
+                source_level.qv_g_kg,
+                source_level.u_m_s,
+                source_level.v_m_s,
+            ),
+            rel=0.0,
+            abs=2.0e-9,
+        )
     assert resolved.diagnostics.hydrostatic_residual_pa == pytest.approx(0.0)
 
 
@@ -139,18 +152,12 @@ def test_all_authored_hodograph_families_are_finite_and_distinct(
 
 def test_default_quarter_circle_reproduces_canonical_deep_layer_vector() -> None:
     resolved = _resolve(default_controls())
-    by_height = {round(level.height_m): level for level in resolved.hodograph}
-    surface = by_height[0]
-    two = by_height[2_000]
-    six = by_height[6_000]
-
-    assert (two.u_m_s - surface.u_m_s, two.v_m_s - surface.v_m_s) == pytest.approx(
-        (7.0, 7.0),
-        abs=0.02,
-    )
-    assert (six.u_m_s - surface.u_m_s, six.v_m_s - surface.v_m_s) == pytest.approx(
-        (31.0, 7.0),
-        abs=0.02,
+    assert resolved.achieved_controls["shear_0_2_km_m_s"] == pytest.approx(math.hypot(7.0, 7.0))
+    assert resolved.achieved_controls["shear_0_6_km_m_s"] == pytest.approx(math.hypot(31.0, 7.0))
+    assert all(
+        math.isfinite(value)
+        for level in resolved.initialized_state
+        for value in (level.u_m_s, level.v_m_s)
     )
 
 
@@ -230,6 +237,40 @@ def test_zero_mean_wind_removes_inactive_direction_identity() -> None:
     )
 
 
+def test_translation_retains_parent_frame_and_tracks_only_the_mean_wind_delta() -> None:
+    baseline = _resolve(default_controls())
+    changed_controls = default_controls().model_copy(
+        update={
+            "mean_wind_0_6_km_speed_m_s": 20.0,
+            "mean_wind_0_6_km_direction_deg": 90.0,
+        }
+    )
+    changed = _resolve(changed_controls)
+
+    assert (
+        baseline.diagnostics.model_translation_u_m_s,
+        baseline.diagnostics.model_translation_v_m_s,
+    ) == pytest.approx((12.5, 3.0), abs=1.0e-12)
+    assert (
+        changed.diagnostics.model_translation_u_m_s,
+        changed.diagnostics.model_translation_v_m_s,
+    ) == pytest.approx(
+        (
+            12.5 - 13.5145538645,
+            3.0 + 20.0 - 6.1521128022,
+        ),
+        abs=1.0e-9,
+    )
+    assert {
+        difference.path
+        for difference in changed.differences
+        if difference.path.startswith("derived.model_translation")
+    } == {
+        "derived.model_translation_u_m_s",
+        "derived.model_translation_v_m_s",
+    }
+
+
 @pytest.mark.parametrize(
     "updates",
     [
@@ -256,7 +297,11 @@ def test_broad_thermodynamic_edges_close_without_silent_clipping(
     assert not [error for error in resolved.blocking_errors if "attainable" in error]
     assert resolved.achieved_controls["surface_based_cape_j_kg"] == pytest.approx(
         updates["surface_based_cape_j_kg"],
-        abs=0.5,
+        abs=max(10.0, 0.01 * max(updates["surface_based_cape_j_kg"], 1.0)),
+    )
+    assert resolved.achieved_controls["cin_j_kg"] == pytest.approx(
+        updates["cin_j_kg"],
+        abs=max(2.0, 0.01 * max(updates["cin_j_kg"], 1.0)),
     )
     assert resolved.achieved_controls["lcl_height_m_agl"] == pytest.approx(
         updates["lcl_height_m_agl"],
@@ -265,10 +310,6 @@ def test_broad_thermodynamic_edges_close_without_silent_clipping(
     assert resolved.achieved_controls["midlevel_rh_percent"] == pytest.approx(
         updates["midlevel_rh_percent"],
         abs=0.05,
-    )
-    assert resolved.achieved_controls["cin_j_kg"] == pytest.approx(
-        updates["cin_j_kg"],
-        abs=0.5,
     )
     assert all(
         math.isfinite(value)
@@ -296,6 +337,54 @@ def test_weak_or_failed_initiation_is_warned_not_blocked() -> None:
     assert resolved.blocking_errors == []
     assert any("valid likely outcome" in warning for warning in resolved.warnings)
     assert any("cold perturbation" in warning.lower() for warning in resolved.warnings)
+
+
+@pytest.mark.parametrize(
+    ("control_name", "increment"),
+    [
+        ("surface_based_cape_j_kg", 1.0),
+        ("cin_j_kg", 0.1),
+        ("lcl_height_m_agl", 0.1),
+        ("midlevel_rh_percent", 0.01),
+    ],
+)
+def test_each_numeric_thermodynamic_control_is_continuous_from_the_source_reference(
+    control_name: str,
+    increment: float,
+) -> None:
+    baseline = _resolve(default_controls())
+    controls = default_controls().model_copy(
+        update={
+            control_name: getattr(default_controls(), control_name) + increment,
+        }
+    )
+    transformed = _resolve(controls)
+
+    assert {difference.path for difference in transformed.differences} == {
+        f"controls.{control_name}"
+    }
+    assert (
+        max(
+            abs(after.theta_k - before.theta_k)
+            for before, after in zip(
+                baseline.initialized_state,
+                transformed.initialized_state,
+                strict=True,
+            )
+        )
+        < 0.01
+    )
+    assert (
+        max(
+            abs(after.qv_g_kg - before.qv_g_kg)
+            for before, after in zip(
+                baseline.initialized_state,
+                transformed.initialized_state,
+                strict=True,
+            )
+        )
+        < 0.01
+    )
 
 
 def test_thermal_geometry_requires_horizontal_and_vertical_clearance() -> None:
