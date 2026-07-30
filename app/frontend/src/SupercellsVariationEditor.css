@@ -1,0 +1,326 @@
+.supercells-variation-editor {
+  --supercells-wind: #226ea3;
+  --supercells-thermo: #9b4f20;
+  --supercells-initiation: #376d50;
+}
+
+.supercells-control-families {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.supercells-control-family {
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--supercells-wind);
+  background: rgb(255 255 255 / 56%);
+  padding: 14px 16px;
+}
+
+.supercells-control-family:nth-child(2) {
+  border-left-color: var(--supercells-thermo);
+}
+
+.supercells-control-family:nth-child(3) {
+  border-left-color: var(--supercells-initiation);
+}
+
+.supercells-control-family > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 14px;
+}
+
+.supercells-control-family > header h5,
+.supercells-science-preview h5 {
+  margin: 2px 0 0;
+  font-size: 16px;
+}
+
+.supercells-control-family > header > span,
+.supercells-science-preview > header > span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.supercells-choice-control {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.supercells-choice-control > span {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.supercells-choice-control > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.supercells-choice-control button {
+  border: 1px solid var(--color-border);
+  padding: 7px 10px;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  box-shadow: none;
+}
+
+.supercells-choice-control button:hover:not(:disabled),
+.supercells-choice-control button:focus-visible,
+.supercells-choice-control button.active-control {
+  border-color: var(--color-accent-primary);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-primary);
+}
+
+.supercells-choice-control button.active-control {
+  box-shadow: inset 0 0 0 1px var(--color-accent-primary);
+}
+
+.supercells-control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+.supercells-numeric-control {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.supercells-numeric-control > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.supercells-numeric-control > span > strong {
+  font-size: 12px;
+}
+
+.supercells-numeric-control > span > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.supercells-numeric-control input[type="number"] {
+  width: 78px;
+  min-height: 31px;
+  padding: 4px 7px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.supercells-numeric-control input[type="range"] {
+  width: 100%;
+  margin: 0;
+}
+
+.supercells-numeric-control small {
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+
+.variation-advanced-controls {
+  margin-top: 12px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 10px;
+}
+
+.variation-advanced-controls summary {
+  cursor: pointer;
+  color: var(--color-accent-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.variation-advanced-controls[open] summary {
+  margin-bottom: 12px;
+}
+
+.supercells-science-preview {
+  margin-top: 16px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 14px;
+}
+
+.supercells-science-preview.placeholder {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+}
+
+.supercells-science-preview > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 10px;
+}
+
+.supercells-science-preview > header p {
+  margin: 2px 0 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.supercells-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.supercells-preview-grid figure {
+  margin: 0;
+  border: 1px solid var(--color-border);
+  background: #fbfdfe;
+  padding: 10px;
+}
+
+.supercells-preview-grid figcaption {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 7px;
+}
+
+.supercells-preview-grid figcaption strong {
+  font-size: 12px;
+}
+
+.supercells-preview-grid figcaption span {
+  color: var(--color-text-muted);
+  font-size: 9px;
+  text-align: right;
+}
+
+.supercells-preview-grid svg {
+  display: block;
+  width: min(100%, 220px);
+  margin: 5px auto 0;
+  overflow: visible;
+}
+
+.supercells-preview-grid svg line,
+.supercells-preview-grid .thermal-domain {
+  stroke: #b6c8d3;
+  stroke-width: 1;
+  fill: none;
+}
+
+.supercells-preview-grid svg text {
+  fill: #536b7b;
+  font-size: 8px;
+}
+
+.supercells-preview-grid svg circle {
+  fill: #fff;
+  stroke: #185f8f;
+  stroke-width: 2;
+}
+
+.hodograph-path {
+  fill: none;
+  stroke: #185f8f;
+  stroke-width: 3;
+}
+
+.buoyancy-positive,
+.buoyancy-negative {
+  fill: none;
+  stroke-width: 3;
+}
+
+.buoyancy-positive {
+  stroke: #c54921;
+}
+
+.buoyancy-negative {
+  stroke: #176ba0;
+}
+
+.profile-reference-line {
+  stroke-dasharray: 4 3;
+}
+
+.thermal-warm {
+  fill: rgb(222 89 34 / 38%);
+  stroke: #b23d18;
+  stroke-width: 2;
+}
+
+.thermal-cold {
+  fill: rgb(30 117 168 / 35%);
+  stroke: #176ba0;
+  stroke-width: 2;
+}
+
+.thermal-neutral {
+  fill: rgb(100 120 130 / 18%);
+  stroke: #667b87;
+  stroke-width: 2;
+}
+
+.supercells-plot-metrics {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 7px;
+  color: var(--color-text-muted);
+  font-size: 9px;
+}
+
+.supercells-plot-metrics strong {
+  color: var(--color-text-primary);
+}
+
+.supercells-achieved-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.supercells-achieved-summary > div {
+  border-bottom: 1px solid var(--color-border);
+  padding: 8px 4px;
+}
+
+.supercells-achieved-summary dt {
+  color: var(--color-text-muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.supercells-achieved-summary dd {
+  margin: 2px 0 0;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+@media (max-width: 1180px) {
+  .supercells-preview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .supercells-preview-grid figure:last-child {
+    grid-column: 1 / -1;
+  }
+}

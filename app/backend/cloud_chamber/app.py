@@ -192,6 +192,20 @@ from cloud_chamber.storm_examination import (
 from cloud_chamber.storm_examination import (
     ViewportId as StormExaminationViewportId,
 )
+from cloud_chamber.supercells_source_customization import (
+    SupercellsSourceCustomizationError,
+)
+from cloud_chamber.supercells_variations import (
+    SupercellsVariationError,
+    SupercellsVariationPackage,
+    SupercellsVariationPreview,
+    SupercellsVariationRequest,
+    SupercellsVariationTemplate,
+    create_supercells_variation,
+    preflight_supercells_variation,
+    preview_supercells_variation,
+    supercells_variation_template,
+)
 from cloud_chamber.supercells_world import (
     REFERENCE_SIMULATION_ID as SUPERCELLS_REFERENCE_SIMULATION_ID,
 )
@@ -1310,6 +1324,66 @@ def preflight_mountain_waves_variation_request(request: LaunchRunRequest) -> dic
     try:
         return preflight_mountain_waves_variation(Path(request.manifest_path).expanduser())
     except (OSError, ValueError, MountainWavesVariationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get(
+    "/api/worlds/supercells/variation-template",
+    response_model=SupercellsVariationTemplate,
+)
+def get_supercells_variation_template(
+    parent_simulation_id: str,
+) -> SupercellsVariationTemplate:
+    try:
+        return supercells_variation_template(load_settings(), parent_simulation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, SupercellsVariationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/api/worlds/supercells/variations/preview",
+    response_model=SupercellsVariationPreview,
+)
+def preview_supercells_variation_request(
+    request: SupercellsVariationRequest,
+) -> SupercellsVariationPreview:
+    try:
+        return preview_supercells_variation(load_settings(), request)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, SupercellsVariationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/api/worlds/supercells/variations",
+    response_model=SupercellsVariationPackage,
+)
+def package_supercells_variation(
+    request: SupercellsVariationRequest,
+) -> SupercellsVariationPackage:
+    try:
+        return create_supercells_variation(load_settings(), request)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (
+        OSError,
+        MountainWaveCaseError,
+        SupercellsSourceCustomizationError,
+        SupercellsVariationError,
+    ) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/worlds/supercells/variations/preflight")
+def preflight_supercells_variation_request(
+    request: LaunchRunRequest,
+) -> dict[str, Any]:
+    try:
+        return preflight_supercells_variation(Path(request.manifest_path).expanduser())
+    except (OSError, ValueError, SupercellsVariationError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

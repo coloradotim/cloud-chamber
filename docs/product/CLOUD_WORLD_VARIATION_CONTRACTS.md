@@ -991,7 +991,7 @@ The Recipe fixes unless an approved control changes them:
 - horizontally homogeneous idealized environment;
 - source-locked thermodynamic profile family;
 - source-locked hodograph/profile generator;
-- one deterministic warm-bubble initiation;
+- one deterministic thermal-perturbation initiation;
 - Morrison double-moment microphysics;
 - flat terrain and no surface heat/moisture forcing;
 - lateral boundaries, damping, and translating frame;
@@ -1021,7 +1021,7 @@ The product exposes authored hodograph families, not arbitrary wind-profile poin
 - **Quarter circle**;
 - **Half circle**.
 
-Each profile generator preserves, unless another control changes them:
+Each profile generator resolves, unless another control changes them:
 
 - the selected 0–6 km endpoint shear vector;
 - the selected 0–6 km layer-mean wind;
@@ -1032,14 +1032,23 @@ Straight and Quarter Circle are already represented by the real controlled pair.
 
 ### Shear controls
 
-| Control | Exact transform | Supported envelope |
+| Control | User-facing target and generator constraint | Supported envelope |
 | --- | --- | --- |
-| **0–6 km shear magnitude** | Scale hodograph deviations while preserving layer-mean wind and selected geometry | `20–45 m/s`; named stops `20, 25, 32, 35, 40, 45` |
-| **Low-level turning depth** | Apply the authored curved portion through the selected depth, with continuous straight shear above | `1–3 km` |
-| **Low-level shear concentration** | Redistribute a bounded fraction of total shear below 2 km while preserving total 0–6 km shear and mean wind | `0.20–0.60` of total vector change below 2 km |
-| **6–12 km upper-level shear** | Add an authored upper-level vector aligned or crosswise to the 0–6 km shear while preserving lower profile | `0–20 m/s` advanced |
+| **0–6 km shear** | Direct vector magnitude; preserve selected geometry and the separately selected layer-mean wind | `0–80 m/s` |
+| **0–2 km shear** | Direct vector magnitude; replaces the dimensionless low-level-concentration control | `0–50 m/s` |
+| **Turning depth** | Height through which authored curvature is distributed, with a continuous profile above | `0.25–8 km AGL` |
+| **6–12 km shear** | Direct upper-level vector magnitude while preserving the resolved lower profile | `0–50 m/s` advanced |
+| **Upper-level shear direction** | Degrees relative to the resolved 0–6 km shear vector | `−180°` to `+180°` advanced |
+| **0–6 km mean wind speed** | Direct layer-mean translation target | `0–50 m/s` |
+| **0–6 km mean wind direction** | Direction of the direct layer-mean target | `0–360°` |
 
-The preview shows the full hodograph, 0–1, 0–3, and 0–6 km shear, selected storm-relative-helicity estimates, layer-mean wind, and translating-frame relationship. Derived metrics are evidence, not Controls.
+The generator may use authored mathematical transforms internally, but it
+reports the achieved layer means and shear vectors and proves them against the
+requested values. Multiple controls may not become redundant identity inputs.
+The preview shows the full hodograph, 0–1, 0–2, 0–3, 0–6, and 6–12 km shear,
+selected storm-relative-helicity estimates, layer-mean wind, endpoint shear,
+and translating-frame relationship. Derived metrics are evidence, not
+Controls.
 
 ## 10.4 Thermodynamic controls
 
@@ -1047,13 +1056,19 @@ Thermodynamic controls use a source-locked analytic profile generator. Cloud Cha
 
 | Control | Product meaning and generator constraint | Supported envelope |
 | --- | --- | --- |
-| **Instability** | Adjust positive buoyancy magnitude while preserving the selected authored vertical buoyancy-distribution shape | target surface-based CAPE `1,500–3,500 J/kg` |
+| **Surface-based CAPE** | Direct solved target while preserving the selected authored vertical buoyancy-distribution shape | `0–8,000 J/kg` |
 | **Buoyancy distribution** | Authored **low-level weighted**, **reference**, or **deep weighted** profile families at the selected CAPE | three curated profiles |
-| **Cloud-base height** | Adjust low-level moisture and temperature coherently while solving for the target LCL and preserving hydrostatic structure | target LCL `500–1,500 m AGL` |
-| **Midlevel humidity** | Scale RH deficit through the authored 3–7 km layer with smooth transitions | target layer-mean RH `30–80%` |
-| **Cap strength** | Adjust the authored stable layer while preserving the rest of the profile and reporting resulting CIN | target CIN `0–100 J/kg` |
+| **LCL height** | Direct solved cloud-base target using coherent low-level temperature and moisture | `100–4,000 m AGL` |
+| **3–7 km mean RH** | Direct achieved layer mean with smooth transitions into adjacent layers | `0–100%` |
+| **CIN** | Direct solved cap target while preserving the remainder of the profile | `0–500 J/kg` |
 
-The generator reports CAPE, CIN, LCL, freezing level, profile RH, and hydrostatic consistency. Combinations that cannot satisfy the requested metrics within the Recipe’s thermodynamic family are blocked rather than approximated silently.
+The generator reports achieved CAPE, CIN, LCL, 3–7 km RH, freezing level,
+pressure, temperature, moisture, and hydrostatic consistency. Combinations
+that cannot satisfy the requested targets within tolerance are blocked with a
+specific incompatibility rather than clipped, approximated, or resolved by
+silently moving another target. Zero or weak instability, saturated or dry
+layers, and strong caps are valid requested environments when the generated
+profile remains finite and coherent.
 
 ## 10.5 Deterministic initiation controls
 
@@ -1061,14 +1076,20 @@ Initiation is a supported Recipe choice, not an atmospheric condition.
 
 | Control | Supported envelope |
 | --- | --- |
-| **Warm-bubble amplitude** | `0.5–3.0 K` potential-temperature perturbation |
-| **Horizontal radius** | `5–15 km` |
-| **Vertical radius/depth** | `1–3 km` |
-| **Location** | fixed authored interior location; may move only through an explicit advanced coordinate control that preserves boundary clearance |
+| **Thermal perturbation amplitude** | `−3 K` to `+12 K`; zero and cold perturbations are valid |
+| **Horizontal radius** | `0.5–40 km` |
+| **Vertical radius/depth** | `0.25–10 km` |
+| **Center height** | `0.25–8 km AGL` |
+| **Horizontal location** | Direct physical x/y coordinates at any interior location satisfying the generated grid and boundary-clearance contract |
 
-The product supports one deterministic bubble. Multiple bubbles, random thermal fields, boundary lines, and moving initiation are separate Recipes or experiment structures.
+The preview shows the exact thermal geometry, amplitude, placement, grid
+representation, domain extent, and boundary clearance. The product supports
+one deterministic thermal. Multiple bubbles, random thermal fields, boundary
+lines, and moving initiation are separate Recipes or experiment structures.
 
-A weak trigger that fails to initiate sustained convection may still produce a valid Simulation. It is not silently retried with stronger forcing.
+A weak, zero, or cold trigger that fails to initiate sustained convection may
+still produce a valid Simulation. It is not silently retried with stronger
+forcing.
 
 ## 10.6 Fixed choices and separate Recipes
 
@@ -1113,7 +1134,7 @@ In addition to shared validation:
 - exact source/customization identity;
 - full hodograph readback and derived shear metrics;
 - thermodynamic generator readback, hydrostatic consistency, CAPE/CIN/LCL, and RH checks;
-- deterministic warm-bubble shape, amplitude, and location;
+- deterministic thermal-perturbation shape, amplitude, and location;
 - domain, boundary, damping, and translating-frame contract;
 - required 3-D and 2-D fields, coordinates, units, and finite data;
 - native horizontal and vertical sections;

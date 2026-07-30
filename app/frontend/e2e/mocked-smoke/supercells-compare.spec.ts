@@ -204,6 +204,8 @@ function worldPayload() {
       lab: false,
       compare: true,
       saved_views: false,
+      saved_comparisons: true,
+      create_variation: true,
     },
     caveats: [
       "Coordinates and local evidence are comparable; storm-object lineage is not inferred.",
@@ -239,6 +241,11 @@ function worldSimulation(
     history_cadence_seconds: 120,
     default_explore_time_index: 37,
     lineage_state: "known",
+    recipe_contract_version: "1",
+    relationship_classification: reference ? null : "controlled_physical_variation",
+    run_profile_id: "supercells_presentation_v1",
+    can_create_variation: true,
+    parent_eligibility_reason: "Exact Recipe and retained-output evidence is reconstructible.",
   };
 }
 

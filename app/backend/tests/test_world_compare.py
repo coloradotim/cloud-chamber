@@ -14,8 +14,12 @@ from cloud_chamber.mountain_wave_terrain_visualization import (
     _sample_native_grid,
 )
 from cloud_chamber.mountain_waves_world import MountainWavesSimulationRecord
+from cloud_chamber.run_cost import profile_by_id
 from cloud_chamber.settings import CloudChamberSettings
-from cloud_chamber.supercells_world import SupercellSimulationRecord
+from cloud_chamber.supercells_world import (
+    SupercellSimulationRecord,
+    _builtin_simulation_contract,
+)
 from cloud_chamber.world_compare import world_compare_descriptor
 
 
@@ -513,6 +517,7 @@ def test_supercells_compare_does_not_clone_the_only_simulation(
         model_start_seconds=0,
         model_end_seconds=10_800,
         history_cadence_seconds=120,
+        parent_eligibility_reason="Accepted presentation evidence.",
     )
     monkeypatch.setattr(
         "cloud_chamber.world_compare.supercells_world_detail",
@@ -538,6 +543,22 @@ def test_supercells_compare_does_not_clone_the_only_simulation(
 def test_supercells_compare_uses_real_controlled_hodograph_pair(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    (
+        reference_scientific,
+        reference_numerical,
+        reference_observation,
+        reference_world_payload,
+        reference_differences,
+        reference_profile,
+    ) = _builtin_simulation_contract("supercells_quarter_circle_reference")
+    (
+        straight_scientific,
+        straight_numerical,
+        straight_observation,
+        straight_world_payload,
+        straight_differences,
+        straight_profile,
+    ) = _builtin_simulation_contract("supercells_straight_line_hodograph")
     reference = SupercellSimulationRecord(
         simulation_id="supercells_quarter_circle_reference",
         display_name="Quarter-Circle Supercell",
@@ -551,6 +572,13 @@ def test_supercells_compare_uses_real_controlled_hodograph_pair(
         model_start_seconds=0,
         model_end_seconds=10_800,
         history_cadence_seconds=120,
+        parent_eligibility_reason="Accepted presentation evidence.",
+        scientific_design=reference_scientific,
+        numerical_realization=reference_numerical,
+        observation_plan=reference_observation,
+        world_payload=reference_world_payload,
+        differences=reference_differences,
+        run_profile_contract=reference_profile,
     )
     straight = SupercellSimulationRecord(
         simulation_id="supercells_straight_line_hodograph",
@@ -566,6 +594,13 @@ def test_supercells_compare_uses_real_controlled_hodograph_pair(
         model_start_seconds=0,
         model_end_seconds=10_800,
         history_cadence_seconds=120,
+        parent_eligibility_reason="Accepted controlled variation evidence.",
+        scientific_design=straight_scientific,
+        numerical_realization=straight_numerical,
+        observation_plan=straight_observation,
+        world_payload=straight_world_payload,
+        differences=straight_differences,
+        run_profile_contract=straight_profile,
     )
     monkeypatch.setattr(
         "cloud_chamber.world_compare.supercells_world_detail",
@@ -592,14 +627,138 @@ def test_supercells_compare_uses_real_controlled_hodograph_pair(
     ]
     assert len(descriptor.material_differences) == 1
     difference = descriptor.material_differences[0]
-    assert difference.path == "atmosphere.hodograph_geometry"
+    assert difference.path == "controls.hodograph_family"
     assert (difference.left_value, difference.right_value) == (
-        "Quarter circle",
-        "Straight line",
+        "Quarter Circle",
+        "Straight",
     )
     assert "without claiming storm-object lineage" in (
         descriptor.compatibility.controlled_pair_message
     )
+
+
+def test_supercells_compare_uses_variation_grid_time_and_direct_differences(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        scientific,
+        numerical,
+        observation,
+        world_payload,
+        _differences,
+        profile,
+    ) = _builtin_simulation_contract("supercells_quarter_circle_reference")
+    reference = SupercellSimulationRecord(
+        simulation_id="supercells_quarter_circle_reference",
+        display_name="Quarter-Circle Supercell",
+        role="reference",
+        run_id="quarter-circle",
+        case_id="quarter-circle-case",
+        technical_state="available",
+        technical_state_message="Available",
+        explore_available=True,
+        saved_output_count=91,
+        model_start_seconds=0,
+        model_end_seconds=10_800,
+        history_cadence_seconds=120,
+        parent_eligibility_reason="Accepted presentation evidence.",
+        scientific_design=scientific,
+        numerical_realization=numerical,
+        observation_plan=observation,
+        world_payload=world_payload,
+        run_profile_contract=profile,
+    )
+    quick_profile = profile_by_id("supercells_quick_v1")
+    child_scientific = {
+        **scientific,
+        "controls": {
+            **scientific["controls"],
+            "surface_based_cape_j_kg": 4_000.0,
+        },
+    }
+    child = SupercellSimulationRecord(
+        simulation_id="supercells_high_cape_deadbeef",
+        display_name="High CAPE Quick",
+        role="variation",
+        run_id="high-cape-quick",
+        case_id="supercells_recipe_variation_v1",
+        parent_simulation_id=reference.simulation_id,
+        technical_state="available",
+        technical_state_message="Available",
+        explore_available=True,
+        saved_output_count=25,
+        model_start_seconds=0,
+        model_end_seconds=7_200,
+        history_cadence_seconds=300,
+        parent_eligibility_reason="Accepted variation evidence.",
+        scientific_design=child_scientific,
+        numerical_realization=quick_profile.numerical_realization.model_dump(mode="json"),
+        observation_plan=quick_profile.observation_plan.model_dump(mode="json"),
+        world_payload={"controls": child_scientific["controls"]},
+        differences={
+            "stability/thermodynamics": [
+                {
+                    "path": "controls.surface_based_cape_j_kg",
+                    "label": "Surface-based CAPE",
+                    "before": 2_200.0,
+                    "after": 4_000.0,
+                    "units": "J/kg",
+                    "material": True,
+                }
+            ],
+            "numerical realization": [
+                {
+                    "path": "numerical_realization",
+                    "label": "Numerical realization",
+                    "before": numerical,
+                    "after": quick_profile.numerical_realization.model_dump(mode="json"),
+                    "units": None,
+                    "material": True,
+                }
+            ],
+            "observation plan": [
+                {
+                    "path": "observation_plan",
+                    "label": "Observation plan",
+                    "before": observation,
+                    "after": quick_profile.observation_plan.model_dump(mode="json"),
+                    "units": None,
+                    "material": True,
+                }
+            ],
+        },
+        run_profile_contract=quick_profile.model_dump(mode="json"),
+    )
+    monkeypatch.setattr(
+        "cloud_chamber.world_compare.supercells_world_detail",
+        lambda _settings: SimpleNamespace(
+            display_name="Supercells",
+            simulations=[reference, child],
+            reference_simulation=reference,
+        ),
+    )
+
+    descriptor = world_compare_descriptor(
+        _settings(tmp_path),
+        world_slug="supercells",
+        left_simulation_id=reference.simulation_id,
+        right_simulation_id=child.simulation_id,
+    )
+
+    right = next(
+        item for item in descriptor.simulations if item.simulation_id == child.simulation_id
+    )
+    assert (right.grid.nx, right.grid.ny, right.grid.nz) == (120, 120, 40)
+    assert right.time.end_seconds == 7_200
+    assert right.time.cadence_seconds == 300
+    assert {item.path for item in descriptor.material_differences} == {
+        "controls.surface_based_cape_j_kg",
+        "numerical_realization",
+        "observation_plan",
+    }
+    assert descriptor.compatibility is not None
+    assert descriptor.compatibility.controlled_pair is False
 
 
 def test_native_subset_is_bounded_ordered_and_never_interpolated() -> None:

@@ -27,6 +27,19 @@ def difference(category: DifferenceCategory, path: str = "control") -> Variation
     [
         ([difference("terrain")], "controlled_physical_variation"),
         (
+            [
+                difference(
+                    "forcing_initiation",
+                    "controls.thermal_perturbation_amplitude_k",
+                )
+            ],
+            "controlled_initiation_sensitivity",
+        ),
+        (
+            [difference("forcing_initiation", "controls.surface_moisture_flux_g_kg_m_s")],
+            "controlled_physical_variation",
+        ),
+        (
             [difference("terrain"), difference("wind")],
             "multi_factor_physical_variation",
         ),
@@ -38,7 +51,7 @@ def difference(category: DifferenceCategory, path: str = "control") -> Variation
         ([difference("observation_plan")], "observation_only_attempt"),
     ],
 )
-def test_relationship_classification_is_shared_and_category_driven(
+def test_relationship_classification_is_shared_and_semantically_explicit(
     differences: list[VariationDifference],
     expected: str,
 ) -> None:
@@ -118,3 +131,58 @@ def test_envelope_rejects_control_and_simulation_identity_mismatch() -> None:
     }
     with pytest.raises(ValueError, match="Simulation ID hash suffix"):
         VariationEnvelope.model_validate(mismatched_id)
+
+
+def test_observation_only_envelope_retains_simulation_identity() -> None:
+    scientific = {"controls": {"cape_j_kg": 2_200}}
+    numerical = {"grid": "240 x 240 x 60"}
+    payload = {
+        "world_id": "supercells",
+        "recipe_id": "idealized_isolated_supercell",
+        "recipe_contract_version": "1",
+        "simulation_id": "supercells_quarter_circle_reference",
+        "parent_simulation_id": "supercells_quarter_circle_reference",
+        "reference_simulation_id": "supercells_quarter_circle_reference",
+        "display_name": "Quarter-Circle Supercell",
+        "scientific_design": immutable_layer(scientific),
+        "numerical_realization": immutable_layer(numerical),
+        "observation_plan": immutable_layer({"cadence_seconds": 60}),
+        "simulation_contract": immutable_layer(
+            {
+                "world_id": "supercells",
+                "recipe_id": "idealized_isolated_supercell",
+                "recipe_contract_version": "1",
+                "reference_simulation_id": "supercells_quarter_circle_reference",
+                "display_name": "Quarter-Circle Supercell",
+                "question": None,
+                "scientific_design": scientific,
+                "numerical_realization": numerical,
+            }
+        ),
+        "world_payload": {"controls": scientific["controls"]},
+        "differences": [difference("observation_plan")],
+        "relationship_classification": "observation_only_attempt",
+        "run_profile_id": "alternate_observation",
+        "run_profile_contract": {},
+        "cost_estimate": {},
+    }
+
+    VariationEnvelope.model_validate(payload)
+
+    with pytest.raises(ValueError, match="same Simulation"):
+        VariationEnvelope.model_validate(
+            {
+                **payload,
+                "simulation_id": "supercells_new_simulation",
+            }
+        )
+    with pytest.raises(ValueError, match="only the observation plan"):
+        VariationEnvelope.model_validate(
+            {
+                **payload,
+                "differences": [
+                    difference("observation_plan"),
+                    difference("wind"),
+                ],
+            }
+        )

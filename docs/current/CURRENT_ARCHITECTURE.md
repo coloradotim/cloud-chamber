@@ -133,7 +133,7 @@ runtime state on reload; React state is not authoritative.
 
 Known built-in Simulations use exact current World and run identities. Dynamic
 World assignment currently requires the shared variation envelope and approved
-Mountain Waves Recipe evidence. Other records are classified from verified
+World Recipe evidence. Other records are classified from verified
 observed-sounding or Result evidence, with ambiguous historical World claims
 failing closed as legacy or unassigned Experiments.
 
@@ -618,11 +618,17 @@ only in a transient unsaved pair.
 
 Saved Comparisons do not write the per-Simulation Explore-state library or
 mutate either Simulation. Compare consumes the shared envelope relationship and
-material differences for Mountain Waves and Trade Cumulus parent-child pairs.
+material differences for Mountain Waves, Trade Cumulus, and Supercells
+parent-child pairs.
 It derives Trade Cumulus grid, timeline, and normalized differences from the
 retained immutable layers rather than assuming the built-in Presentation pair.
-Supercells does not yet provide a typed Recipe payload to the common variation
-envelope.
+Supercells resolves its typed Recipe through one source-locked hodograph and
+thermodynamic generator plus an isolated deterministic thermal source
+customization. Preview and package generation consume the same normalized
+payload. Completed output is validated against exact source, generated-input,
+timeline, native-coordinate, retained-field, unit, finite-value, and
+all-three-Lens contracts before automatic availability. Parent eligibility
+remains a separate reconstructibility and absolute-envelope decision.
 
 ## Product and Research Boundaries
 
@@ -641,9 +647,11 @@ reused.
 - World shells and Explore implementations share vocabulary but still contain
   World-specific state and rendering code.
 - Saved Comparisons are local filesystem state and do not synchronize across devices.
-- The shared variation envelope is implemented for Mountain Waves and Trade
-  Cumulus; Supercells does not yet provide a typed Recipe payload or Create
-  Variation surface.
+- The shared variation envelope and typed Create Variation surface are
+  implemented for Mountain Waves, Trade Cumulus, and Supercells. Some approved
+  run profiles and Supercells control endpoints remain unavailable for
+  ordinary launch until bounded PM-authorized runtime characterization closes
+  their explicit evidence gaps.
 - Legacy run, result, and sounding surfaces remain interleaved with the newer
   World application.
 - Filesystem-backed runtime metadata is local and not a durable multi-device

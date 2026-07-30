@@ -102,6 +102,11 @@ const simulation: SupercellSimulation = {
   history_cadence_seconds: 120,
   default_explore_time_index: 37,
   lineage_state: "known",
+  recipe_contract_version: "1",
+  relationship_classification: null,
+  run_profile_id: "supercells_presentation_v1",
+  can_create_variation: true,
+  parent_eligibility_reason: "Accepted presentation evidence.",
 };
 
 const supercellsResumeState: SupercellsExploreState = {

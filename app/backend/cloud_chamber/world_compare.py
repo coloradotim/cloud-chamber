@@ -323,31 +323,44 @@ def _supercells_descriptor(
         left_simulation_id or "supercells_quarter_circle_reference",
         right_simulation_id or "supercells_straight_line_hodograph",
     )
-    reverse = left.simulation_id == "supercells_straight_line_hodograph"
-    differences = [
-        CompareDifference(
-            path="atmosphere.hodograph_geometry",
-            label="Hodograph geometry",
-            category="atmospheric",
-            left_value="Straight line" if reverse else "Quarter circle",
-            right_value="Quarter circle" if reverse else "Straight line",
+    records = {item.simulation_id: item for item in world.simulations}
+    left_record = records[left.simulation_id]
+    right_record = records[right.simulation_id]
+    direct = (
+        right_record
+        if right_record.parent_simulation_id == left_record.simulation_id
+        else (
+            left_record if left_record.parent_simulation_id == right_record.simulation_id else None
         )
-    ]
+    )
+    differences = (
+        _supercell_envelope_differences(
+            direct,
+            reverse=direct is left_record,
+        )
+        if direct is not None
+        else _supercell_absolute_differences(left_record, right_record)
+    )
+    classification = _supercell_pair_classification(differences)
+    controlled = classification in {
+        "controlled_physical_variation",
+        "controlled_initiation_sensitivity",
+    }
     compatibility = _compatibility(
         left,
         right,
         relationship=_relationship(left, right),
-        controlled_pair=(
-            {left.simulation_id, right.simulation_id}
-            == {
-                "supercells_quarter_circle_reference",
-                "supercells_straight_line_hodograph",
-            }
-        ),
+        controlled_pair=controlled,
         controlled_message=(
-            "Only hodograph curvature changed; thermodynamics, trigger, grid, timing, "
-            "output inventory, model translation, and numerical options are matched. "
-            "Coordinates and local evidence are compared without claiming storm-object lineage."
+            (
+                "The retained pair records one material scientific change with matched "
+                "numerical and observation contracts."
+                if controlled
+                else "The retained pair is classified as "
+                f"{classification.replace('_', ' ')} from its exact immutable layers."
+            )
+            + " Coordinates and local evidence are compared without claiming storm-object "
+            "lineage."
         ),
     )
     return WorldCompareDescriptor(
@@ -552,10 +565,32 @@ def _mountain_simulation(
 def _supercell_simulation(
     record: SupercellSimulationRecord,
 ) -> CompareSimulationDescriptor:
+    numerical = record.numerical_realization
+    exact_domain = numerical.get("exact_domain")
+    exact_domain = exact_domain if isinstance(exact_domain, Mapping) else {}
+    observation = record.observation_plan
     start = record.model_start_seconds or 0.0
-    end = record.model_end_seconds or start
-    cadence = record.history_cadence_seconds or 1.0
-    times = [start + index * cadence for index in range(record.saved_output_count)]
+    end = record.model_end_seconds
+    if end is None:
+        end = _number(observation.get("duration_seconds"), start)
+    cadence = record.history_cadence_seconds
+    if cadence is None:
+        cadence = _number(observation.get("output_cadence_seconds"), 1.0)
+    count = record.saved_output_count or int(round((end - start) / cadence)) + 1
+    times = [start + index * cadence for index in range(count)]
+    nx = int(_number(exact_domain.get("nx"), 240))
+    ny = int(_number(exact_domain.get("ny"), 240))
+    nz = int(_number(exact_domain.get("nz"), 60))
+    dx = _number(exact_domain.get("dx_m"), 500)
+    dy = _number(exact_domain.get("dy_m"), 500)
+    dz = _number(exact_domain.get("dz_m"), 20_000 / 60)
+    x_min = _number(exact_domain.get("x_min_m"), -nx * dx / 2) / 1_000
+    x_max = _number(exact_domain.get("x_max_m"), nx * dx / 2) / 1_000
+    y_min = _number(exact_domain.get("y_min_m"), -ny * dy / 2) / 1_000
+    y_max = _number(exact_domain.get("y_max_m"), ny * dy / 2) / 1_000
+    model_top = _number(exact_domain.get("model_top_m"), nz * dz) / 1_000
+    default_time = min(4_440.0, end)
+    default_plane = min(3.25, max(dz / 2_000.0, model_top - dz / 2_000.0))
     return CompareSimulationDescriptor(
         simulation_id=record.simulation_id,
         display_name=record.display_name,
@@ -571,22 +606,22 @@ def _supercell_simulation(
         inspectable=record.explore_available,
         grid=CompareGridDescriptor(
             topology="native_3d",
-            nx=240,
-            ny=240,
-            nz=60,
-            dx_m=500,
-            dy_m=500,
-            dz_m=333.3333333,
-            x_extent_km=(-60.0, 60.0),
-            y_extent_km=(-60.0, 60.0),
-            z_extent_km=(0.0, 20.0),
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            dx_m=dx,
+            dy_m=dy,
+            dz_m=dz,
+            x_extent_km=(x_min, x_max),
+            y_extent_km=(y_min, y_max),
+            z_extent_km=(0.0, model_top),
         ),
         time=CompareTimeDescriptor(
             times_seconds=times,
             start_seconds=start,
             end_seconds=end,
             cadence_seconds=cadence,
-            saved_output_count=record.saved_output_count,
+            saved_output_count=count,
         ),
         available_field_ids=["winterp", "total_condensate"],
         available_view_ids=[
@@ -603,11 +638,11 @@ def _supercell_simulation(
         camera_mapping="normalized_3d",
         initial_state=SupercellsExploreState(
             world_id="supercells",
-            model_time_seconds=4_440,
+            model_time_seconds=default_time,
             lens_id="rotating_updraft",
             viewport_id="storm",
             evidence_view="plan",
-            plane_coordinate_km=3.1666669845581055,
+            plane_coordinate_km=default_plane,
             visible_layer_ids=[
                 "storm_cloud_body",
                 "rising_core",
@@ -635,6 +670,137 @@ def _supercell_simulation(
         ),
         caveats=[],
     )
+
+
+def _supercell_envelope_differences(
+    child: SupercellSimulationRecord,
+    *,
+    reverse: bool,
+) -> list[CompareDifference]:
+    category_map = {
+        "terrain": "atmospheric",
+        "wind": "atmospheric",
+        "moisture": "atmospheric",
+        "stability/thermodynamics": "atmospheric",
+        "forcing/initiation": "atmospheric",
+        "numerical realization": "numerical",
+        "observation plan": "output",
+    }
+    rows: list[CompareDifference] = []
+    for group, items in child.differences.items():
+        for item in items:
+            if item.get("material") is False:
+                continue
+            before = item.get("before")
+            after = item.get("after")
+            rows.append(
+                CompareDifference(
+                    path=str(item.get("path") or item.get("label") or group),
+                    label=str(item.get("label") or group),
+                    category=category_map.get(group, "metadata"),  # type: ignore[arg-type]
+                    left_value=_supercell_display_value(after if reverse else before),
+                    right_value=_supercell_display_value(before if reverse else after),
+                    units=str(item["units"]) if item.get("units") is not None else None,
+                )
+            )
+    return rows
+
+
+def _supercell_absolute_differences(
+    left: SupercellSimulationRecord,
+    right: SupercellSimulationRecord,
+) -> list[CompareDifference]:
+    rows: list[CompareDifference] = []
+    for prefix, category, left_payload, right_payload in (
+        (
+            "scientific_design",
+            "atmospheric",
+            _supercell_semantic_scientific_design(left),
+            _supercell_semantic_scientific_design(right),
+        ),
+        (
+            "numerical_realization",
+            "numerical",
+            left.numerical_realization,
+            right.numerical_realization,
+        ),
+        ("observation_plan", "output", left.observation_plan, right.observation_plan),
+    ):
+        flattened_left = _flatten_mapping(left_payload)
+        flattened_right = _flatten_mapping(right_payload)
+        for path in sorted(set(flattened_left) | set(flattened_right)):
+            left_known = path in flattened_left
+            right_known = path in flattened_right
+            left_value = flattened_left.get(path)
+            right_value = flattened_right.get(path)
+            if left_known and right_known and left_value == right_value:
+                continue
+            rows.append(
+                CompareDifference(
+                    path=f"{prefix}.{path}",
+                    label=_supercell_difference_label(path),
+                    category=category,  # type: ignore[arg-type]
+                    left_value=left_value,
+                    right_value=right_value,
+                    left_known=left_known,
+                    right_known=right_known,
+                )
+            )
+    return rows
+
+
+def _supercell_semantic_scientific_design(
+    record: SupercellSimulationRecord,
+) -> dict[str, Any]:
+    """Compare authored controls and fixed assumptions, not derived storage shape."""
+    controls = record.scientific_design.get("controls")
+    assumptions = record.scientific_design.get("fixed_assumptions")
+    return {
+        "controls": controls if isinstance(controls, Mapping) else {},
+        "fixed_assumptions": assumptions if isinstance(assumptions, Mapping) else {},
+    }
+
+
+def _supercell_pair_classification(
+    differences: list[CompareDifference],
+) -> str:
+    physical = [item for item in differences if item.category == "atmospheric"]
+    numerical = [item for item in differences if item.category == "numerical"]
+    observation = [item for item in differences if item.category == "output"]
+    if physical and (numerical or observation):
+        return "mixed_variation"
+    if numerical:
+        return "numerical_sensitivity"
+    if physical:
+        if all("thermal_" in item.path for item in physical):
+            return "controlled_initiation_sensitivity"
+        return (
+            "controlled_physical_variation"
+            if len(physical) == 1
+            else "multi_factor_physical_variation"
+        )
+    if observation:
+        return "observation_only_attempt"
+    return "replicate_realization"
+
+
+def _supercell_difference_label(path: str) -> str:
+    labels = {
+        "hodograph_family": "Hodograph family",
+        "surface_based_cape_j_kg": "Surface-based CAPE",
+        "thermal_perturbation_amplitude_k": "Thermal amplitude",
+        "profile_id": "Run profile",
+        "duration_seconds": "Duration",
+        "output_cadence_seconds": "Output cadence",
+    }
+    tail = path.rsplit(".", 1)[-1]
+    return labels.get(tail, tail.replace("_", " ").capitalize())
+
+
+def _supercell_display_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace("_", " ").title()
+    return value
 
 
 def _regular_time_descriptor(

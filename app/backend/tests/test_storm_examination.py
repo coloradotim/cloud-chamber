@@ -16,10 +16,35 @@ from cloud_chamber.storm_examination import (
     PRESERVED_CASE_ID,
     PRESERVED_RUN_ID,
     StormExaminationError,
+    _classify_interaction_times,
+    _region_contains_dominant_signal,
     preserved_storm_examination_frame,
     storm_examination_inventory,
     supercells_explore_frame,
 )
+
+
+def test_boundary_overlap_is_distinct_from_dominant_signal_contamination() -> None:
+    assert (
+        _classify_interaction_times(
+            3_600,
+            None,
+            useful_window_end_seconds=7_200,
+        )
+        == "inside_useful_window"
+    )
+    assert not _region_contains_dominant_signal(
+        region_w_max=2.0,
+        region_condensate_max=2.0e-6,
+        domain_w_max=40.0,
+        domain_condensate_max=0.01,
+    )
+    assert _region_contains_dominant_signal(
+        region_w_max=40.0,
+        region_condensate_max=2.0e-6,
+        domain_w_max=40.0,
+        domain_condensate_max=0.01,
+    )
 
 
 def _settings(runtime_home: Path) -> CloudChamberSettings:

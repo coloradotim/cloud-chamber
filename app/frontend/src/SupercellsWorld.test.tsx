@@ -28,6 +28,11 @@ const world: SupercellsWorldDetail = {
     history_cadence_seconds: 120,
     default_explore_time_index: 37,
     lineage_state: "known",
+    recipe_contract_version: "1",
+    relationship_classification: null,
+    run_profile_id: "supercells_presentation_v1",
+    can_create_variation: true,
+    parent_eligibility_reason: "Accepted presentation evidence.",
   },
   simulations: [],
   capabilities: {
@@ -36,6 +41,7 @@ const world: SupercellsWorldDetail = {
     compare: true,
     saved_views: false,
     saved_comparisons: true,
+    create_variation: true,
   },
   caveats: ["This idealized benchmark is not a forecast or a reconstruction of a real storm."],
 };
